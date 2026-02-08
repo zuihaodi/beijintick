@@ -525,10 +525,17 @@ class TaskManager:
         if phones is None:
             phones = CONFIG.get('notification_phones', [])
 
+        # 归一化手机号：允许字符串/列表混用
+        if isinstance(phones, str):
+            phones = [p.strip() for p in phones.split(',') if p.strip()]
+        elif isinstance(phones, list):
+            phones = [str(p).strip() for p in phones if str(p).strip()]
+
         if not phones:
+            log(f"⚠️ 未配置短信手机号，通知内容未发送: {content}")
             return  # 没有号码就直接返回
 
-        print(f"📧 正在发送短信通知给: {phones}")
+        log(f"📧 正在发送短信通知给: {phones}")
         try:
             u = CONFIG['sms']['user']
             p = CONFIG['sms']['api_key']
@@ -558,15 +565,15 @@ class TaskManager:
 
             code = resp.text
             msg = error_map.get(code, f"未知错误({code})")
-            print(f"📧 短信接口返回: [{code}] {msg}")
+            log(f"📧 短信接口返回: [{code}] {msg}")
 
             if code != '0':
-                print(f"⚠️ 短信发送异常: {msg}")
+                log(f"⚠️ 短信发送异常: {msg}")
                 return False, msg
             return True, "发送成功"
 
         except Exception as e:
-            print(f"❌ 短信发送异常: {e}")
+            log(f"❌ 短信发送异常: {e}")
             return False, str(e)
 
     def execute_task(self, task):
@@ -574,17 +581,34 @@ class TaskManager:
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
+        task_id = task.get('id')
+        last_fail_reason = None
 
-        # 0. 先检查 token 是否有效
-        #    注意：这里的报警必须走“全局手机号”，确保所有任务共用同一报警通道
+        def build_date_display(date_str):
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                weekday_map = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                weekday_label = weekday_map[dt.weekday()]
+                return dt.strftime("%Y-%m-%d") + f"（{weekday_label}）"
+            except Exception:
+                return date_str
+
+        def notify_task_result(success, message, items=None, date_str=None):
+            status_label = "成功" if success else "失败"
+            prefix = f"任务 {task_id} 结果：{status_label}"
+            details = message
+            if date_str:
+                details = f"{build_date_display(date_str)} {message}"
+            if items:
+                items_str = [f"{i['place']}号场({i['time']})" for i in items]
+                details += " | 场地: " + ", ".join(items_str)
+            self.send_notification(f"{prefix}，{details}", phones=task_phones)
+
+        # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
+        #    以“获取场地状态异常”为准触发短信提醒，避免误报
         is_valid, token_msg = client.check_token()
         if not is_valid:
-            log(f"❌ Token 失效，任务终止: {token_msg}")
-            # 不传 phones 参数，让 send_notification 使用 CONFIG['notification_phones']
-            self.send_notification(
-                f"预订失败报警：Token已失效({token_msg})，请立即更新！"
-            )
-            return
+            log(f"⚠️ Token 可能已失效，但继续尝试获取场地状态: {token_msg}")
 
         # 1. 计算目标日期
         # 新增 target_mode / target_date 支持：
@@ -608,7 +632,13 @@ class TaskManager:
 
         # 3. 旧版兼容：没有新配置时走最早的 items 逻辑
         if not config and 'items' in task:
-            client.submit_order(target_date, task['items'])
+            res = client.submit_order(target_date, task['items'])
+            status = res.get("status")
+            if status in ("success", "partial"):
+                msg = "全部成功" if status == "success" else "部分成功"
+                notify_task_result(True, f"下单完成：{msg}（{status}）", items=task['items'], date_str=target_date)
+            else:
+                notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
             return
 
         # 4. 这次任务真正关心的 (场地, 时间) 组合，用来判断是否还在“锁定未开放”阶段
@@ -682,7 +712,7 @@ class TaskManager:
                 # 会话 / 凭证失效，这种重试也没用，直接报警退出
                 if "失效" in err_msg or "凭证" in err_msg or "token" in err_msg.lower():
                     log(f"❌ 严重错误: {err_msg}，任务终止。")
-                    self.send_notification(f"预订失败报警：登录状态/Token 失效({err_msg})，请尽快处理！")
+                    notify_task_result(False, f"登录状态/Token 失效({err_msg})，请尽快处理！", date_str=target_date)
                     return
 
                 # 普通错误：按普通间隔重试
@@ -833,6 +863,7 @@ class TaskManager:
             else:
                 if 'candidate_places' not in config:
                     log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
+                    notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
                     return
 
                 candidate_places = [str(p) for p in config['candidate_places']]
@@ -904,27 +935,19 @@ class TaskManager:
 
                     # 发通知短信
                     try:
-                        # 在短信里加上“周几”的信息
-                        try:
-                            dt = datetime.strptime(target_date, "%Y-%m-%d")
-                            weekday_map = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-                            weekday_label = weekday_map[dt.weekday()]
-                            date_display = dt.strftime("%Y-%m-%d") + f"（{weekday_label}）"
-                        except Exception:
-                            # 兜底：解析失败就用原始 target_date
-                            date_display = target_date
-
-                        detail_msg = f"已预订 {date_display} 的场地: "
-                        items_str = [f"{i['place']}号场({i['time']})" for i in final_items]
-                        detail_msg += ", ".join(items_str)
-                        detail_msg += " 快召集球友啦！"
-                        self.send_notification(detail_msg, phones=task_phones)
+                        notify_task_result(
+                            True,
+                            f"已预订",
+                            items=final_items,
+                            date_str=target_date,
+                        )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
 
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
+                    last_fail_reason = res.get('msg') or "下单失败"
 
             # 5. 根据 locked 状态决定是否继续死磕（使用锁定配置 + 最多刷 N 秒保护）
             if locked_exists:
@@ -942,6 +965,10 @@ class TaskManager:
                         f"⏳ 已连续等待『锁定未开放』状态约 {int(elapsed)} 秒，"
                         f"达到上限 {locked_max_seconds}s，本次任务结束。"
                     )
+                    fail_msg = "锁定未开放等待超时，任务结束。"
+                    if last_fail_reason:
+                        fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
+                    notify_task_result(False, fail_msg, date_str=target_date)
                     return
 
                 # 仍在允许范围内，按锁定间隔继续轮询
@@ -955,6 +982,10 @@ class TaskManager:
                 # 一旦不再是 locked（要么 available 被抢完，要么状态变 booked），重置计时并结束
                 locked_mode_started_at = None
                 log("🙈 目标场地已经开放但没有可用组合(大概率被别人抢完了)，本次任务结束。")
+                fail_msg = "目标场地已开放但无可用组合，可能已被抢完。"
+                if last_fail_reason:
+                    fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
+                notify_task_result(False, fail_msg, date_str=target_date)
                 return
 
         # print(" 所有重试均失败，放弃。")
@@ -1322,4 +1353,3 @@ if __name__ == "__main__":
     print("🚀 服务已启动，访问 http://127.0.0.1:5000")
     print("📋 已加载测试接口: /api/config/test-sms")
     app.run(debug=True, port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动
-
