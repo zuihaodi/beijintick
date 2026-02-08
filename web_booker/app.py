@@ -583,7 +583,7 @@ class TaskManager:
         task_phones = task.get('notification_phones') or None
         task_id = task.get('id')
         last_fail_reason = None
-
+        
         def build_date_display(date_str):
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -609,6 +609,7 @@ class TaskManager:
         is_valid, token_msg = client.check_token()
         if not is_valid:
             log(f"⚠️ Token 可能已失效，但继续尝试获取场地状态: {token_msg}")
+
 
         # 1. 计算目标日期
         # 新增 target_mode / target_date 支持：
