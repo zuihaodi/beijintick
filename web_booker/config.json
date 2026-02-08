@@ -17,6 +17,6 @@
     "user": "18600291931",
     "api_key": "6127d94d28a04c06a8f61b70eac79cc3"
   },
-  "health_check_interval_min": 29.0,
-  "health_check_enabled": true
+  "health_check_interval_min": 31.0,
+  "health_check_enabled": false
 }

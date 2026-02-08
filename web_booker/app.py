@@ -17,28 +17,45 @@ def health_check():
     """
     定期检查 token 和 cookie 的有效性，并发送短信通知。
     """
+    phones = CONFIG.get('notification_phones') or []
+
     # 检查 Token 是否有效
     is_valid, msg = client.check_token()
     if not is_valid:
         print(f"❌ Token 失效: {msg}")
-        # 发送短信通知
-        task_manager.send_notification(f"⚠️ Token 失效: {msg}", phones=CONFIG['notification_phones'])
+        if phones:
+            task_manager.send_notification(f"⚠️ Token 失效: {msg}", phones=phones)
 
     # 检查 Cookie 是否有效
     is_valid, msg = client.refresh_cookie()
     if not is_valid:
         print(f"❌ Cookie 刷新失败: {msg}")
-        # 发送短信通知
-        task_manager.send_notification(f"⚠️ Cookie 刷新失败: {msg}", phones=CONFIG['notification_phones'])
+        if phones:
+            task_manager.send_notification(f"⚠️ Cookie 刷新失败: {msg}", phones=phones)
 
 # 每隔一段时间执行健康检查
 def schedule_health_check():
     """
     定时任务：按照配置的间隔时间运行健康检查。
     """
-    check_interval = CONFIG.get('health_check_interval_min', 30)  # 健康检查间隔，单位：分钟
-    schedule.every(check_interval).minutes.do(health_check)  # 每隔 `check_interval` 分钟执行 health_check 函数
+    # 清理已有的健康检查任务，避免重复调度
+    schedule.clear("health_check")
+
+    if not CONFIG.get('health_check_enabled', True):
+        print("🛑 健康检查已关闭，不安排定时任务。")
+        return
+
+    check_interval = CONFIG.get('health_check_interval_min', 30)
+    try:
+        check_interval = float(check_interval)
+    except (TypeError, ValueError):
+        check_interval = 30.0
+    if check_interval < 1:
+        check_interval = 1
+
+    schedule.every(check_interval).minutes.do(health_check).tag("health_check")
     print(f"📅 健康检查已安排，每 {check_interval} 分钟执行一次.")
+
 
 # 启动健康检查的后台线程
 def run_health_check():
@@ -1161,7 +1178,11 @@ def update_config():
             print(f"写入配置文件失败: {e}")
             # 即使写文件失败，内存中的 CONFIG 已经更新了
 
+        # 5) 重新安排健康检查（应用新的开关/间隔）
+        schedule_health_check()
+
         return jsonify({"status": "success"})
+
     except Exception as e:
         print(f"更新配置时异常: {e}")
         return jsonify({"status": "error", "msg": str(e)})
@@ -1288,14 +1309,17 @@ def test_sms():
 def get_logs():
     return jsonify(LOG_BUFFER)
 
-if __name__ == '__main__':
-    if __name__ == "__main__":
-        # 启动健康检查的线程
-        threading.Thread(target=run_health_check, daemon=True).start()  # 启动后台线程执行健康检查
-        app.run(debug=True, port=5000, use_reloader=False)
-
+if __name__ == "__main__":
     # 首次启动刷新调度
     task_manager.refresh_schedule()
+
+    # 启动健康检查调度（如果启用）
+    schedule_health_check()
+
+    # 启动健康检查的线程
+    threading.Thread(target=run_health_check, daemon=True).start()
+
     print("🚀 服务已启动，访问 http://127.0.0.1:5000")
     print("📋 已加载测试接口: /api/config/test-sms")
-    app.run(debug=True, port=5000, use_reloader=False) # 关闭 reloader 防止线程重复启动
+    app.run(debug=True, port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动
+
