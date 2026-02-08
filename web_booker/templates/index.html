@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>北外体育馆可视抢票</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f7;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding-bottom: 120px;
+        }
+
+        /* 顶部栏 */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .clock {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .btn-manage {
+            background: #5856d6;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* 日期选择 */
+        .date-scroll {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .date-btn {
+            flex: 0 0 auto;
+            padding: 10px 15px;
+            border: none;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            transition: 0.2s;
+        }
+
+        .date-btn.active {
+            background: #007aff;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* 矩阵 */
+        .matrix-container {
+            overflow-x: auto;
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 600px;
+        }
+
+        th,
+        td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #eee;
+        }
+
+        th {
+            background: #fafafa;
+            color: #666;
+            font-size: 14px;
+        }
+
+        /* 状态格子 */
+        .cell {
+            width: 40px;
+            height: 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin: 0 auto;
+        }
+
+        .cell.available {
+            background-color: #34c759;
+        }
+
+        .cell.booked {
+            background-color: #ff3b30;
+            cursor: not-allowed;
+            opacity: 0.3;
+        }
+
+        .cell.selected {
+            background-color: #007aff;
+            box-shadow: 0 0 0 2px #0056b3 inset;
+            transform: scale(0.9);
+        }
+
+        /* 已选标签 */
+        .selected-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+            max-height: 80px;
+            overflow-y: auto;
+        }
+
+        .tag {
+            background: #e3f2fd;
+            color: #007aff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(0, 122, 255, 0.2);
+        }
+
+        .tag-close {
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0.6;
+        }
+
+        .tag-close:hover {
+            opacity: 1;
+            color: #ff3b30;
+        }
+
+        /* 底部栏 */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 15px 20px;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+
+        .bar-content {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .info {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .timer-box {
+            background: #f0f0f5;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .timer-input {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 4px;
+            width: 80px;
+            font-family: monospace;
+        }
+
+        .btn {
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background: #007aff;
+            color: white;
+        }
+
+        .btn-success {
+            background: #34c759;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #ff3b30;
+            color: white;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal {
+            background: white;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .modal-title {
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .modal-close {
+            cursor: pointer;
+            font-size: 20px;
+            color: #999;
+        }
+
+        .task-form {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .task-item {
+            background: white;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-info {
+            font-size: 14px;
+        }
+
+        .task-meta {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .btn-del {
+            color: #ff3b30;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        /* 新增：弹窗内的标签选择器 */
+        .tag-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+
+        .tag-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            background: white;
+            color: #333;
+            transition: 0.2s;
+        }
+
+        .tag-btn.active {
+            background: #007aff;
+            color: white;
+            border-color: #007aff;
+        }
+
+        /* 新增 Tab 样式 */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #007aff;
+            background: #f9f9f9;
+        }
+
+        .tab-btn.active {
+            color: #007aff;
+            border-bottom-color: #007aff;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="top-bar">
+            <h2>🏸 抢票助手</h2>
+            <div>
+                <span id="sys-clock" class="clock" style="font-size:16px;margin-right:10px;">--:--:--.---</span>
+            </div>
+        </div>
+
+        <!-- 标签页导航 -->
+        <div class="tabs">
+            <div class="tab-btn active" onclick="switchTab('semi-auto', this)">🖐️ 半自动抢票</div>
+            <div class="tab-btn" onclick="switchTab('auto-plan', this)">🤖 自动抢票计划</div>
+        </div>
+
+        <!-- Tab 1: 半自动抢票 (原主页内容) -->
+        <div id="tab-semi-auto" class="tab-content active">
+            <div class="date-scroll">
+                {% for d in dates %}
+                <button class="date-btn {% if loop.index0 == 0 %}active{% endif %}"
+                    onclick="selectDate('{{ d.val }}', this)">
+                    <div style="font-size:12px;color:#666;">{{ d.weekday }}</div>
+                    <div style="font-size:16px;font-weight:bold;">{{ d.date_only }}</div>
+                </button>
+                {% endfor %}
+            </div>
+
+            <div id="matrix-area">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- Tab 2: 自动抢票计划 (原配置区域) -->
+        <div id="tab-auto-plan" class="tab-content">
+            <div class="task-form">
+                <div
+                    style="background:#e3f2fd;color:#0056b3;padding:10px;border-radius:6px;font-size:13px;margin-bottom:15px;">
+                    <b>💡 提示：</b> 只要设置好，系统就会按时帮您抢。不需要管现在有没有空场。
+                </div>
+
+                <!-- 第一行：时间和频率 -->
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div class="form-group" style="flex:1;min-width:160px;">
+                        <label>⏰ 触发时间</label>
+                        <input type="time" id="taskTime" class="form-control" step="1" value="08:00:00"
+                            onchange="updateTaskSummary()">
+                    </div>
+
+                    <div class="form-group" style="flex:1;min-width:140px;">
+                        <label>🔁 频率</label>
+                        <select id="taskType" class="form-control" onchange="onTaskTypeChange();updateTaskSummary()">
+                            <option value="daily">每天执行</option>
+                            <option value="weekly">每周执行</option>
+                            <option value="once">只执行一次</option>
+                        </select>
+
+                    </div>
+
+                    <!-- 只有选择“每周执行”时才显示 -->
+                    <div class="form-group" id="weeklyDayGroup"
+                         style="flex:1;min-width:140px;display:none;">
+                        <label>📆 周几执行</label>
+                        <select id="weeklyDay" class="form-control" onchange="updateTaskSummary()">
+                            <option value="0">周一</option>
+                            <option value="1">周二</option>
+                            <option value="2">周三</option>
+                            <option value="3">周四</option>
+                            <option value="4">周五</option>
+                            <option value="5">周六</option>
+                            <option value="6">周日</option>
+                        </select>
+                    </div>
+                </div>
+
+
+                <!-- 通知手机号（当前任务专用） -->
+                <div class="form-group">
+                    <label>📱 通知手机号 (本任务，多个用逗号分隔)</label>
+                    <input type="text" id="notificationPhones" class="form-control"
+                           placeholder="例如: 13800000000, 13900000000">
+                </div>
+
+                <!-- 日期选择 -->
+                <div class="form-group">
+                    <label>📅 抢哪天的场？</label>
+                    <div id="targetDateList"
+                        style="display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;margin-top:5px;">
+                        <!-- 动态生成 -->
+                    </div>
+                    <input type="hidden" id="taskOffset" value="2">
+                </div>
+
+                <!-- 场地选择区域 -->
+                <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+                    <label style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+                        <span>🏸 场地选择模式</span>
+                        <select id="placeMode" style="padding:4px;font-size:12px;" onchange="togglePlaceMode()">
+                            <option value="normal">🎯 普通多选</option>
+                        </select>
+                    </label>
+
+                    <!-- 模式A: 普通选场 -->
+                    <div id="modeNormal">
+                        <div class="tag-selector" id="placeSelector">
+                            <!-- JS 生成 1-17号 -->
+                        </div>
+                        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
+                            <label style="font-size:12px;color:#666;">
+                                <input type="checkbox" id="taskSmartMode" checked>
+                                <b>智能连号优先</b> (自动找 6+7, 8+9...)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>🎯 总目标数量 (需要抢到多少块场地)</label>
+                <select id="taskTargetCount" class="form-control">
+                    <option value="1">1</option>
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="8">8</option>
+                    <option value="10">10</option>
+                </select>
+            </div>
+
+            <!-- 时间选择器 -->
+            <div class="form-group">
+                <label id="timeLabelNormal">⌚ 选择时间段 (可多选，系统会尝试凑够总目标数量)</label>
+                <label id="timeLabelPriority" style="display:none">⌚ 输入优先时间段 (例如 13-15)</label>
+
+                <div class="tag-selector" id="timeSelector">
+                    <!-- JS 生成 10:00-22:00 -->
+                </div>
+
+                <div id="timeRangeArea" style="display:none">
+                    <input type="text" id="timeRangeInput" class="form-control" placeholder="例如: 13-15, 18-20"
+                        style="font-family:monospace;">
+                    <div style="font-size:12px;color:#999;margin-top:5px;">
+                        * 格式说明：输入 "13-15" 代表预定 13:00 到 15:00 期间的场次（即13:00和14:00）。<br>
+                        * 多个时间段用逗号分隔。
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top:15px;padding-top:10px;border-top:1px dashed #ddd;font-size:13px;color:#007aff;font-weight:bold;margin-bottom:10px;"
+                id="taskSummary">
+                请配置任务...
+            </div>
+
+            <button class="btn btn-primary" style="width:100%" onclick="createTask()">✅ 保存计划</button>
+        </div>
+
+        <div class="task-list" id="taskList">
+            <!-- 动态生成 -->
+        </div>
+        <!-- 速度设置 -->
+        <div class="form-group"
+            style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <label style="font-weight:bold;margin-bottom:8px;">⚡ 抢票速度设置 (毫秒)</label>
+            <div style="display:flex;gap:10px;">
+                <div style="flex:1">
+                    <label style="font-size:12px;">普通重试间隔</label>
+                    <input type="number" id="retryInterval" class="form-control" value="0.5" step="0.1"
+                        min="0.1">
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:12px;color:#ff3b30;">🔥 死磕模式间隔</label>
+                    <input type="number" id="aggressiveRetryInterval" class="form-control" value="0.3"
+                        step="0.1" min="0.1">
+                </div>
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:5px;">
+                * 死磕模式：当检测到服务器崩溃/404时启用的极速重试频率。<br>
+                * 建议值：普通 0.5s，死磕 0.3s。太快可能会被封IP。
+            </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px;">
+          <div style="flex:1">
+            <label>锁定状态重试间隔 (秒)</label>
+            <input type="number"
+                   id="lockedRetryInterval"
+                   class="form-control"
+                   step="0.1"
+                   min="0.1"
+                   placeholder="例如 0.5">
+          </div>
+          <div style="flex:1">
+            <label>锁定状态最多刷 N 秒</label>
+            <input type="number"
+                   id="lockedMaxSeconds"
+                   class="form-control"
+                   step="1"
+                   min="1"
+                   placeholder="例如 10">
+          </div>
+        </div>
+
+
+        <!-- 全局通知手机号 + 保存配置 -->
+        <div class="form-group"
+             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <label style="font-weight:bold;margin-bottom:8px;">
+                📢 全局通知手机号 (Token失效 / 系统异常报警)
+            </label>
+            <div style="display:flex;gap:10px;">
+                <input type="text" id="globalNotificationPhones" class="form-control"
+                       placeholder="例如: 13800000000, 13900000000">
+                <button class="btn" style="padding:6px 12px;font-size:12px;background:#eee;"
+                        onclick="testSMS()">📡 测试</button>
+                <button class="btn btn-success" style="padding:6px 12px;font-size:12px;"
+                        onclick="saveConfig()">💾 确定保存</button>
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:5px;">
+                * 这里填写的是“全局报警手机号”，用于 Token 失效 / 服务器崩溃 等系统级提醒。<br>
+                * 每个自动任务上面的“通知手机号”只负责该任务订场成功后的短信。
+            </div>
+        </div>
+
+        <!-- 健康检查 -->
+        <div class="form-group">
+            <label>健康检查</label>
+            <input type="checkbox" id="healthCheckEnabled" onchange="updateTaskSummary()" />
+            <label for="healthCheckEnabled">启用健康检查</label>
+            <br />
+            <label>健康检查间隔 (分钟)</label>
+            <input type="number" id="healthCheckInterval" value="30" min="1" onchange="updateTaskSummary()" />
+        </div>
+
+
+        <!-- Token 检查与更新 -->
+        <div class="form-group"
+            style="margin-top:5px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <label style="margin-bottom:8px;font-weight:bold;">🔑 凭证管理</label>
+
+            <button class="btn"
+                style="width:100%;padding:8px;font-size:13px;background:#f0f0f5;color:#333;border:1px solid #ddd;margin-bottom:10px;"
+                onclick="checkToken()">🔍 检查当前 Token 有效性</button>
+
+            <div id="authUpdateArea" style="display:none;">
+                <textarea id="newToken" class="form-control" placeholder="粘贴新的 token (oy9...)" rows="1"
+                    style="margin-bottom:5px;font-size:12px;"></textarea>
+                <textarea id="newCookie" class="form-control" placeholder="粘贴新的 cookie (JSESSIONID=...)"
+                    rows="2" style="margin-bottom:5px;font-size:12px;"></textarea>
+                <button class="btn btn-success" style="width:100%;padding:6px;font-size:13px;"
+                    onclick="updateAuth()">💾 保存并更新</button>
+            </div>
+
+            <div style="text-align:center;">
+                <a href="javascript:void(0)"
+                    onclick="document.getElementById('authUpdateArea').style.display='block';this.style.display='none'"
+                    style="font-size:12px;color:#007aff;text-decoration:none;">✏️ 我要更新 Token</a>
+            </div>
+            <button class="btn"
+                style="width:100%;padding:8px;font-size:13px;background:#f0f0f5;color:#333;border:1px solid #ddd;margin-top:10px;"
+                onclick="refreshCookie()">🔄 刷新 Cookie</button>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- 底部栏 (只在半自动页面显示) -->
+    <div class="bottom-bar" id="bottomBar">
+        <div class="bar-content">
+            <div class="selected-tags" id="tagList"></div>
+            <div class="status-row">
+                <div class="info">已选: <span id="count" style="color:#007aff">0</span> 个场地</div>
+                <div class="clock" id="countdown"></div>
+            </div>
+            <div class="control-row">
+                <div class="timer-box">
+                    <label><input type="checkbox" id="timerEnable" onchange="toggleTimer()"> 定时抢票</label>
+                    <input type="datetime-local" id="timerInput" class="form-control"
+                        style="width:200px;font-size:13px;padding:2px;" disabled>
+                </div>
+                <button class="btn btn-primary" id="btnNow" onclick="submitOrder(false)" disabled>立即下单</button>
+                <button class="btn btn-success" id="btnTimer" onclick="startTimer()"
+                    style="display:none;">启动倒计时</button>
+                <button class="btn btn-danger" id="btnStop" onclick="stopTimer()" style="display:none;">停止</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 日志输出窗口 -->
+    <div id="logConsole" style="
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 150px;
+        background: #1e1e1e;
+        color: #00ff00;
+        font-family: monospace;
+        font-size: 12px;
+        padding: 10px;
+        overflow-y: auto;
+        z-index: 200;
+        display: none;
+        border-top: 2px solid #333;
+    ">
+        <div
+            style="position:sticky;top:0;background:#1e1e1e;border-bottom:1px solid #333;margin-bottom:5px;display:flex;justify-content:space-between;">
+            <span>📟 运行日志</span>
+            <span style="cursor:pointer;color:#fff;" onclick="toggleLogConsole()">▼ 隐藏</span>
+        </div>
+        <div id="logContent"></div>
+    </div>
+
+    <!-- 悬浮日志按钮 -->
+    <div id="logToggleBtn" style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #333;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 20px;
+        cursor: pointer;
+        z-index: 201;
+        font-size: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    " onclick="toggleLogConsole()">
+        📟 显示日志
+    </div>
+
+    <script>
+        let currentDate = '{{ dates[0].val }}';
+        let selectedItems = new Set();
+        let timerInterval = null;
+        let isTimerRunning = false;
+        let serverOffset = 0;
+        let cachedPlaces = []; // 存储后端返回的场地列表
+        let lastLogIndex = 0; // 记录日志位置
+
+        function toggleLogConsole() {
+            const console = document.getElementById('logConsole');
+            const btn = document.getElementById('logToggleBtn');
+            if (console.style.display === 'none') {
+                console.style.display = 'block';
+                btn.style.display = 'none';
+                // 调整底部栏位置防止遮挡 (如果有的话)
+                document.getElementById('bottomBar').style.bottom = '170px';
+            } else {
+                console.style.display = 'none';
+                btn.style.display = 'block';
+                document.getElementById('bottomBar').style.bottom = '0';
+            }
+        }
+
+        async function pollLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const logs = await res.json();
+                if (logs.length > lastLogIndex) {
+                    const newLogs = logs.slice(lastLogIndex);
+                    const content = document.getElementById('logContent');
+                    newLogs.forEach(line => {
+                        const div = document.createElement('div');
+                        div.innerText = line;
+                        content.appendChild(div);
+                    });
+                    lastLogIndex = logs.length;
+                    // 自动滚动到底部
+                    document.getElementById('logConsole').scrollTop = document.getElementById('logConsole').scrollHeight;
+                }
+            } catch (e) { }
+        }
+
+        function switchTab(tabId, btn) {
+            // 切换 Tab 内容
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            // 切换按钮样式
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+
+            // 底部栏只在半自动模式显示
+            const bar = document.getElementById('bottomBar');
+            if (tabId === 'semi-auto') {
+                bar.style.display = 'block';
+            } else {
+                bar.style.display = 'none';
+            }
+        }
+
+        // 初始化
+        loadMatrix(currentDate);
+        syncTime();
+        setInterval(updateClock, 30);
+        setInterval(pollLogs, 1000); // 每秒轮询日志
+
+        // 初始化任务区域 (页面加载时直接调用)
+        initDateSelector();
+        // initPlaceSelector 移到 renderTable 之后调用，或者给个默认调用
+        initPlaceSelector();
+        initTimeSelector();
+        loadTasks();
+        loadConfig();
+        updateTaskSummary();
+        onTaskTypeChange();
+
+        // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
+        // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
+
+        async function syncTime() {
+            const start = Date.now();
+            try {
+                const res = await fetch('/api/time');
+                const data = await res.json();
+                const end = Date.now();
+                const serverTime = data.timestamp * 1000;
+                serverOffset = serverTime - end + (end - start) / 2;
+            } catch (e) { }
+        }
+
+        function updateClock() {
+            const now = new Date(Date.now() + serverOffset);
+            const timeStr = now.toLocaleTimeString('en-GB') + '.' + String(now.getMilliseconds()).padStart(3, '0');
+            document.getElementById('sys-clock').innerText = timeStr;
+
+            if (isTimerRunning) {
+                const targetVal = document.getElementById('timerInput').value; // "2026-01-09T08:00"
+                if (!targetVal) return;
+
+                const targetTime = new Date(targetVal).getTime();
+                const currentTime = now.getTime();
+
+                // 剩余时间（秒）
+                const diff = (targetTime - currentTime) / 1000;
+
+                if (diff <= 0) {
+                    stopTimer();
+                    submitOrder(true);
+                } else {
+                    let info = "";
+                    if (diff > 3600) info = `> ${Math.floor(diff / 3600)}小时`;
+                    else if (diff > 60) info = `${Math.floor(diff / 60)}分${Math.floor(diff % 60)}秒`;
+                    else info = diff.toFixed(1) + "秒";
+
+                    document.getElementById('countdown').innerText = `⏳ 倒计时: ${info}`;
+                    document.getElementById('countdown').style.color = "#ff9500";
+                }
+            } else {
+                document.getElementById('countdown').innerText = "";
+            }
+        }
+
+        function selectDate(date, btn) {
+            currentDate = date;
+            document.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadMatrix(date);
+            selectedItems.clear();
+            updateBar();
+        }
+
+        async function loadMatrix(date) {
+            const area = document.getElementById('matrix-area');
+            area.innerHTML = '<div class="loading">正在获取场地状态...</div>';
+            try {
+                const res = await fetch(`/api/matrix?date=${date}`);
+                const data = await res.json();
+                if (data.error) { area.innerHTML = `<div style="color:red;text-align:center">${data.error}</div>`; return; }
+                renderTable(data);
+            } catch (e) { area.innerHTML = `<div style="color:red;text-align:center">网络错误</div>`; }
+        }
+
+        function renderTable(data) {
+            const { places, times, matrix } = data;
+            cachedPlaces = places; // 更新缓存
+
+            // 计算日期偏移量
+            let forceAvailable = false;
+            try {
+                const parts = currentDate.split('-');
+                const target = new Date(parts[0], parts[1] - 1, parts[2]);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const diffTime = target - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                // 用户需求：7天之后（包括今天）-> 理解为从第7天开始 (Offset >= 6)
+                if (diffDays >= 6) {
+                    forceAvailable = true;
+                }
+            } catch (e) { console.error(e); }
+
+            // 核心修复逻辑：优先显示真实数据
+            // 只有当没有真实数据，且处于远期模式时，才启用假数据（愿望单模式）
+            const hasRealData = data && data.matrix && Object.keys(data.matrix).length > 0;
+            let isFakeMode = false;
+
+            if (!hasRealData && forceAvailable) {
+                isFakeMode = true;
+
+                // 1) 场地列表：优先用后端返回的 places，没有就兜底 1–17 号
+                let fakePlaces;
+                if (Array.isArray(data.places) && data.places.length > 0) {
+                    fakePlaces = data.places.map(String);
+                } else {
+                    fakePlaces = Array.from({ length: 17 }, (_, i) => String(i + 1));
+                    data.places = fakePlaces;
+                }
+
+                // 2) 时间列表：优先用后端返回的 times，没有就兜底 10:00–21:00
+                let fakeTimes;
+                if (Array.isArray(data.times) && data.times.length > 0) {
+                    fakeTimes = data.times.slice();
+                } else {
+                    // 和系统其它地方保持一致：10:00, 11:00, ..., 21:00
+                    fakeTimes = Array.from(
+                        { length: 12 },
+                        (_, i) => String(i + 10).padStart(2, '0') + ':00'
+                    );
+                    data.times = fakeTimes;
+                }
+
+                // 3) 构造一份“全部可选”的 matrix
+                data.matrix = {};
+                fakePlaces.forEach(p => {
+                    data.matrix[p] = {};
+                    fakeTimes.forEach(t => {
+                        data.matrix[p][t] = 'available';
+                    });
+                });
+
+                // 4) 同步到解构出来的局部变量 places / times
+                places.length = 0;
+                places.push(...fakePlaces);
+
+                times.length = 0;
+                times.push(...fakeTimes);
+            }
+
+            // 再次检查数据有效性
+            if (!data.matrix || Object.keys(data.matrix).length === 0) {
+                document.getElementById('matrix-area').innerHTML = '<div style="text-align:center;padding:20px;color:#999">暂无数据 (未开放)</div>';
+                return;
+            }
+
+            // 状态提示条
+            let statusHtml = '';
+            if (isFakeMode) {
+                statusHtml = '<div style="background:#fff3cd;color:#856404;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #ffeeba;">⚠️ <b>愿望单模式</b>：系统未获取到该日期的实时数据（可能是尚未开放或网络波动）。您可以继续选座，系统会在任务启动时自动尝试抢这些位置。</div>';
+            } else {
+                statusHtml = '<div style="background:#d4edda;color:#155724;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #c3e6cb;">✅ <b>实时数据</b>：当前显示的是最新的场地状态。</div>';
+            }
+
+            let html = statusHtml + '<table><thead><tr><th>时间 \\ 场地</th>';
+            places.forEach(p => html += `<th>${p}号</th>`);
+            html += '</tr></thead><tbody>';
+            times.forEach(t => {
+                html += `<tr><td>${t}</td>`;
+                places.forEach(p => {
+                    const status = matrix[p][t] || 'booked';
+                    const key = `${p}|${t}`;
+                    const isSel = selectedItems.has(key) ? 'selected' : '';
+
+                    // 修正逻辑：只有在假模式下，或者真实状态是 available 时，才显示绿色
+                    if (status === 'available' || isFakeMode) {
+                        html += `<td><div class="cell available ${isSel}" data-key="${key}" onclick="toggleCell(this, '${p}', '${t}')"></div></td>`;
+                    } else {
+                        html += `<td><div class="cell booked"></div></td>`;
+                    }
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${html}</div>`;
+        }
+
+        function toggleCell(el, place, time) {
+            const key = `${place}|${time}`;
+            if (selectedItems.has(key)) {
+                selectedItems.delete(key);
+                el.classList.remove('selected');
+            } else {
+                // 限制校验
+                let timeCount = 0; selectedItems.forEach(k => { if (k.startsWith(place + '|')) timeCount++; });
+                // if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多3小时`);
+
+                let placeCount = 0; selectedItems.forEach(k => { if (k.endsWith('|' + time)) placeCount++; });
+                // if (placeCount >= 3) return alert(`⚠️ 限制：同时段最多3块场地`);
+
+                // 全局限制：总数不超过 3 块 (临时放宽到 9 块以支持 3x3 矩阵?)
+                // 用户说 "最多选 3x3"，意思是 3个场地 x 3个时段 = 9个格子？
+                // 或者是之前的规则：同场地最多3小时，同时段最多3场地。
+                // 如果用户想一次性选很多然后批量下单，我们这里暂时放宽前端限制，
+                // 但要提示用户如果超过限制可能会被系统拒绝。
+                // 为了保险，我们还是保留之前的 3x3 逻辑，但如果用户说“不行”，可能是因为我们之前的限制卡住了他选更多？
+                // 或者是“强制可选”导致状态错乱？
+
+                // 重新审视用户需求："最多选 3x3... 这样下单才有效"
+                // 这意味着必须遵守 3x3 规则。
+
+                if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多只能连续订 3 个小时！`);
+                if (placeCount >= 3) return alert(`⚠️ 限制：同一个时间段最多只能订 3 块场地！`);
+
+                selectedItems.add(key);
+                el.classList.add('selected');
+            }
+            updateBar();
+        }
+
+        function updateBar() {
+            const count = selectedItems.size;
+            document.getElementById('count').innerText = count;
+            // 移除不存在的元素调用
+            // document.getElementById('taskSelCount').innerText = count; 
+            const hasItem = count > 0;
+
+            const btnNow = document.getElementById('btnNow');
+            const btnTimer = document.getElementById('btnTimer');
+
+            if (btnNow) btnNow.disabled = !hasItem;
+
+            // 只有当定时抢票被勾选时，才操作 btnTimer
+            if (document.getElementById('timerEnable').checked) {
+                if (btnTimer) btnTimer.disabled = !hasItem;
+            }
+
+            const tagContainer = document.getElementById('tagList');
+            if (!tagContainer) return;
+
+            tagContainer.innerHTML = '';
+            const sortedKeys = Array.from(selectedItems).sort((a, b) => {
+                const [p1, t1] = a.split('|');
+                const [p2, t2] = b.split('|');
+                if (Number(p1) !== Number(p2)) return Number(p1) - Number(p2);
+                return t1.localeCompare(t2);
+            });
+            sortedKeys.forEach(key => {
+                const [place, time] = key.split('|');
+                const [h, m] = time.split(':');
+                const nextH = parseInt(h) + 1;
+                const timeRange = `${time}-${String(nextH).padStart(2, '0')}:00`;
+
+                const tag = document.createElement('div');
+                tag.className = 'tag';
+                tag.innerHTML = `<span>${place}号 ${timeRange}</span><span class="tag-close" onclick="removeTag('${key}')">×</span>`;
+                tagContainer.appendChild(tag);
+            });
+        }
+
+        function removeTag(key) {
+            if (selectedItems.has(key)) {
+                selectedItems.delete(key);
+                const targetCell = document.querySelector(`.cell[data-key="${key}"]`);
+                if (targetCell) targetCell.classList.remove('selected');
+                updateBar();
+            }
+        }
+
+        function toggleTimer() {
+            const enabled = document.getElementById('timerEnable').checked;
+            const input = document.getElementById('timerInput');
+            input.disabled = !enabled;
+
+            // 如果启用且为空，默认设置为明天早8点
+            if (enabled && !input.value) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                tomorrow.setHours(8, 0, 0, 0);
+                // datetime-local 格式: YYYY-MM-DDTHH:mm
+                const y = tomorrow.getFullYear();
+                const m = String(tomorrow.getMonth() + 1).padStart(2, '0');
+                const d = String(tomorrow.getDate()).padStart(2, '0');
+                input.value = `${y}-${m}-${d}T08:00`;
+            }
+
+            document.getElementById('btnNow').style.display = enabled ? 'none' : 'block';
+            document.getElementById('btnTimer').style.display = enabled ? 'block' : 'none';
+            if (!enabled) stopTimer();
+        }
+
+        function startTimer() {
+            if (selectedItems.size === 0) return alert("请先选择场地！");
+            isTimerRunning = true;
+            document.getElementById('btnTimer').style.display = 'none';
+            document.getElementById('btnStop').style.display = 'block';
+            document.getElementById('timerInput').disabled = true;
+            document.getElementById('timerEnable').disabled = true;
+            document.querySelectorAll('.cell').forEach(c => c.style.pointerEvents = 'none');
+        }
+
+        function stopTimer() {
+            isTimerRunning = false;
+            document.getElementById('btnTimer').style.display = 'block';
+            document.getElementById('btnStop').style.display = 'none';
+            document.getElementById('timerInput').disabled = false;
+            document.getElementById('timerEnable').disabled = false;
+            document.getElementById('countdown').innerText = "";
+            document.querySelectorAll('.cell').forEach(c => c.style.pointerEvents = 'auto');
+        }
+
+        async function submitOrder(isAuto) {
+            if (selectedItems.size === 0) return;
+            if (!isAuto && !confirm(`确认要预定这 ${selectedItems.size} 个场地吗？`)) return;
+
+            const btn = isAuto ? null : document.getElementById('btnNow');
+            if (btn) { btn.disabled = true; btn.innerText = "提交中..."; }
+
+            const toast = document.createElement('div');
+            toast.style.cssText = [
+                "position:fixed",
+                "top:20px",
+                "left:50%",
+                "transform:translateX(-50%)",
+                "background:rgba(0,0,0,0.8)",
+                "color:white",
+                "padding:15px 30px",
+                "border-radius:30px",
+                "z-index:9999"
+            ].join(";");
+            toast.innerText = isAuto ? "⏰ 时间到！正在自动抢票..." : "🚀 正在提交订单...";
+            document.body.appendChild(toast);
+
+            const items = Array.from(selectedItems).map(key => {
+                const [place, time] = key.split('|');
+                return { place, time };
+            });
+
+            try {
+                // 关键修改：无论手动还是自动，每次只发 1 个 /api/book 请求
+                const resp = await fetch('/api/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: currentDate, items })
+                });
+
+                const result = await resp.json();
+                document.body.removeChild(toast);
+
+                if (result.status === 'success' || result.status === 'partial') {
+                    const msg = result.status === 'success'
+                        ? '🎉 抢票成功喵！'
+                        : '🎉 抢票部分成功喵！';
+                    alert(msg);
+                    loadMatrix(currentDate);
+                    selectedItems.clear();
+                    updateBar();
+                    if (isAuto) stopTimer();
+                } else {
+                    alert('❌ 失败: ' + (result.msg || '未知错误'));
+                }
+            } catch (e) {
+                document.body.removeChild(toast);
+                alert('网络错误');
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerText = "立即下单"; }
+            }
+        }
+
+
+        // === 任务管理 JS ===
+
+        function openTaskManager() {
+            document.getElementById('taskModal').style.display = 'flex';
+            initDateSelector();
+            initPlaceSelector();
+            initTimeSelector();
+            loadTasks();
+            loadConfig(); // 加载配置
+            updateTaskSummary();
+        }
+
+                async function loadConfig() {
+                    try {
+                        const res = await fetch('/api/config');
+                        const config = await res.json();
+
+                        // 全局报警手机号 -> 填到 globalNotificationPhones
+                        if (config.notification_phones) {
+                            const el = document.getElementById('globalNotificationPhones');
+                            if (el) {
+                                el.value = (config.notification_phones || []).join(', ');
+                            }
+                        }
+
+                        if (config.retry_interval != null) {
+                            document.getElementById('retryInterval').value = config.retry_interval;
+                        }
+
+                        if (config.aggressive_retry_interval != null) {
+                            document.getElementById('aggressiveRetryInterval').value =
+                                config.aggressive_retry_interval;
+                        }
+
+                        if (config.locked_retry_interval != null) {
+                            document.getElementById('lockedRetryInterval').value =
+                                config.locked_retry_interval;
+                        }
+
+                        if (config.locked_max_seconds != null) {
+                            document.getElementById('lockedMaxSeconds').value =
+                                config.locked_max_seconds;
+                        }
+
+                        // ✅ 健康检查配置
+                        if (config.health_check_enabled != null) {
+                            const chk = document.getElementById('healthCheckEnabled');
+                            if (chk) chk.checked = !!config.health_check_enabled;
+                        }
+                        if (config.health_check_interval_min != null) {
+                            const inp = document.getElementById('healthCheckInterval');
+                            if (inp) inp.value = config.health_check_interval_min;
+                        }
+                    } catch (e) {
+                        console.error('加载配置失败', e);
+                    }
+                }
+
+
+        async function checkToken() {
+            try {
+                const res = await fetch('/api/config/check-token', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ ' + data.msg);
+                } else {
+                    alert('❌ ' + data.msg + '\n\n如果已配置手机号，系统尝试发送了报警短信。');
+                }
+            } catch (e) {
+                alert('网络请求失败');
+            }
+        }
+
+        async function refreshCookie() {
+            try {
+                const res = await fetch('/api/config/refresh-cookie', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ ' + data.msg);
+                } else {
+                    alert('❌ 刷新失败: ' + data.msg);
+                }
+            } catch (e) {
+                alert('刷新失败');
+            }
+        }
+
+        async function updateAuth() {
+            const token = document.getElementById('newToken').value.trim();
+            const cookie = document.getElementById('newCookie').value.trim();
+            if (!token || !cookie) return alert("请填写完整的 Token 和 Cookie");
+
+            try {
+                const res = await fetch('/api/config/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, cookie })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ ' + data.msg);
+                    document.getElementById('authUpdateArea').style.display = 'none';
+                    // 重新检查一下
+                    checkToken();
+                } else {
+                    alert('❌ 更新失败: ' + data.msg);
+                }
+            } catch (e) { alert('更新失败'); }
+        }
+
+        async function saveConfig() {
+            try {
+                const globalNotificationPhones = document
+                    .getElementById('globalNotificationPhones')
+                    .value.split(/[,，]/)
+                    .map(s => s.trim())
+                    .filter(Boolean);
+
+                const retryInterval = parseFloat(document.getElementById('retryInterval').value);
+                const aggressiveRetryInterval = parseFloat(document.getElementById('aggressiveRetryInterval').value);
+                const lockedRetryInterval = parseFloat(document.getElementById('lockedRetryInterval').value);
+                const lockedMaxSeconds = parseFloat(document.getElementById('lockedMaxSeconds').value);
+
+                // 获取健康检查字段
+                const healthEnabledEl = document.getElementById('healthCheckEnabled');
+                const healthIntervalEl = document.getElementById('healthCheckInterval');
+
+                const body = {
+                    notification_phones: globalNotificationPhones,
+                    retry_interval: isNaN(retryInterval) ? 1.0 : retryInterval,
+                    aggressive_retry_interval: isNaN(aggressiveRetryInterval) ? 0.3 : aggressiveRetryInterval,
+                    locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
+                    locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
+                };
+
+                // 健康检查字段
+                if (healthEnabledEl) {
+                    body.health_check_enabled = !!healthEnabledEl.checked;
+                }
+                if (healthIntervalEl) {
+                    const h = parseFloat(healthIntervalEl.value);
+                    if (!isNaN(h)) body.health_check_interval_min = h;
+                }
+
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                const result = await res.json();
+                if (result.status === 'success') {
+                    alert('保存成功！');
+                } else {
+                    alert('保存失败：' + (result.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error('保存配置失败', e);
+                alert('保存失败，请查看控制台日志');
+            }
+        }
+
+
+
+
+        async function testSMS() {
+            const phones = document.getElementById('globalNotificationPhones').value.split(/[,，]/).map(s => s.trim()).filter(s => s);
+            if (phones.length === 0) return alert('请先输入手机号');
+
+            try {
+                const res = await fetch('/api/config/test-sms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phones })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ ' + data.msg);
+                } else {
+                    alert('❌ ' + data.msg);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('网络请求失败，请检查控制台日志');
+            }
+        }
+
+        function initDateSelector() {
+            const container = document.getElementById('targetDateList');
+            container.innerHTML = '';
+            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+            // 生成未来14天
+            for (let i = 0; i < 14; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() + i);
+
+                const month = d.getMonth() + 1;
+                const day = d.getDate();
+                const dateStr = `${month}/${day}`;
+                const weekStr = weekdays[d.getDay()];
+
+                // 第一行：偏移描述（今天 / 明天 / 后天 / N天后）
+                let offsetLabel;
+                if (i === 0) offsetLabel = '今天';
+                else if (i === 1) offsetLabel = '明天';
+                else if (i === 2) offsetLabel = '后天';
+                else offsetLabel = `${i}天后`;
+
+                // 第二行：具体日期 + 周几
+                const detailLabel = `${dateStr} ${weekStr}`;
+
+                const btn = document.createElement('div');
+                btn.style.cssText = `
+                    padding:6px;
+                    border:1px solid #ddd;
+                    border-radius:6px;
+                    cursor:pointer;
+                    text-align:center;
+                    font-size:12px;
+                    background:white;
+                `;
+
+                // 颜色：今天红，明天绿，其他默认
+                let offsetColor = '#333';
+                if (i === 0) offsetColor = 'red';
+                else if (i === 1) offsetColor = 'green';
+
+                btn.innerHTML = `
+                    <div style="font-weight:bold;color:${offsetColor};">${offsetLabel}</div>
+                    <div style="color:#666;font-size:11px">${detailLabel}</div>
+                `;
+
+                btn.onclick = () => {
+                    document.querySelectorAll('#targetDateList div').forEach(b => {
+                        b.style.borderColor = '#ddd';
+                        b.style.background = 'white';
+                        b.style.color = '#333';
+                    });
+                    btn.style.borderColor = '#007aff';
+                    btn.style.background = '#e3f2fd';
+                    btn.style.color = '#007aff';
+
+                    // 仍然用「i」作为 target_day_offset，后端逻辑不变
+                    document.getElementById('taskOffset').value = i;
+                    updateTaskSummary();
+                };
+
+                // 默认选中后天 (i=2)
+                if (i === 2) btn.click();
+
+                container.appendChild(btn);
+            }
+        }
+
+
+        function initPlaceSelector() {
+            const container = document.getElementById('placeSelector');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            // 使用缓存的场地列表，如果为空则兜底显示 1-17
+            const placesToRender = (cachedPlaces && cachedPlaces.length > 0)
+                ? cachedPlaces
+                : Array.from({ length: 17 }, (_, i) => String(i + 1));
+
+            placesToRender.forEach(p => {
+                const btn = document.createElement('div');
+                btn.className = 'tag-btn';
+                btn.innerText = p + "号";
+                btn.onclick = () => {
+                    // 限制：最多选 3 个候选场地
+                    if (!btn.classList.contains('active')) {
+                        const count = document.querySelectorAll('#placeSelector .active').length;
+                        if (count >= 3) return alert("⚠️ 限制：同一时间段最多只能抢 3 个场地！");
+                    }
+                    btn.classList.toggle('active');
+                    updateTaskSummary();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+
+        function initTimeSelector() {
+            const container = document.getElementById('timeSelector');
+            if (container.children.length > 0) return;
+
+            // 与服务器有效时段保持一致：10:00 - 21:00
+            for (let i = 10; i <= 21; i++) {
+                const timeStr = String(i).padStart(2, '0') + ":00";
+                const btn = document.createElement('div');
+                btn.className = 'tag-btn';
+                btn.innerText = timeStr;
+                btn.onclick = () => {
+                    // 限制：如果当前未选中，且已选数量 >= 3，则禁止选中
+                    if (!btn.classList.contains('active')) {
+                        const count = document.querySelectorAll('#timeSelector .active').length;
+                        if (count >= 3) return alert("⚠️ 限制：单个场地最多只能抢 3 个小时！");
+                    }
+                    btn.classList.toggle('active');
+                    updateTaskSummary();
+                };
+                container.appendChild(btn);
+            }
+        }
+
+
+        function onTaskTypeChange() {
+            const type = document.getElementById('taskType').value;
+            const weeklyGroup = document.getElementById('weeklyDayGroup');
+            if (!weeklyGroup) return;
+
+            if (type === 'weekly') {
+                weeklyGroup.style.display = 'block';
+            } else {
+                weeklyGroup.style.display = 'none';
+            }
+        }
+
+
+        function updateTaskSummary() {
+            // 已选场地和时间
+            const selectedPlaces = Array.from(
+                document.querySelectorAll('#placeSelector .tag-btn.active')
+            ).map(btn => (btn.dataset.place || btn.innerText.replace('号', '')));
+
+            const selectedTimes = Array.from(
+                document.querySelectorAll('#timeSelector .tag-btn.active')
+            ).map(btn => btn.innerText);
+
+            // 目标数量
+            const targetCount = parseInt(document.getElementById('taskTargetCount').value || '0', 10);
+
+            // 计算摘要
+            let text = '';
+            if (selectedPlaces.length && selectedTimes.length) {
+                text = `已选 <b>${selectedPlaces.length}</b> 个候选场地 × <b>${selectedTimes.length}</b> 个时间段，` +
+                    `理论上最多可以凑出 <b>${selectedPlaces.length}</b> 块场地。`;
+            } else {
+                text = '请先选择候选场地和时间段';
+            }
+
+            // 健康检查配置
+            const healthCheckEnabled = document.getElementById('healthCheckEnabled').checked;
+            const healthCheckInterval = document.getElementById('healthCheckInterval').value;
+
+            text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，间隔：${healthCheckInterval} 分钟`;
+
+            // 更新任务摘要
+            const summaryEl = document.getElementById('taskSummary');
+            if (summaryEl) summaryEl.innerHTML = text;
+        }
+
+
+
+
+        function closeTaskManager() {
+            document.getElementById('taskModal').style.display = 'none';
+        }
+
+        async function loadTasks() {
+            const list = document.getElementById('taskList');
+            list.innerHTML = '加载中...';
+            try {
+                const res = await fetch('/api/tasks');
+                const tasks = await res.json();
+                list.innerHTML = '';
+                if (tasks.length === 0) {
+                    list.innerHTML = '<div style="text-align:center;color:#999">暂无任务</div>';
+                    return;
+                }
+
+                tasks.forEach(t => {
+                    // 1. 频率文案（每天 / 每周几 / 只执行一次）
+                    let desc = "";
+                    if (t.type === 'daily') {
+                        desc = `每天 ${t.run_time}`;
+                    } else if (t.type === 'weekly') {
+                        const weekNames = ['一', '二', '三', '四', '五', '六', '日'];
+                        const wd = Number(t.weekly_day || 0);
+                        desc = `每周${weekNames[wd]} ${t.run_time}`;
+                    } else if (t.type === 'once') {
+                        desc = `只执行一次 ${t.run_time}`;
+                    } else {
+                        desc = `${t.run_time}`;
+                    }
+
+                    // 2. 计算「下一次执行日期」
+                    const now = new Date();
+                    const runTimeStr = t.run_time || "00:00:00";
+                    const [hhStr, mmStr, ssStr] = runTimeStr.split(':');
+                    const hh = parseInt(hhStr || '0', 10);
+                    const minute = parseInt(mmStr || '0', 10);   // 用 minute 表示“分钟”
+                    const ss = parseInt(ssStr || '0', 10);
+
+                    let nextRun = new Date(now.getTime());
+                    nextRun.setHours(hh, minute, ss, 0);
+
+                    if (t.type === 'daily' || t.type === 'once') {
+                        // 每天 / 单次：今天已经过了这个时间，则从明天开始算
+                        if (nextRun <= now) {
+                            nextRun.setDate(nextRun.getDate() + 1);
+                        }
+                    } else if (t.type === 'weekly') {
+                        // 每周：找到下一次到达指定 weekday 的那一天
+                        // 后端保存的 weekday：0=周一,...,6=周日
+                        const targetWeekday = Number(t.weekly_day || 0);
+
+                        // JS 的 getDay(): 0=周日,...,6=周六
+                        const jsToday = now.getDay();              // 0..6 (日..六)
+                        const ourToday = (jsToday + 6) % 7;        // 转成 0..6 (一..日)
+
+                        let diff = targetWeekday - ourToday;
+                        // 如果今天已经过了触发时间，或今天不是目标周几，就往后推一周
+                        if (diff < 0 || (diff === 0 && nextRun <= now)) {
+                            diff += 7;
+                        }
+                        nextRun = new Date(now.getTime());
+                        nextRun.setDate(now.getDate() + diff);
+                        nextRun.setHours(hh, minute, ss, 0);
+                    }
+
+                    // 3. 在「下一次执行日期」基础上 + offset 天，得到真正要抢的场地日期
+                    const offset = Number(t.target_day_offset || 0);
+                    const targetDate = new Date(nextRun.getTime());
+                    targetDate.setDate(targetDate.getDate() + offset);
+
+                    const monthStr = String(targetDate.getMonth() + 1).padStart(2, "0"); // 月
+                    const dayStr = String(targetDate.getDate()).padStart(2, "0");        // 日
+                    const weekNamesFull = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                    const weekLabel = weekNamesFull[targetDate.getDay()];
+
+                    // 4. 前缀里的「当天 / 明天 / 后天 / N天后」仍然只根据 offset 来说
+                    let dayPrefix = '';
+                    if (offset === 0) dayPrefix = '当天';
+                    else if (offset === 1) dayPrefix = '明天';
+                    else if (offset === 2) dayPrefix = '后天';
+                    else dayPrefix = `${offset}天后`;
+
+                    const dayDesc = `${dayPrefix} (${monthStr}-${dayStr} ${weekLabel})`;
+
+                    // 5. 任务策略说明
+                    let detail;
+                    if (t.config) {
+                        if (t.config.mode === 'priority') {
+                            const seqStr = t.config.priority_sequences.map(s => `[${s.join('+')}]`).join(', ');
+                            const tStr = t.config.target_times.join(',');
+                            detail = `🎯 目标：<b>${t.config.target_count}</b>块 (优先级)<br>🔥 序列：${seqStr}<br>⌚ 时间：${tStr}`;
+                        } else {
+                            const pStr = (t.config.candidate_places || []).join(',');
+                            const tStr = (t.config.target_times || []).join(',');
+                            const modeStr = t.config.smart_continuous ? "连号优先" : "普通模式";
+                            detail = `🎯 目标：<b>${t.config.target_count}</b>块 (${modeStr})<br>🏸 候选：${pStr}号<br>⌚ 时间：${tStr}`;
+                        }
+                    } else if (t.items) {
+                        const itemsStr = t.items.map(i => `${i.place}号${i.time}`).join(', ');
+                        detail = `🎯 目标：${itemsStr}`;
+                    } else {
+                        detail = "数据格式错误";
+                    }
+
+                    // 6. 如果任务配置了专属通知手机号，也展示出来
+                    if (t.notification_phones && t.notification_phones.length > 0) {
+                        const phoneStr = t.notification_phones.join(', ');
+                        detail += `<br>📱 通知手机：${phoneStr}`;
+                    }
+
+                    // 7. 渲染到任务列表里
+                    const div = document.createElement('div');
+                    div.className = 'task-item';
+                    div.innerHTML = `
+                        <div>
+                            <div class="task-info"><b>${desc}</b> 自动抢 <b>${dayDesc}</b> 的场</div>
+                            <div class="task-meta" style="color:#666;margin-top:5px;line-height:1.4;">${detail}</div>
+                        </div>
+                        <div style="display:flex;gap:5px;align-items:center;">
+                            <button class="btn-manage" style="background:#34c759;font-size:12px;padding:4px 8px;" onclick="runTask('${t.id}')">⚡ 立即运行</button>
+                            <button class="btn-del" onclick="deleteTask('${t.id}')">删除</button>
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '加载失败';
+            }
+        }
+
+
+
+        async function runTask(id) {
+            if (!confirm('确定要立即手动执行一次该任务吗？')) return;
+            try {
+                const res = await fetch(`/api/tasks/${id}/run`, { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') alert('任务已触发！请查看控制台日志');
+                else alert('触发失败: ' + data.msg);
+            } catch (e) { alert('网络错误'); }
+        }
+
+        function togglePlaceMode() {
+            // 现在只保留“普通多选”，把普通区域显示出来即可
+            const normal = document.getElementById('modeNormal');
+            if (normal) normal.style.display = 'block';
+
+            // 兼容旧版本：如果页面中残留了其他区域，就全部隐藏
+            const priority = document.getElementById('modePriority');
+            const timePri = document.getElementById('modeTimePriority');
+            if (priority) priority.style.display = 'none';
+            if (timePri) timePri.style.display = 'none';
+
+            // 时间选择永远用“点选”的方式
+            const timeSelector = document.getElementById('timeSelector');
+            const timeRangeArea = document.getElementById('timeRangeArea');
+            const normalLabel = document.getElementById('timeLabelNormal');
+            const priorityLabel = document.getElementById('timeLabelPriority');
+
+            if (timeSelector) timeSelector.style.display = 'flex';
+            if (timeRangeArea) timeRangeArea.style.display = 'none';
+            if (normalLabel) normalLabel.style.display = 'block';
+            if (priorityLabel) priorityLabel.style.display = 'none';
+        }
+
+
+
+        async function createTask() {
+            const time = document.getElementById('taskTime').value;
+            const type = document.getElementById('taskType').value;
+            const offset = parseInt(document.getElementById('taskOffset').value || '0', 10);
+            const targetCount = parseInt(document.getElementById('taskTargetCount').value || '2', 10);
+
+            // 1. 收集时间（用按钮选中的）
+            const times = [];
+            document.querySelectorAll('#timeSelector .active').forEach(btn => {
+                times.push(btn.innerText);
+            });
+            if (times.length === 0) {
+                alert('请至少选择一个时间段！');
+                return;
+            }
+
+            // 2. 收集场地（候选池）
+            const places = [];
+            document.querySelectorAll('#placeSelector .active').forEach(btn => {
+                places.push(btn.innerText.replace('号', ''));
+            });
+            if (places.length === 0) {
+                alert('请至少选择一个场地！');
+                return;
+            }
+
+            // 3. 只保留“普通模式”的 config
+            const config = {
+                mode: 'normal',  // 保留字段名，后端沿用现有逻辑
+                candidate_places: places,
+                smart_continuous: document.getElementById('taskSmartMode').checked,
+                target_times: times,
+                target_count: targetCount
+            };
+
+            // 4. 频率和“周几执行”
+            let weeklyDay = 0;
+            if (type === 'weekly') {
+                // 这里的 select 元素 id 实际叫 weeklyDay
+                const wdSelect = document.getElementById('weeklyDay');
+                weeklyDay = wdSelect ? parseInt(wdSelect.value || '0', 10) : 0;
+            }
+
+
+            // 5. 解析任务级手机号
+            const phoneInput = document.getElementById('notificationPhones').value || '';
+            const taskPhones = phoneInput
+                .split(/[,，]/)
+                .map(s => s.trim())
+                .filter(s => s);
+
+            const task = {
+                run_time: time,
+                type: type,                 // 'once' / 'daily' / 'weekly'
+                target_day_offset: offset,  // 还是沿用 N 天后
+                config: config,
+                weekly_day: weeklyDay,
+                notification_phones: taskPhones
+            };
+
+            try {
+                await saveConfig();  // 仍然保存全局配置（速度 & 全局手机号）
+                const resp = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(task)
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    alert('任务已保存');
+                    loadTasks();
+                } else {
+                    alert('保存失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('保存失败，请查看控制台日志');
+            }
+        }
+
+
+        async function deleteTask(id) {
+            if (!confirm('确定删除?')) return;
+            await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            loadTasks();
+        }
+    </script>
+
+</body>
+
+</html>
