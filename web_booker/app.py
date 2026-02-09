@@ -1,3 +1,10 @@
+"""
+变更记录（手动维护）:
+- 2026-02-09 03:29 保留健康检查调度并统一任务通知/结果上报
+- 2026-02-09 04:10 健康检查增加起始时间并在前端显示预计下次检查
+- 2026-02-09 04:40 接入 PushPlus 并增加微信通知配置入口
+"""
+
 from flask import Flask, render_template, request, jsonify
 import requests
 import json
@@ -12,26 +19,41 @@ import threading
 import os
 import hashlib
 
+HEALTH_CHECK_NEXT_RUN = None
+
+def normalize_time_str(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        try:
+            dt = datetime.strptime(value, "%H:%M")
+            return dt.strftime("%H:%M")
+        except ValueError:
+            return None
+    return None
+
 # 定期健康检查的函数
 def health_check():
     """
-    定期检查 token 和 cookie 的有效性，并发送短信通知。
+    定期检查获取场地状态是否正常，并发送短信通知。
     """
     phones = CONFIG.get('notification_phones') or []
-
-    # 检查 Token 是否有效
-    is_valid, msg = client.check_token()
-    if not is_valid:
-        print(f"❌ Token 失效: {msg}")
+    pushplus_tokens = CONFIG.get('pushplus_tokens') or []
+    today = datetime.now().strftime("%Y-%m-%d")
+    matrix_res = client.get_matrix(today)
+    if "error" in matrix_res:
+        err_msg = matrix_res["error"]
+        log(f"❌ 健康检查失败: 获取场地状态异常: {err_msg}")
         if phones:
-            task_manager.send_notification(f"⚠️ Token 失效: {msg}", phones=phones)
-
-    # 检查 Cookie 是否有效
-    is_valid, msg = client.refresh_cookie()
-    if not is_valid:
-        print(f"❌ Cookie 刷新失败: {msg}")
-        if phones:
-            task_manager.send_notification(f"⚠️ Cookie 刷新失败: {msg}", phones=phones)
+            task_manager.send_notification(f"⚠️ 健康检查失败：获取场地状态异常({err_msg})", phones=phones)
+        if pushplus_tokens:
+            task_manager.send_wechat_notification(
+                f"⚠️ 健康检查失败：获取场地状态异常({err_msg})",
+                tokens=pushplus_tokens,
+            )
+    else:
+        log("✅ 健康检查通过：场地状态获取正常")
 
 # 每隔一段时间执行健康检查
 def schedule_health_check():
@@ -52,19 +74,35 @@ def schedule_health_check():
         check_interval = 30.0
     if check_interval < 1:
         check_interval = 1
+    start_time = CONFIG.get('health_check_start_time', '00:00')
+    start_time = normalize_time_str(start_time) or '00:00'
 
-    schedule.every(check_interval).minutes.do(health_check).tag("health_check")
-    print(f"📅 健康检查已安排，每 {check_interval} 分钟执行一次.")
+    def compute_next_run():
+        now = datetime.now()
+        start_dt = datetime.strptime(
+            f"{now.strftime('%Y-%m-%d')} {start_time}", "%Y-%m-%d %H:%M"
+        )
+        if now <= start_dt:
+            return start_dt
+        elapsed = (now - start_dt).total_seconds() / 60.0
+        steps = int(elapsed // check_interval) + 1
+        return start_dt + timedelta(minutes=steps * check_interval)
 
+    def health_check_tick():
+        global HEALTH_CHECK_NEXT_RUN
+        if HEALTH_CHECK_NEXT_RUN is None:
+            HEALTH_CHECK_NEXT_RUN = compute_next_run()
+        if datetime.now() >= HEALTH_CHECK_NEXT_RUN:
+            health_check()
+            HEALTH_CHECK_NEXT_RUN = HEALTH_CHECK_NEXT_RUN + timedelta(minutes=check_interval)
 
-# 启动健康检查的后台线程
-def run_health_check():
-    """
-    启动后台线程执行定时健康检查任务。
-    """
-    while True:
-        schedule.run_pending()  # 执行所有待处理的定时任务
-        time.sleep(1)  # 防止CPU空转
+    global HEALTH_CHECK_NEXT_RUN
+    HEALTH_CHECK_NEXT_RUN = compute_next_run()
+    schedule.every(1).minutes.do(health_check_tick).tag("health_check")
+    print(
+        f"📅 健康检查已安排，起始时间 {start_time}，每 {check_interval} 分钟执行一次."
+    )
+
 
 app = Flask(__name__)
 
@@ -82,6 +120,7 @@ CONFIG = {
         "api_key": "6127d94d28a04c06a8f61b70eac79cc3"
     },
     "notification_phones": [],
+    "pushplus_tokens": [],
     "retry_interval": 1.0,
     "aggressive_retry_interval": 1.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -89,6 +128,7 @@ CONFIG = {
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
+    "health_check_start_time": "00:00", # 起始时间 (HH:MM)
 }
 
 CONFIG_FILE = "config.json"
@@ -109,6 +149,8 @@ if os.path.exists(CONFIG_FILE):
             saved = json.load(f)
             if 'notification_phones' in saved:
                 CONFIG['notification_phones'] = saved['notification_phones']
+            if 'pushplus_tokens' in saved:
+                CONFIG['pushplus_tokens'] = saved['pushplus_tokens']
             if 'retry_interval' in saved:
                 CONFIG['retry_interval'] = saved['retry_interval']
             if 'aggressive_retry_interval' in saved:
@@ -122,6 +164,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
                 CONFIG['health_check_interval_min'] = saved['health_check_interval_min']
+            if 'health_check_start_time' in saved:
+                CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
             if 'auth' in saved:
                 # 覆盖默认的 auth 配置
                 CONFIG['auth'].update(saved['auth'])
@@ -525,10 +569,17 @@ class TaskManager:
         if phones is None:
             phones = CONFIG.get('notification_phones', [])
 
+        # 归一化手机号：允许字符串/列表混用
+        if isinstance(phones, str):
+            phones = [p.strip() for p in phones.split(',') if p.strip()]
+        elif isinstance(phones, list):
+            phones = [str(p).strip() for p in phones if str(p).strip()]
+
         if not phones:
+            log(f"⚠️ 未配置短信手机号，通知内容未发送: {content}")
             return  # 没有号码就直接返回
 
-        print(f"📧 正在发送短信通知给: {phones}")
+        log(f"📧 正在发送短信通知给: {phones}")
         try:
             u = CONFIG['sms']['user']
             p = CONFIG['sms']['api_key']
@@ -558,15 +609,59 @@ class TaskManager:
 
             code = resp.text
             msg = error_map.get(code, f"未知错误({code})")
-            print(f"📧 短信接口返回: [{code}] {msg}")
+            log(f"📧 短信接口返回: [{code}] {msg}")
 
             if code != '0':
-                print(f"⚠️ 短信发送异常: {msg}")
+                log(f"⚠️ 短信发送异常: {msg}")
                 return False, msg
             return True, "发送成功"
 
         except Exception as e:
-            print(f"❌ 短信发送异常: {e}")
+            log(f"❌ 短信发送异常: {e}")
+            return False, str(e)
+
+    def send_wechat_notification(self, content, tokens=None):
+        """
+        发送微信通知（PushPlus）：
+        - tokens 不为 None 时，优先使用传入的 token（任务级别）
+        - 否则退回到全局 CONFIG['pushplus_tokens']
+        """
+        if tokens is None:
+            tokens = CONFIG.get('pushplus_tokens', [])
+
+        if isinstance(tokens, str):
+            tokens = [t.strip() for t in tokens.split(',') if t.strip()]
+        elif isinstance(tokens, list):
+            tokens = [str(t).strip() for t in tokens if str(t).strip()]
+
+        if not tokens:
+            log(f"⚠️ 未配置 PushPlus token，微信通知未发送: {content}")
+            return False, "未配置 PushPlus token"
+
+        try:
+            payload = {
+                "title": "场地预订通知",
+                "content": content,
+                "template": "txt",
+            }
+            for token in tokens:
+                payload["token"] = token
+                resp = requests.post(
+                    "http://www.pushplus.plus/send",
+                    json=payload,
+                    timeout=10,
+                )
+                try:
+                    data = resp.json()
+                except ValueError:
+                    data = {"code": -1, "msg": resp.text}
+                if data.get("code") != 200:
+                    log(f"⚠️ PushPlus 发送失败: {data}")
+                else:
+                    log("📩 PushPlus 发送成功")
+            return True, "发送成功"
+        except Exception as e:
+            log(f"❌ PushPlus 发送异常: {e}")
             return False, str(e)
 
     def execute_task(self, task):
@@ -574,17 +669,33 @@ class TaskManager:
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
+        task_pushplus_tokens = task.get('pushplus_tokens') or None
+        task_id = task.get('id')
+        last_fail_reason = None
 
-        # 0. 先检查 token 是否有效
-        #    注意：这里的报警必须走“全局手机号”，确保所有任务共用同一报警通道
+        def build_date_display(date_str):
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                weekday_map = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                weekday_label = weekday_map[dt.weekday()]
+                return dt.strftime("%Y-%m-%d") + f"（{weekday_label}）"
+            except Exception:
+                return date_str
+
+        def notify_task_result(success, message, items=None, date_str=None):
+            prefix = "【预订成功】" if success else "【预订失败】"
+            details = message
+            if date_str:
+                details = f"{build_date_display(date_str)} {message}"
+            content = f"{prefix}{details}"
+            self.send_notification(content, phones=task_phones)
+            self.send_wechat_notification(content, tokens=task_pushplus_tokens)
+
+        # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
+        #    以“获取场地状态异常”为准触发短信提醒，避免误报
         is_valid, token_msg = client.check_token()
         if not is_valid:
-            log(f"❌ Token 失效，任务终止: {token_msg}")
-            # 不传 phones 参数，让 send_notification 使用 CONFIG['notification_phones']
-            self.send_notification(
-                f"预订失败报警：Token已失效({token_msg})，请立即更新！"
-            )
-            return
+            log(f"⚠️ Token 可能已失效，但继续尝试获取场地状态: {token_msg}")
 
         # 1. 计算目标日期
         # 新增 target_mode / target_date 支持：
@@ -608,7 +719,13 @@ class TaskManager:
 
         # 3. 旧版兼容：没有新配置时走最早的 items 逻辑
         if not config and 'items' in task:
-            client.submit_order(target_date, task['items'])
+            res = client.submit_order(target_date, task['items'])
+            status = res.get("status")
+            if status in ("success", "partial"):
+                msg = "全部成功" if status == "success" else "部分成功"
+                notify_task_result(True, f"下单完成：{msg}（{status}）", items=task['items'], date_str=target_date)
+            else:
+                notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
             return
 
         # 4. 这次任务真正关心的 (场地, 时间) 组合，用来判断是否还在“锁定未开放”阶段
@@ -682,7 +799,7 @@ class TaskManager:
                 # 会话 / 凭证失效，这种重试也没用，直接报警退出
                 if "失效" in err_msg or "凭证" in err_msg or "token" in err_msg.lower():
                     log(f"❌ 严重错误: {err_msg}，任务终止。")
-                    self.send_notification(f"预订失败报警：登录状态/Token 失效({err_msg})，请尽快处理！")
+                    notify_task_result(False, f"登录状态/Token 失效({err_msg})，请尽快处理！", date_str=target_date)
                     return
 
                 # 普通错误：按普通间隔重试
@@ -833,6 +950,7 @@ class TaskManager:
             else:
                 if 'candidate_places' not in config:
                     log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
+                    notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
                     return
 
                 candidate_places = [str(p) for p in config['candidate_places']]
@@ -904,27 +1022,19 @@ class TaskManager:
 
                     # 发通知短信
                     try:
-                        # 在短信里加上“周几”的信息
-                        try:
-                            dt = datetime.strptime(target_date, "%Y-%m-%d")
-                            weekday_map = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-                            weekday_label = weekday_map[dt.weekday()]
-                            date_display = dt.strftime("%Y-%m-%d") + f"（{weekday_label}）"
-                        except Exception:
-                            # 兜底：解析失败就用原始 target_date
-                            date_display = target_date
-
-                        detail_msg = f"已预订 {date_display} 的场地: "
-                        items_str = [f"{i['place']}号场({i['time']})" for i in final_items]
-                        detail_msg += ", ".join(items_str)
-                        detail_msg += " 快召集球友啦！"
-                        self.send_notification(detail_msg, phones=task_phones)
+                        notify_task_result(
+                            True,
+                            f"已预订",
+                            items=final_items,
+                            date_str=target_date,
+                        )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
 
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
+                    last_fail_reason = res.get('msg') or "下单失败"
 
             # 5. 根据 locked 状态决定是否继续死磕（使用锁定配置 + 最多刷 N 秒保护）
             if locked_exists:
@@ -942,6 +1052,10 @@ class TaskManager:
                         f"⏳ 已连续等待『锁定未开放』状态约 {int(elapsed)} 秒，"
                         f"达到上限 {locked_max_seconds}s，本次任务结束。"
                     )
+                    fail_msg = "锁定未开放等待超时，任务结束。"
+                    if last_fail_reason:
+                        fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
+                    notify_task_result(False, fail_msg, date_str=target_date)
                     return
 
                 # 仍在允许范围内，按锁定间隔继续轮询
@@ -955,12 +1069,16 @@ class TaskManager:
                 # 一旦不再是 locked（要么 available 被抢完，要么状态变 booked），重置计时并结束
                 locked_mode_started_at = None
                 log("🙈 目标场地已经开放但没有可用组合(大概率被别人抢完了)，本次任务结束。")
+                fail_msg = "目标场地已开放但无可用组合，可能已被抢完。"
+                if last_fail_reason:
+                    fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
+                notify_task_result(False, fail_msg, date_str=target_date)
                 return
 
         # print(" 所有重试均失败，放弃。")
 
     def refresh_schedule(self):
-        schedule.clear()
+        schedule.clear("task")
         print(f"🔄 [调度器] 正在刷新任务列表 (共 {len(self.tasks)} 个)...")
 
         # 内部工具函数：支持单次任务执行完后自动删除自身
@@ -987,7 +1105,7 @@ class TaskManager:
 
             try:
                 if t_type == 'daily':
-                    schedule.every().day.at(run_time).do(make_job(task, is_once=False))
+                    schedule.every().day.at(run_time).do(make_job(task, is_once=False)).tag("task")
                     print(f"   -> 已添加每日任务: {run_time}")
                 elif t_type == 'weekly':
                     days = [
@@ -1000,11 +1118,11 @@ class TaskManager:
                         schedule.every().sunday,
                     ]
                     wd = int(task['weekly_day'])
-                    days[wd].at(run_time).do(make_job(task, is_once=False))
+                    days[wd].at(run_time).do(make_job(task, is_once=False)).tag("task")
                     print(f"   -> 已添加每周任务: 周{['一', '二', '三', '四', '五', '六', '日'][wd]} {run_time}")
                 elif t_type == 'once':
                     # 单次任务：到点执行一次，然后自动从任务列表和调度器中移除
-                    schedule.every().day.at(run_time).do(make_job(task, is_once=True))
+                    schedule.every().day.at(run_time).do(make_job(task, is_once=True)).tag("task")
                     print(f"   -> 已添加单次任务: {run_time}（执行一次后自动删除）")
             except Exception as e:
                 print(f"❌ 添加任务失败: {e}")
@@ -1100,12 +1218,14 @@ def update_config():
     """
     更新全局配置：
     - notification_phones：全局报警手机号（列表，可以填 0~N 个）
+    - pushplus_tokens：全局微信通知 token（列表或逗号分隔）
     - retry_interval：普通重试间隔
     - aggressive_retry_interval：死磕模式重试间隔
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
+    - health_check_start_time: 健康检查起始时间（HH:MM）
     """
     try:
         data = request.json or {}
@@ -1151,12 +1271,30 @@ def update_config():
             CONFIG['notification_phones'] = phones
             saved['notification_phones'] = phones
 
+        # 1.1) 全局微信通知 token（PushPlus）
+        if 'pushplus_tokens' in data:
+            tokens = data['pushplus_tokens'] or []
+            if isinstance(tokens, str):
+                tokens = [t.strip() for t in tokens.split(',') if t.strip()]
+            elif isinstance(tokens, list):
+                tokens = [str(t).strip() for t in tokens if str(t).strip()]
+            else:
+                tokens = []
+            CONFIG['pushplus_tokens'] = tokens
+            saved['pushplus_tokens'] = tokens
+
         # 2) 各类重试 / 限制配置
         _update_float_field('retry_interval', 0.1, CONFIG.get('retry_interval', 1.0))
         _update_float_field('aggressive_retry_interval', 0.1, CONFIG.get('aggressive_retry_interval', 0.3))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
+
+        if 'health_check_start_time' in data:
+            time_str = normalize_time_str(data['health_check_start_time'])
+            if time_str:
+                CONFIG['health_check_start_time'] = time_str
+                saved['health_check_start_time'] = time_str
 
         # 3) 健康检查开关（勾选 / 取消）
         if 'health_check_enabled' in data:
@@ -1316,10 +1454,6 @@ if __name__ == "__main__":
     # 启动健康检查调度（如果启用）
     schedule_health_check()
 
-    # 启动健康检查的线程
-    threading.Thread(target=run_health_check, daemon=True).start()
-
     print("🚀 服务已启动，访问 http://127.0.0.1:5000")
     print("📋 已加载测试接口: /api/config/test-sms")
-    app.run(debug=True, port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动
-
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动

@@ -511,6 +511,11 @@
                     <input type="text" id="notificationPhones" class="form-control"
                            placeholder="例如: 13800000000, 13900000000">
                 </div>
+                <div class="form-group">
+                    <label>💬 微信通知 Token (本任务，PushPlus，多个用逗号分隔)</label>
+                    <input type="text" id="taskPushplusTokens" class="form-control"
+                           placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
+                </div>
 
                 <!-- 日期选择 -->
                 <div class="form-group">
@@ -652,12 +657,31 @@
                 * 每个自动任务上面的“通知手机号”只负责该任务订场成功后的短信。
             </div>
         </div>
+        <div class="form-group"
+             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <label style="font-weight:bold;margin-bottom:8px;">
+                💬 全局微信通知 Token (PushPlus)
+            </label>
+            <div style="display:flex;gap:10px;">
+                <input type="text" id="globalPushplusTokens" class="form-control"
+                       placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
+                <button class="btn btn-success" style="padding:6px 12px;font-size:12px;"
+                        onclick="saveConfig()">💾 确定保存</button>
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:5px;">
+                * 这里填写的是“全局微信通知 token”，用于健康检查等系统级提醒。<br>
+                * 每个自动任务上面的“微信通知 token”只负责该任务订场结果提醒。
+            </div>
+        </div>
 
         <!-- 健康检查 -->
         <div class="form-group">
             <label>健康检查</label>
             <input type="checkbox" id="healthCheckEnabled" onchange="updateTaskSummary()" />
             <label for="healthCheckEnabled">启用健康检查</label>
+            <br />
+            <label>健康检查开始时间 (HH:MM)</label>
+            <input type="time" id="healthCheckStartTime" value="00:00" onchange="updateTaskSummary()" />
             <br />
             <label>健康检查间隔 (分钟)</label>
             <input type="number" id="healthCheckInterval" value="30" min="1" onchange="updateTaskSummary()" />
@@ -1212,6 +1236,12 @@
                                 el.value = (config.notification_phones || []).join(', ');
                             }
                         }
+                        if (config.pushplus_tokens) {
+                            const el = document.getElementById('globalPushplusTokens');
+                            if (el) {
+                                el.value = (config.pushplus_tokens || []).join(', ');
+                            }
+                        }
 
                         if (config.retry_interval != null) {
                             document.getElementById('retryInterval').value = config.retry_interval;
@@ -1240,6 +1270,10 @@
                         if (config.health_check_interval_min != null) {
                             const inp = document.getElementById('healthCheckInterval');
                             if (inp) inp.value = config.health_check_interval_min;
+                        }
+                        if (config.health_check_start_time != null) {
+                            const inp = document.getElementById('healthCheckStartTime');
+                            if (inp) inp.value = config.health_check_start_time;
                         }
                     } catch (e) {
                         console.error('加载配置失败', e);
@@ -1305,6 +1339,11 @@
                     .value.split(/[,，]/)
                     .map(s => s.trim())
                     .filter(Boolean);
+                const globalPushplusTokens = document
+                    .getElementById('globalPushplusTokens')
+                    .value.split(/[,，]/)
+                    .map(s => s.trim())
+                    .filter(Boolean);
 
                 const retryInterval = parseFloat(document.getElementById('retryInterval').value);
                 const aggressiveRetryInterval = parseFloat(document.getElementById('aggressiveRetryInterval').value);
@@ -1314,9 +1353,11 @@
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
                 const healthIntervalEl = document.getElementById('healthCheckInterval');
+                const healthStartEl = document.getElementById('healthCheckStartTime');
 
                 const body = {
                     notification_phones: globalNotificationPhones,
+                    pushplus_tokens: globalPushplusTokens,
                     retry_interval: isNaN(retryInterval) ? 1.0 : retryInterval,
                     aggressive_retry_interval: isNaN(aggressiveRetryInterval) ? 0.3 : aggressiveRetryInterval,
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
@@ -1330,6 +1371,9 @@
                 if (healthIntervalEl) {
                     const h = parseFloat(healthIntervalEl.value);
                     if (!isNaN(h)) body.health_check_interval_min = h;
+                }
+                if (healthStartEl && healthStartEl.value) {
+                    body.health_check_start_time = healthStartEl.value;
                 }
 
                 const res = await fetch('/api/config', {
@@ -1535,8 +1579,28 @@
             // 健康检查配置
             const healthCheckEnabled = document.getElementById('healthCheckEnabled').checked;
             const healthCheckInterval = document.getElementById('healthCheckInterval').value;
+            const healthCheckStartTime = document.getElementById('healthCheckStartTime').value || '00:00';
 
-            text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，间隔：${healthCheckInterval} 分钟`;
+            function predictNextHealthCheck(startTime, intervalMin) {
+                const now = new Date();
+                const parts = (startTime || '00:00').split(':');
+                if (parts.length < 2) return null;
+                const start = new Date(now);
+                start.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+                const interval = parseFloat(intervalMin);
+                if (!interval || interval <= 0) return null;
+                if (now <= start) return start;
+                const elapsedMin = (now - start) / 60000;
+                const steps = Math.floor(elapsedMin / interval) + 1;
+                return new Date(start.getTime() + steps * interval * 60000);
+            }
+
+            const nextCheck = predictNextHealthCheck(healthCheckStartTime, healthCheckInterval);
+            const nextCheckText = nextCheck
+                ? `${nextCheck.getHours().toString().padStart(2, '0')}:${nextCheck.getMinutes().toString().padStart(2, '0')}`
+                : '未知';
+
+            text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -1656,6 +1720,10 @@
                         const phoneStr = t.notification_phones.join(', ');
                         detail += `<br>📱 通知手机：${phoneStr}`;
                     }
+                    if (t.pushplus_tokens && t.pushplus_tokens.length > 0) {
+                        const tokenStr = t.pushplus_tokens.join(', ');
+                        detail += `<br>💬 微信通知：${tokenStr}`;
+                    }
 
                     // 7. 渲染到任务列表里
                     const div = document.createElement('div');
@@ -1765,6 +1833,11 @@
                 .split(/[,，]/)
                 .map(s => s.trim())
                 .filter(s => s);
+            const tokenInput = document.getElementById('taskPushplusTokens').value || '';
+            const taskPushplusTokens = tokenInput
+                .split(/[,，]/)
+                .map(s => s.trim())
+                .filter(s => s);
 
             const task = {
                 run_time: time,
@@ -1772,7 +1845,8 @@
                 target_day_offset: offset,  // 还是沿用 N 天后
                 config: config,
                 weekly_day: weeklyDay,
-                notification_phones: taskPhones
+                notification_phones: taskPhones,
+                pushplus_tokens: taskPushplusTokens
             };
 
             try {
