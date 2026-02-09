@@ -628,15 +628,11 @@ class TaskManager:
                 return date_str
 
         def notify_task_result(success, message, items=None, date_str=None):
-            status_label = "成功" if success else "失败"
-            prefix = f"任务 {task_id} 结果：{status_label}"
+            prefix = "【预订成功】" if success else "【预订失败】"
             details = message
             if date_str:
                 details = f"{build_date_display(date_str)} {message}"
-            if items:
-                items_str = [f"{i['place']}号场({i['time']})" for i in items]
-                details += " | 场地: " + ", ".join(items_str)
-            self.send_notification(f"{prefix}，{details}", phones=task_phones)
+            self.send_notification(f"{prefix}{details}", phones=task_phones)
 
         # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
         #    以“获取场地状态异常”为准触发短信提醒，避免误报
