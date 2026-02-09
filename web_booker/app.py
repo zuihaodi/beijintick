@@ -1,3 +1,8 @@
+"""
+变更记录（手动维护）:
+- 2026-02-09 03:29 保留健康检查调度并统一任务通知/结果上报
+"""
+
 from flask import Flask, render_template, request, jsonify
 import requests
 import json
@@ -15,23 +20,18 @@ import hashlib
 # 定期健康检查的函数
 def health_check():
     """
-    定期检查 token 和 cookie 的有效性，并发送短信通知。
+    定期检查获取场地状态是否正常，并发送短信通知。
     """
     phones = CONFIG.get('notification_phones') or []
-
-    # 检查 Token 是否有效
-    is_valid, msg = client.check_token()
-    if not is_valid:
-        print(f"❌ Token 失效: {msg}")
+    today = datetime.now().strftime("%Y-%m-%d")
+    matrix_res = client.get_matrix(today)
+    if "error" in matrix_res:
+        err_msg = matrix_res["error"]
+        log(f"❌ 健康检查失败: 获取场地状态异常: {err_msg}")
         if phones:
-            task_manager.send_notification(f"⚠️ Token 失效: {msg}", phones=phones)
-
-    # 检查 Cookie 是否有效
-    is_valid, msg = client.refresh_cookie()
-    if not is_valid:
-        print(f"❌ Cookie 刷新失败: {msg}")
-        if phones:
-            task_manager.send_notification(f"⚠️ Cookie 刷新失败: {msg}", phones=phones)
+            task_manager.send_notification(f"⚠️ 健康检查失败：获取场地状态异常({err_msg})", phones=phones)
+    else:
+        log("✅ 健康检查通过：场地状态获取正常")
 
 # 每隔一段时间执行健康检查
 def schedule_health_check():
@@ -56,15 +56,6 @@ def schedule_health_check():
     schedule.every(check_interval).minutes.do(health_check).tag("health_check")
     print(f"📅 健康检查已安排，每 {check_interval} 分钟执行一次.")
 
-
-# 启动健康检查的后台线程
-def run_health_check():
-    """
-    启动后台线程执行定时健康检查任务。
-    """
-    while True:
-        schedule.run_pending()  # 执行所有待处理的定时任务
-        time.sleep(1)  # 防止CPU空转
 
 app = Flask(__name__)
 
@@ -583,7 +574,7 @@ class TaskManager:
         task_phones = task.get('notification_phones') or None
         task_id = task.get('id')
         last_fail_reason = None
-        
+
         def build_date_display(date_str):
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -609,7 +600,6 @@ class TaskManager:
         is_valid, token_msg = client.check_token()
         if not is_valid:
             log(f"⚠️ Token 可能已失效，但继续尝试获取场地状态: {token_msg}")
-
 
         # 1. 计算目标日期
         # 新增 target_mode / target_date 支持：
@@ -992,7 +982,7 @@ class TaskManager:
         # print(" 所有重试均失败，放弃。")
 
     def refresh_schedule(self):
-        schedule.clear()
+        schedule.clear("task")
         print(f"🔄 [调度器] 正在刷新任务列表 (共 {len(self.tasks)} 个)...")
 
         # 内部工具函数：支持单次任务执行完后自动删除自身
@@ -1019,7 +1009,7 @@ class TaskManager:
 
             try:
                 if t_type == 'daily':
-                    schedule.every().day.at(run_time).do(make_job(task, is_once=False))
+                    schedule.every().day.at(run_time).do(make_job(task, is_once=False)).tag("task")
                     print(f"   -> 已添加每日任务: {run_time}")
                 elif t_type == 'weekly':
                     days = [
@@ -1032,11 +1022,11 @@ class TaskManager:
                         schedule.every().sunday,
                     ]
                     wd = int(task['weekly_day'])
-                    days[wd].at(run_time).do(make_job(task, is_once=False))
+                    days[wd].at(run_time).do(make_job(task, is_once=False)).tag("task")
                     print(f"   -> 已添加每周任务: 周{['一', '二', '三', '四', '五', '六', '日'][wd]} {run_time}")
                 elif t_type == 'once':
                     # 单次任务：到点执行一次，然后自动从任务列表和调度器中移除
-                    schedule.every().day.at(run_time).do(make_job(task, is_once=True))
+                    schedule.every().day.at(run_time).do(make_job(task, is_once=True)).tag("task")
                     print(f"   -> 已添加单次任务: {run_time}（执行一次后自动删除）")
             except Exception as e:
                 print(f"❌ 添加任务失败: {e}")
@@ -1347,9 +1337,6 @@ if __name__ == "__main__":
 
     # 启动健康检查调度（如果启用）
     schedule_health_check()
-
-    # 启动健康检查的线程
-    threading.Thread(target=run_health_check, daemon=True).start()
 
     print("🚀 服务已启动，访问 http://127.0.0.1:5000")
     print("📋 已加载测试接口: /api/config/test-sms")
