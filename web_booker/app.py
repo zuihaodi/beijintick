@@ -2,6 +2,7 @@
 变更记录（手动维护）:
 - 2026-02-09 03:29 保留健康检查调度并统一任务通知/结果上报
 - 2026-02-09 04:10 健康检查增加起始时间并在前端显示预计下次检查
+- 2026-02-09 04:40 接入 PushPlus 并增加微信通知配置入口
 """
 
 from flask import Flask, render_template, request, jsonify
@@ -38,6 +39,7 @@ def health_check():
     定期检查获取场地状态是否正常，并发送短信通知。
     """
     phones = CONFIG.get('notification_phones') or []
+    pushplus_tokens = CONFIG.get('pushplus_tokens') or []
     today = datetime.now().strftime("%Y-%m-%d")
     matrix_res = client.get_matrix(today)
     if "error" in matrix_res:
@@ -45,6 +47,11 @@ def health_check():
         log(f"❌ 健康检查失败: 获取场地状态异常: {err_msg}")
         if phones:
             task_manager.send_notification(f"⚠️ 健康检查失败：获取场地状态异常({err_msg})", phones=phones)
+        if pushplus_tokens:
+            task_manager.send_wechat_notification(
+                f"⚠️ 健康检查失败：获取场地状态异常({err_msg})",
+                tokens=pushplus_tokens,
+            )
     else:
         log("✅ 健康检查通过：场地状态获取正常")
 
@@ -113,6 +120,7 @@ CONFIG = {
         "api_key": "6127d94d28a04c06a8f61b70eac79cc3"
     },
     "notification_phones": [],
+    "pushplus_tokens": [],
     "retry_interval": 1.0,
     "aggressive_retry_interval": 1.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -141,6 +149,8 @@ if os.path.exists(CONFIG_FILE):
             saved = json.load(f)
             if 'notification_phones' in saved:
                 CONFIG['notification_phones'] = saved['notification_phones']
+            if 'pushplus_tokens' in saved:
+                CONFIG['pushplus_tokens'] = saved['pushplus_tokens']
             if 'retry_interval' in saved:
                 CONFIG['retry_interval'] = saved['retry_interval']
             if 'aggressive_retry_interval' in saved:
@@ -610,11 +620,56 @@ class TaskManager:
             log(f"❌ 短信发送异常: {e}")
             return False, str(e)
 
+    def send_wechat_notification(self, content, tokens=None):
+        """
+        发送微信通知（PushPlus）：
+        - tokens 不为 None 时，优先使用传入的 token（任务级别）
+        - 否则退回到全局 CONFIG['pushplus_tokens']
+        """
+        if tokens is None:
+            tokens = CONFIG.get('pushplus_tokens', [])
+
+        if isinstance(tokens, str):
+            tokens = [t.strip() for t in tokens.split(',') if t.strip()]
+        elif isinstance(tokens, list):
+            tokens = [str(t).strip() for t in tokens if str(t).strip()]
+
+        if not tokens:
+            log(f"⚠️ 未配置 PushPlus token，微信通知未发送: {content}")
+            return False, "未配置 PushPlus token"
+
+        try:
+            payload = {
+                "title": "场地预订通知",
+                "content": content,
+                "template": "txt",
+            }
+            for token in tokens:
+                payload["token"] = token
+                resp = requests.post(
+                    "http://www.pushplus.plus/send",
+                    json=payload,
+                    timeout=10,
+                )
+                try:
+                    data = resp.json()
+                except ValueError:
+                    data = {"code": -1, "msg": resp.text}
+                if data.get("code") != 200:
+                    log(f"⚠️ PushPlus 发送失败: {data}")
+                else:
+                    log("📩 PushPlus 发送成功")
+            return True, "发送成功"
+        except Exception as e:
+            log(f"❌ PushPlus 发送异常: {e}")
+            return False, str(e)
+
     def execute_task(self, task):
         log(f"⏰ [自动任务] 开始执行任务: {task.get('id')}")
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
+        task_pushplus_tokens = task.get('pushplus_tokens') or None
         task_id = task.get('id')
         last_fail_reason = None
 
@@ -632,7 +687,9 @@ class TaskManager:
             details = message
             if date_str:
                 details = f"{build_date_display(date_str)} {message}"
-            self.send_notification(f"{prefix}{details}", phones=task_phones)
+            content = f"{prefix}{details}"
+            self.send_notification(content, phones=task_phones)
+            self.send_wechat_notification(content, tokens=task_pushplus_tokens)
 
         # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
         #    以“获取场地状态异常”为准触发短信提醒，避免误报
@@ -1161,6 +1218,7 @@ def update_config():
     """
     更新全局配置：
     - notification_phones：全局报警手机号（列表，可以填 0~N 个）
+    - pushplus_tokens：全局微信通知 token（列表或逗号分隔）
     - retry_interval：普通重试间隔
     - aggressive_retry_interval：死磕模式重试间隔
     - locked_retry_interval：锁定状态重试间隔
@@ -1212,6 +1270,18 @@ def update_config():
                 phones = []
             CONFIG['notification_phones'] = phones
             saved['notification_phones'] = phones
+
+        # 1.1) 全局微信通知 token（PushPlus）
+        if 'pushplus_tokens' in data:
+            tokens = data['pushplus_tokens'] or []
+            if isinstance(tokens, str):
+                tokens = [t.strip() for t in tokens.split(',') if t.strip()]
+            elif isinstance(tokens, list):
+                tokens = [str(t).strip() for t in tokens if str(t).strip()]
+            else:
+                tokens = []
+            CONFIG['pushplus_tokens'] = tokens
+            saved['pushplus_tokens'] = tokens
 
         # 2) 各类重试 / 限制配置
         _update_float_field('retry_interval', 0.1, CONFIG.get('retry_interval', 1.0))
@@ -1386,4 +1456,4 @@ if __name__ == "__main__":
 
     print("🚀 服务已启动，访问 http://127.0.0.1:5000")
     print("📋 已加载测试接口: /api/config/test-sms")
-    app.run(debug=True, host='0.0.0.0',port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)  # 关闭 reloader 防止线程重复启动
