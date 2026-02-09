@@ -1,6 +1,7 @@
 """
 变更记录（手动维护）:
 - 2026-02-09 03:29 保留健康检查调度并统一任务通知/结果上报
+- 2026-02-09 04:10 健康检查增加起始时间并在前端显示预计下次检查
 """
 
 from flask import Flask, render_template, request, jsonify
@@ -16,6 +17,20 @@ import time
 import threading
 import os
 import hashlib
+
+HEALTH_CHECK_NEXT_RUN = None
+
+def normalize_time_str(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        try:
+            dt = datetime.strptime(value, "%H:%M")
+            return dt.strftime("%H:%M")
+        except ValueError:
+            return None
+    return None
 
 # 定期健康检查的函数
 def health_check():
@@ -52,9 +67,34 @@ def schedule_health_check():
         check_interval = 30.0
     if check_interval < 1:
         check_interval = 1
+    start_time = CONFIG.get('health_check_start_time', '00:00')
+    start_time = normalize_time_str(start_time) or '00:00'
 
-    schedule.every(check_interval).minutes.do(health_check).tag("health_check")
-    print(f"📅 健康检查已安排，每 {check_interval} 分钟执行一次.")
+    def compute_next_run():
+        now = datetime.now()
+        start_dt = datetime.strptime(
+            f"{now.strftime('%Y-%m-%d')} {start_time}", "%Y-%m-%d %H:%M"
+        )
+        if now <= start_dt:
+            return start_dt
+        elapsed = (now - start_dt).total_seconds() / 60.0
+        steps = int(elapsed // check_interval) + 1
+        return start_dt + timedelta(minutes=steps * check_interval)
+
+    def health_check_tick():
+        global HEALTH_CHECK_NEXT_RUN
+        if HEALTH_CHECK_NEXT_RUN is None:
+            HEALTH_CHECK_NEXT_RUN = compute_next_run()
+        if datetime.now() >= HEALTH_CHECK_NEXT_RUN:
+            health_check()
+            HEALTH_CHECK_NEXT_RUN = HEALTH_CHECK_NEXT_RUN + timedelta(minutes=check_interval)
+
+    global HEALTH_CHECK_NEXT_RUN
+    HEALTH_CHECK_NEXT_RUN = compute_next_run()
+    schedule.every(1).minutes.do(health_check_tick).tag("health_check")
+    print(
+        f"📅 健康检查已安排，起始时间 {start_time}，每 {check_interval} 分钟执行一次."
+    )
 
 
 app = Flask(__name__)
@@ -80,6 +120,7 @@ CONFIG = {
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
+    "health_check_start_time": "00:00", # 起始时间 (HH:MM)
 }
 
 CONFIG_FILE = "config.json"
@@ -113,6 +154,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
                 CONFIG['health_check_interval_min'] = saved['health_check_interval_min']
+            if 'health_check_start_time' in saved:
+                CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
             if 'auth' in saved:
                 # 覆盖默认的 auth 配置
                 CONFIG['auth'].update(saved['auth'])
@@ -1128,6 +1171,7 @@ def update_config():
     - locked_max_seconds：锁定状态最多刷 N 秒
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
+    - health_check_start_time: 健康检查起始时间（HH:MM）
     """
     try:
         data = request.json or {}
@@ -1179,6 +1223,12 @@ def update_config():
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
+
+        if 'health_check_start_time' in data:
+            time_str = normalize_time_str(data['health_check_start_time'])
+            if time_str:
+                CONFIG['health_check_start_time'] = time_str
+                saved['health_check_start_time'] = time_str
 
         # 3) 健康检查开关（勾选 / 取消）
         if 'health_check_enabled' in data:
