@@ -659,6 +659,9 @@
             <input type="checkbox" id="healthCheckEnabled" onchange="updateTaskSummary()" />
             <label for="healthCheckEnabled">启用健康检查</label>
             <br />
+            <label>健康检查开始时间 (HH:MM)</label>
+            <input type="time" id="healthCheckStartTime" value="00:00" onchange="updateTaskSummary()" />
+            <br />
             <label>健康检查间隔 (分钟)</label>
             <input type="number" id="healthCheckInterval" value="30" min="1" onchange="updateTaskSummary()" />
         </div>
@@ -1241,6 +1244,10 @@
                             const inp = document.getElementById('healthCheckInterval');
                             if (inp) inp.value = config.health_check_interval_min;
                         }
+                        if (config.health_check_start_time != null) {
+                            const inp = document.getElementById('healthCheckStartTime');
+                            if (inp) inp.value = config.health_check_start_time;
+                        }
                     } catch (e) {
                         console.error('加载配置失败', e);
                     }
@@ -1314,6 +1321,7 @@
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
                 const healthIntervalEl = document.getElementById('healthCheckInterval');
+                const healthStartEl = document.getElementById('healthCheckStartTime');
 
                 const body = {
                     notification_phones: globalNotificationPhones,
@@ -1330,6 +1338,9 @@
                 if (healthIntervalEl) {
                     const h = parseFloat(healthIntervalEl.value);
                     if (!isNaN(h)) body.health_check_interval_min = h;
+                }
+                if (healthStartEl && healthStartEl.value) {
+                    body.health_check_start_time = healthStartEl.value;
                 }
 
                 const res = await fetch('/api/config', {
@@ -1535,8 +1546,28 @@
             // 健康检查配置
             const healthCheckEnabled = document.getElementById('healthCheckEnabled').checked;
             const healthCheckInterval = document.getElementById('healthCheckInterval').value;
+            const healthCheckStartTime = document.getElementById('healthCheckStartTime').value || '00:00';
 
-            text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，间隔：${healthCheckInterval} 分钟`;
+            function predictNextHealthCheck(startTime, intervalMin) {
+                const now = new Date();
+                const parts = (startTime || '00:00').split(':');
+                if (parts.length < 2) return null;
+                const start = new Date(now);
+                start.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+                const interval = parseFloat(intervalMin);
+                if (!interval || interval <= 0) return null;
+                if (now <= start) return start;
+                const elapsedMin = (now - start) / 60000;
+                const steps = Math.floor(elapsedMin / interval) + 1;
+                return new Date(start.getTime() + steps * interval * 60000);
+            }
+
+            const nextCheck = predictNextHealthCheck(healthCheckStartTime, healthCheckInterval);
+            const nextCheckText = nextCheck
+                ? `${nextCheck.getHours().toString().padStart(2, '0')}:${nextCheck.getMinutes().toString().padStart(2, '0')}`
+                : '未知';
+
+            text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
