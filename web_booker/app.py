@@ -525,10 +525,17 @@ class TaskManager:
         if phones is None:
             phones = CONFIG.get('notification_phones', [])
 
+        # 归一化手机号：允许字符串/列表混用
+        if isinstance(phones, str):
+            phones = [p.strip() for p in phones.split(',') if p.strip()]
+        elif isinstance(phones, list):
+            phones = [str(p).strip() for p in phones if str(p).strip()]
+
         if not phones:
+            log(f"⚠️ 未配置短信手机号，通知内容未发送: {content}")
             return  # 没有号码就直接返回
 
-        print(f"📧 正在发送短信通知给: {phones}")
+        log(f"📧 正在发送短信通知给: {phones}")
         try:
             u = CONFIG['sms']['user']
             p = CONFIG['sms']['api_key']
@@ -558,15 +565,15 @@ class TaskManager:
 
             code = resp.text
             msg = error_map.get(code, f"未知错误({code})")
-            print(f"📧 短信接口返回: [{code}] {msg}")
+            log(f"📧 短信接口返回: [{code}] {msg}")
 
             if code != '0':
-                print(f"⚠️ 短信发送异常: {msg}")
+                log(f"⚠️ 短信发送异常: {msg}")
                 return False, msg
             return True, "发送成功"
 
         except Exception as e:
-            print(f"❌ 短信发送异常: {e}")
+            log(f"❌ 短信发送异常: {e}")
             return False, str(e)
 
     def execute_task(self, task):
@@ -576,7 +583,7 @@ class TaskManager:
         task_phones = task.get('notification_phones') or None
         task_id = task.get('id')
         last_fail_reason = None
-
+        
         def build_date_display(date_str):
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -597,13 +604,12 @@ class TaskManager:
                 details += " | 场地: " + ", ".join(items_str)
             self.send_notification(f"{prefix}，{details}", phones=task_phones)
 
-        # 0. 先检查 token 是否有效
-        #    默认使用任务手机号，不设置则回退到全局手机号
+        # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
+        #    以“获取场地状态异常”为准触发短信提醒，避免误报
         is_valid, token_msg = client.check_token()
         if not is_valid:
-            log(f"❌ Token 失效，任务终止: {token_msg}")
-            notify_task_result(False, f"Token已失效({token_msg})，请立即更新！")
-            return
+            log(f"⚠️ Token 可能已失效，但继续尝试获取场地状态: {token_msg}")
+
 
         # 1. 计算目标日期
         # 新增 target_mode / target_date 支持：
