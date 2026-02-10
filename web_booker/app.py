@@ -131,7 +131,9 @@ CONFIG = {
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
 }
 
-CONFIG_FILE = "config.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -172,7 +174,67 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_FILE = "tasks.json"
+TASKS_FILE = os.path.join(BASE_DIR, "tasks.json")
+
+def migrate_legacy_tasks_file():
+    """
+    兼容历史版本：老版本会把 tasks.json 写到“当前工作目录”。
+    现在统一迁移到 web_booker/tasks.json（即 TASKS_FILE）。
+    """
+    candidates = [
+        os.path.join(PROJECT_ROOT, "tasks.json"),
+        os.path.join(os.getcwd(), "tasks.json"),
+    ]
+    target_data = []
+
+    if os.path.exists(TASKS_FILE):
+        try:
+            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    target_data = data
+        except Exception as e:
+            print(f"读取目标任务文件失败: {e}")
+
+    merged = list(target_data)
+    seen_ids = {str(t.get('id')) for t in merged if isinstance(t, dict) and t.get('id') is not None}
+
+    for path in candidates:
+        if os.path.abspath(path) == os.path.abspath(TASKS_FILE):
+            continue
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                continue
+            added = 0
+            for task in data:
+                if not isinstance(task, dict):
+                    continue
+                tid = task.get('id')
+                key = str(tid) if tid is not None else None
+                if key and key in seen_ids:
+                    continue
+                merged.append(task)
+                if key:
+                    seen_ids.add(key)
+                added += 1
+            if added > 0:
+                print(f"🔄 已从历史任务文件迁移 {added} 条任务: {path}")
+        except Exception as e:
+            print(f"迁移历史任务文件失败({path}): {e}")
+
+    if merged != target_data:
+        try:
+            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(merged, f, ensure_ascii=False, indent=2)
+            print(f"✅ 任务已统一写入: {TASKS_FILE}")
+        except Exception as e:
+            print(f"写入统一任务文件失败: {e}")
+
+migrate_legacy_tasks_file()
 
 class ApiClient:
     def __init__(self):
