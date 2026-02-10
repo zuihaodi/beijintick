@@ -1,2 +1,7 @@
-web_booker/config.json
-web_booker/tasks.json
+# IDE files
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+*.pyc
