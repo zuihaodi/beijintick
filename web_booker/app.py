@@ -188,38 +188,6 @@ class ApiClient:
         self.token = CONFIG["auth"]["token"]
         self.session = requests.Session()
 
-    def refresh_cookie(self):
-        try:
-            url = f"https://{self.host}/easyserp/index.html"
-            resp = self.session.get(url, timeout=10, verify=False)
-            jar = self.session.cookies
-            jsid = jar.get("JSESSIONID")
-            if not jsid:
-                jsid = resp.cookies.get("JSESSIONID")
-            if not jsid:
-                return False, "未获取到JSESSIONID"
-            cookie_str = f"JSESSIONID={jsid}"
-            self.headers["Cookie"] = cookie_str
-            CONFIG["auth"]["cookie"] = cookie_str
-            try:
-                saved = {}
-                if os.path.exists(CONFIG_FILE):
-                    try:
-                        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                            saved = json.load(f)
-                    except:
-                        saved = {}
-                if "auth" not in saved:
-                    saved["auth"] = {}
-                saved["auth"]["cookie"] = cookie_str
-                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(saved, f, ensure_ascii=False, indent=2)
-            except:
-                pass
-            return True, "Cookie已刷新"
-        except Exception as e:
-            return False, str(e)
-
     def check_token(self):
         # 简单请求一次接口，看是否返回 token 失效相关的错误
         # 这里用获取矩阵接口测试，因为它只读且轻量
@@ -1411,13 +1379,6 @@ def check_token_api():
         # 如果失效，尝试发短信提醒（如果配置了手机号）
         task_manager.send_notification(f"警告：您的 Token 可能已失效 ({msg})，请及时更新喵！")
         return jsonify({"status": "error", "msg": f"Token 失效: {msg} 喵"})
-
-@app.route('/api/config/refresh-cookie', methods=['POST'])
-def refresh_cookie_api():
-    ok, msg = client.refresh_cookie()
-    if ok:
-        return jsonify({"status": "success", "msg": msg, "cookie": CONFIG["auth"]["cookie"]})
-    return jsonify({"status": "error", "msg": msg})
 
 @app.route('/api/config/test-sms', methods=['POST'])
 def test_sms():

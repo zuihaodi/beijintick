@@ -711,9 +711,6 @@
                     onclick="document.getElementById('authUpdateArea').style.display='block';this.style.display='none'"
                     style="font-size:12px;color:#007aff;text-decoration:none;">✏️ 我要更新 Token</a>
             </div>
-            <button class="btn"
-                style="width:100%;padding:8px;font-size:13px;background:#f0f0f5;color:#333;border:1px solid #ddd;margin-top:10px;"
-                onclick="refreshCookie()">🔄 刷新 Cookie</button>
         </div>
     </div>
 
@@ -1292,20 +1289,6 @@
                 }
             } catch (e) {
                 alert('网络请求失败');
-            }
-        }
-
-        async function refreshCookie() {
-            try {
-                const res = await fetch('/api/config/refresh-cookie', { method: 'POST' });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    alert('✅ ' + data.msg);
-                } else {
-                    alert('❌ 刷新失败: ' + data.msg);
-                }
-            } catch (e) {
-                alert('刷新失败');
             }
         }
 
