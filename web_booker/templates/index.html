@@ -726,11 +726,6 @@
                     <option value="1">1</option>
                     <option value="2" selected>2</option>
                     <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6">6</option>
-                    <option value="8">8</option>
-                    <option value="10">10</option>
                 </select>
             </div>
 
@@ -956,6 +951,9 @@
         let isTimerRunning = false;
         let serverOffset = 0;
         let cachedPlaces = []; // 存储后端返回的场地列表
+        let latestPlaces = [];
+        let latestTimes = [];
+        let latestCellStatus = {};
         let lastLogIndex = 0; // 记录日志位置
 
         function toggleLogConsole() {
@@ -1205,6 +1203,10 @@
 
             const isSelectable = (status) => status === 'available';
 
+            latestPlaces = places.map(String);
+            latestTimes = times.slice();
+            latestCellStatus = {};
+
             const legendHtml = `
                 <div class="matrix-legend">
                     <span class="legend-item"><span class="legend-dot" style="background:#34c759"></span>空闲</span>
@@ -1223,6 +1225,7 @@
                     const key = `${p}|${t}`;
                     const isSel = selectedItems.has(key) ? 'selected' : '';
                     const cssClass = statusClassMap[status] || 'occupied';
+                    latestCellStatus[key] = status;
                     if (!isSelectable(status) && isSel) {
                         selectedItems.delete(key);
                     }
@@ -1245,6 +1248,7 @@
                     const key = `${p}|${t}`;
                     const isSel = selectedItems.has(key) ? 'selected' : '';
                     const cssClass = statusClassMap[status] || 'occupied';
+                    latestCellStatus[key] = status;
                     if (!isSelectable(status) && isSel) {
                         selectedItems.delete(key);
                     }
@@ -1262,6 +1266,43 @@
 
             document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${statusHtml}${legendHtml}${tableHtml}${cardHtml}</div>`;
             updateBar();
+        }
+
+        function isValidSemiAutoSelection(nextSelectedSet) {
+            if (nextSelectedSet.size === 0) return true;
+
+            const placeSet = new Set();
+            const timeSet = new Set();
+            nextSelectedSet.forEach(key => {
+                const [p, t] = key.split('|');
+                placeSet.add(String(p));
+                timeSet.add(String(t));
+            });
+
+            if (placeSet.size > 3 || timeSet.size > 3) return false;
+
+            const placeIndices = Array.from(placeSet).map(p => latestPlaces.indexOf(String(p))).filter(i => i >= 0).sort((a, b) => a - b);
+            const timeIndices = Array.from(timeSet).map(t => latestTimes.indexOf(String(t))).filter(i => i >= 0).sort((a, b) => a - b);
+
+            if (placeIndices.length !== placeSet.size || timeIndices.length !== timeSet.size) return false;
+
+            const minPi = placeIndices[0], maxPi = placeIndices[placeIndices.length - 1];
+            const minTi = timeIndices[0], maxTi = timeIndices[timeIndices.length - 1];
+
+            if (maxPi - minPi + 1 > 3 || maxTi - minTi + 1 > 3) return false;
+
+            for (let ti = minTi; ti <= maxTi; ti++) {
+                for (let pi = minPi; pi <= maxPi; pi++) {
+                    const key = `${latestPlaces[pi]}|${latestTimes[ti]}`;
+                    if (nextSelectedSet.has(key)) continue;
+                    const status = latestCellStatus[key] || 'occupied';
+                    if (status === 'available') {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         function toggleCell(el, place, time) {
@@ -1289,6 +1330,12 @@
 
                 if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多只能连续订 3 个小时！`);
                 if (placeCount >= 3) return alert(`⚠️ 限制：同一个时间段最多只能订 3 块场地！`);
+
+                const nextSet = new Set(selectedItems);
+                nextSet.add(key);
+                if (!isValidSemiAutoSelection(nextSet)) {
+                    return alert(`⚠️ 限制：半自动抢票需满足 3x3 规则（连续场地号 + 连续时间段；可与已被预订格子组合成 3x3）。`);
+                }
 
                 selectedItems.add(key);
             }
@@ -1744,15 +1791,6 @@
                 btn.innerText = p + "号";
                 btn.dataset.place = String(p);
                 btn.onclick = () => {
-                    if (!btn.classList.contains('active')) {
-                        const activePlaces = Array.from(document.querySelectorAll('#placeSelector .active')).map(n => n.dataset.place);
-                        if (activePlaces.length >= 3) return alert("⚠️ 限制：同一时间段最多只能抢 3 个场地！");
-
-                        const nextPlaces = [...activePlaces, String(p)];
-                        if (!isContinuousNumbers(nextPlaces)) {
-                            return alert("⚠️ 限制：候选场地必须连续（如 6,7 或 6,7,8）！");
-                        }
-                    }
                     btn.classList.toggle('active');
                     updateTaskSummary();
                 };
@@ -1819,7 +1857,7 @@
             let text = '';
             if (selectedPlaces.length && selectedTimes.length) {
                 text = `已选 <b>${selectedPlaces.length}</b> 个候选场地 × <b>${selectedTimes.length}</b> 个时间段，` +
-                    `理论上最多可以凑出 <b>${selectedPlaces.length}</b> 块场地（候选场地与时间需连续，且最多各3个）。`;
+                    `理论上最多可以凑出 <b>${selectedPlaces.length}</b> 块场地（候选场地可多选；时间段最多3个；总目标最多3块）。`;
             } else {
                 text = '请先选择候选场地和时间段';
             }
@@ -2035,7 +2073,8 @@
             const time = document.getElementById('taskTime').value;
             const type = document.getElementById('taskType').value;
             const offset = parseInt(document.getElementById('taskOffset').value || '0', 10);
-            const targetCount = parseInt(document.getElementById('taskTargetCount').value || '2', 10);
+            const targetCountRaw = parseInt(document.getElementById('taskTargetCount').value || '2', 10);
+            const targetCount = Math.min(Math.max(targetCountRaw, 1), 3);
 
             // 1. 收集时间（用按钮选中的）
             const times = [];
