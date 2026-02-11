@@ -1754,6 +1754,26 @@
         }
 
 
+        function isContinuousNumbers(values) {
+            const sorted = values.map(v => Number(v)).sort((a, b) => a - b);
+            if (sorted.length <= 1) return true;
+            for (let i = 1; i < sorted.length; i++) {
+                if (sorted[i] !== sorted[i - 1] + 1) return false;
+            }
+            return true;
+        }
+
+        function isContinuousTimes(values) {
+            const hours = values
+                .map(v => Number(String(v).split(':')[0]))
+                .sort((a, b) => a - b);
+            if (hours.length <= 1) return true;
+            for (let i = 1; i < hours.length; i++) {
+                if (hours[i] !== hours[i - 1] + 1) return false;
+            }
+            return true;
+        }
+
         function initPlaceSelector() {
             const container = document.getElementById('placeSelector');
             if (!container) return;
@@ -1791,8 +1811,13 @@
                 btn.innerText = timeStr;
                 btn.onclick = () => {
                     if (!btn.classList.contains('active')) {
-                        const count = document.querySelectorAll('#timeSelector .active').length;
-                        if (count >= 3) return alert("⚠️ 限制：单个场地最多只能抢 3 个小时！");
+                        const activeTimes = Array.from(document.querySelectorAll('#timeSelector .active')).map(n => n.innerText);
+                        if (activeTimes.length >= 3) return alert("⚠️ 限制：单个场地最多只能抢 3 个小时！");
+
+                        const nextTimes = [...activeTimes, timeStr];
+                        if (!isContinuousTimes(nextTimes)) {
+                            return alert("⚠️ 限制：时间段必须连续（如 13:00,14:00）！");
+                        }
                     }
                     btn.classList.toggle('active');
                     updateTaskSummary();
@@ -2068,6 +2093,15 @@
             });
             if (places.length === 0) {
                 alert('请至少选择一个场地！');
+                return;
+            }
+
+            if (!isContinuousNumbers(places)) {
+                alert('候选场地必须连续（如 6,7 或 6,7,8）');
+                return;
+            }
+            if (!isContinuousTimes(times)) {
+                alert('时间段必须连续（如 13:00,14:00,15:00）');
                 return;
             }
 
