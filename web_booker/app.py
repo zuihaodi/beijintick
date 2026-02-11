@@ -579,6 +579,13 @@ class TaskManager:
             
     def add_task(self, task):
         # task: {id, type='daily'|'weekly', run_time='08:00', target_day_offset=2, items=[...]}
+        cfg = task.get('config') if isinstance(task, dict) else None
+        if isinstance(cfg, dict) and 'target_count' in cfg:
+            try:
+                cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+            except Exception:
+                cfg['target_count'] = 2
+
         task['id'] = int(time.time() * 1000)
         self.tasks.append(task)
         self.save_tasks()
@@ -854,7 +861,7 @@ class TaskManager:
             # --- 模式 A: 场地优先优先级序列 (priority) ---
             if config.get('mode') == 'priority':
                 sequences = config.get('priority_sequences', [])  # 例如 [["6","7"],["8","9"]]
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 第一轮：优先尝试完整序列
@@ -920,7 +927,7 @@ class TaskManager:
                 if not candidate_places:
                     candidate_places = [str(i) for i in range(1, 16)]
 
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 优先尝试整段时间序列（比如 14-16 连续两小时）
@@ -984,7 +991,7 @@ class TaskManager:
                     return
 
                 candidate_places = [str(p) for p in config['candidate_places']]
-                target_courts = int(config.get('target_count', 2))  # 目标是“几块场地”
+                target_courts = max(1, min(3, int(config.get('target_count', 2))))  # 目标是“几块场地”
                 smart_mode = config.get('smart_continuous', False)
 
                 if target_courts <= 0:

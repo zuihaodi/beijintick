@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>北外体育馆可视抢票</title>
     <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
@@ -14,7 +18,8 @@
         }
 
         .container {
-            max-width: 800px;
+            width: min(96vw, 1500px);
+            max-width: 1500px;
             margin: 0 auto;
             padding-bottom: 120px;
         }
@@ -70,22 +75,56 @@
 
         /* 矩阵 */
         .matrix-container {
-            overflow-x: auto;
+            overflow-x: hidden;
             background: white;
             border-radius: 12px;
-            padding: 15px;
+            padding: 12px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .matrix-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #666;
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            border-radius: 999px;
+            padding: 4px 8px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .matrix-table-view {
+            display: block;
+        }
+
+        .matrix-card-view {
+            display: none;
         }
 
         table {
             border-collapse: collapse;
             width: 100%;
-            min-width: 600px;
+            table-layout: fixed;
         }
 
         th,
         td {
-            padding: 8px;
+            padding: 6px 4px;
             text-align: center;
             border: 1px solid #eee;
         }
@@ -93,13 +132,22 @@
         th {
             background: #fafafa;
             color: #666;
-            font-size: 14px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        td:first-child,
+        th:first-child {
+            width: 74px;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         /* 状态格子 */
         .cell {
-            width: 40px;
-            height: 30px;
+            width: 100%;
+            max-width: 34px;
+            height: 26px;
             border-radius: 4px;
             cursor: pointer;
             transition: 0.2s;
@@ -116,10 +164,86 @@
             opacity: 0.3;
         }
 
+        .cell.locked {
+            background-color: #8e8e93;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .cell.occupied {
+            background-color: #ff3b30;
+            cursor: not-allowed;
+            opacity: 0.3;
+        }
+
+        .cell.mine {
+            background-color: #5ac8fa;
+            cursor: not-allowed;
+            opacity: 0.9;
+        }
+
         .cell.selected {
             background-color: #007aff;
             box-shadow: 0 0 0 2px #0056b3 inset;
             transform: scale(0.9);
+        }
+
+        .time-card {
+            border: 1px solid #ececec;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #fff;
+        }
+
+        .time-card-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #444;
+        }
+
+        .time-card-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .place-pill {
+            border: none;
+            border-radius: 8px;
+            padding: 7px 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .place-pill.available {
+            background: #34c759;
+        }
+
+        .place-pill.occupied {
+            background: #ff3b30;
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .place-pill.locked {
+            background: #8e8e93;
+            opacity: 0.75;
+            cursor: not-allowed;
+        }
+
+        .place-pill.mine {
+            background: #5ac8fa;
+            cursor: not-allowed;
+        }
+
+        .place-pill.selected {
+            background: #007aff;
+            box-shadow: inset 0 0 0 2px #0056b3;
         }
 
         /* 已选标签 */
@@ -164,12 +288,13 @@
             right: 0;
             background: white;
             padding: 15px 20px;
+            box-sizing: border-box;
             box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
             z-index: 100;
         }
 
         .bar-content {
-            max-width: 800px;
+            max-width: 1500px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
@@ -195,6 +320,7 @@
 
         .timer-box {
             background: #f0f0f5;
+            min-width: 0;
             padding: 8px 12px;
             border-radius: 8px;
             font-family: monospace;
@@ -426,6 +552,49 @@
                 transform: translateY(0);
             }
         }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .container,
+            .bar-content {
+                width: 100%;
+                max-width: 100%;
+            }
+
+            .matrix-container {
+                overflow-x: hidden;
+                padding: 10px;
+            }
+
+            .date-scroll {
+                overflow-x: auto;
+            }
+
+            .matrix-table-view {
+                display: none;
+            }
+
+            .matrix-card-view {
+                display: block;
+            }
+
+            .time-card-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .control-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .timer-box {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+        }
     </style>
 </head>
 
@@ -557,11 +726,6 @@
                     <option value="1">1</option>
                     <option value="2" selected>2</option>
                     <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6">6</option>
-                    <option value="8">8</option>
-                    <option value="10">10</option>
                 </select>
             </div>
 
@@ -787,6 +951,9 @@
         let isTimerRunning = false;
         let serverOffset = 0;
         let cachedPlaces = []; // 存储后端返回的场地列表
+        let latestPlaces = [];
+        let latestTimes = [];
+        let latestCellStatus = {};
         let lastLogIndex = 0; // 记录日志位置
 
         function toggleLogConsole() {
@@ -1003,34 +1170,145 @@
                 statusHtml = '<div style="background:#d4edda;color:#155724;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #c3e6cb;">✅ <b>实时数据</b>：当前显示的是最新的场地状态。</div>';
             }
 
-            let html = statusHtml + '<table><thead><tr><th>时间 \\ 场地</th>';
-            places.forEach(p => html += `<th>${p}号</th>`);
-            html += '</tr></thead><tbody>';
+            const normalizeStatus = (rawStatus, fakeMode) => {
+                if (fakeMode) return 'available';
+                if (rawStatus === undefined || rawStatus === null) return 'occupied';
+                if (typeof rawStatus === 'string') {
+                    const s = rawStatus.toLowerCase();
+                    if (['available', 'free'].includes(s)) return 'available';
+                    if (['locked', 'lock'].includes(s)) return 'locked';
+                    if (['mine', 'self', 'my_booked', 'mybooked', 'booked_by_me'].includes(s)) return 'mine';
+                    if (['booked', 'occupied', 'reserved'].includes(s)) return 'occupied';
+                    return 'occupied';
+                }
+                if (typeof rawStatus === 'number') {
+                    if (rawStatus === 1) return 'available';
+                    if (rawStatus === 6) return 'locked';
+                    return 'occupied';
+                }
+                if (typeof rawStatus === 'object') {
+                    if (rawStatus.mine || rawStatus.isMine || rawStatus.bookedByMe) return 'mine';
+                    const inner = rawStatus.status || rawStatus.state || rawStatus.value;
+                    return normalizeStatus(inner, false);
+                }
+                return 'occupied';
+            };
+
+            const statusClassMap = {
+                available: 'available',
+                locked: 'locked',
+                mine: 'mine',
+                occupied: 'occupied'
+            };
+
+            const isSelectable = (status) => status === 'available';
+
+            latestPlaces = places.map(String);
+            latestTimes = times.slice();
+            latestCellStatus = {};
+
+            const legendHtml = `
+                <div class="matrix-legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#34c759"></span>空闲</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#8e8e93"></span>锁定</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#5ac8fa"></span>我的已预订</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#ff3b30"></span>他人已预订</span>
+                </div>`;
+
+            let tableHtml = '<div class="matrix-table-view"><table><thead><tr><th>时间 \\ 场地</th>';
+            places.forEach(p => tableHtml += `<th>${p}号</th>`);
+            tableHtml += '</tr></thead><tbody>';
             times.forEach(t => {
-                html += `<tr><td>${t}</td>`;
+                tableHtml += `<tr><td>${t}</td>`;
                 places.forEach(p => {
-                    const status = matrix[p][t] || 'booked';
+                    const status = normalizeStatus(matrix[p]?.[t], isFakeMode);
                     const key = `${p}|${t}`;
                     const isSel = selectedItems.has(key) ? 'selected' : '';
+                    const cssClass = statusClassMap[status] || 'occupied';
+                    latestCellStatus[key] = status;
+                    if (!isSelectable(status) && isSel) {
+                        selectedItems.delete(key);
+                    }
 
-                    // 修正逻辑：只有在假模式下，或者真实状态是 available 时，才显示绿色
-                    if (status === 'available' || isFakeMode) {
-                        html += `<td><div class="cell available ${isSel}" data-key="${key}" onclick="toggleCell(this, '${p}', '${t}')"></div></td>`;
+                    if (isSelectable(status)) {
+                        tableHtml += `<td><div class="cell ${cssClass} ${isSel}" data-key="${key}" onclick="toggleCell(this, '${p}', '${t}')"></div></td>`;
                     } else {
-                        html += `<td><div class="cell booked"></div></td>`;
+                        tableHtml += `<td><div class="cell ${cssClass}" title="${status === 'mine' ? '我的已预订' : status === 'locked' ? '锁定中' : '已被预订'}"></div></td>`;
                     }
                 });
-                html += '</tr>';
+                tableHtml += '</tr>';
             });
-            html += '</tbody></table>';
-            document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${html}</div>`;
+            tableHtml += '</tbody></table></div>';
+
+            let cardHtml = '<div class="matrix-card-view">';
+            times.forEach(t => {
+                cardHtml += `<div class="time-card"><div class="time-card-title">${t}</div><div class="time-card-grid">`;
+                places.forEach(p => {
+                    const status = normalizeStatus(matrix[p]?.[t], isFakeMode);
+                    const key = `${p}|${t}`;
+                    const isSel = selectedItems.has(key) ? 'selected' : '';
+                    const cssClass = statusClassMap[status] || 'occupied';
+                    latestCellStatus[key] = status;
+                    if (!isSelectable(status) && isSel) {
+                        selectedItems.delete(key);
+                    }
+
+                    if (isSelectable(status)) {
+                        cardHtml += `<button class="place-pill ${cssClass} ${isSel} cell" data-key="${key}" onclick="toggleCell(this, '${p}', '${t}')">${p}号</button>`;
+                    } else {
+                        const mark = status === 'mine' ? '我' : status === 'locked' ? '锁' : '占';
+                        cardHtml += `<button class="place-pill ${cssClass}" disabled title="${status === 'mine' ? '我的已预订' : status === 'locked' ? '锁定中' : '已被预订'}">${p}号·${mark}</button>`;
+                    }
+                });
+                cardHtml += '</div></div>';
+            });
+            cardHtml += '</div>';
+
+            document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${statusHtml}${legendHtml}${tableHtml}${cardHtml}</div>`;
+            updateBar();
+        }
+
+        function isValidSemiAutoSelection(nextSelectedSet) {
+            if (nextSelectedSet.size === 0) return true;
+
+            const placeSet = new Set();
+            const timeSet = new Set();
+            nextSelectedSet.forEach(key => {
+                const [p, t] = key.split('|');
+                placeSet.add(String(p));
+                timeSet.add(String(t));
+            });
+
+            if (placeSet.size > 3 || timeSet.size > 3) return false;
+
+            const placeIndices = Array.from(placeSet).map(p => latestPlaces.indexOf(String(p))).filter(i => i >= 0).sort((a, b) => a - b);
+            const timeIndices = Array.from(timeSet).map(t => latestTimes.indexOf(String(t))).filter(i => i >= 0).sort((a, b) => a - b);
+
+            if (placeIndices.length !== placeSet.size || timeIndices.length !== timeSet.size) return false;
+
+            const minPi = placeIndices[0], maxPi = placeIndices[placeIndices.length - 1];
+            const minTi = timeIndices[0], maxTi = timeIndices[timeIndices.length - 1];
+
+            if (maxPi - minPi + 1 > 3 || maxTi - minTi + 1 > 3) return false;
+
+            for (let ti = minTi; ti <= maxTi; ti++) {
+                for (let pi = minPi; pi <= maxPi; pi++) {
+                    const key = `${latestPlaces[pi]}|${latestTimes[ti]}`;
+                    if (nextSelectedSet.has(key)) continue;
+                    const status = latestCellStatus[key] || 'occupied';
+                    if (status === 'available') {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         function toggleCell(el, place, time) {
             const key = `${place}|${time}`;
             if (selectedItems.has(key)) {
                 selectedItems.delete(key);
-                el.classList.remove('selected');
             } else {
                 // 限制校验
                 let timeCount = 0; selectedItems.forEach(k => { if (k.startsWith(place + '|')) timeCount++; });
@@ -1053,9 +1331,15 @@
                 if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多只能连续订 3 个小时！`);
                 if (placeCount >= 3) return alert(`⚠️ 限制：同一个时间段最多只能订 3 块场地！`);
 
+                const nextSet = new Set(selectedItems);
+                nextSet.add(key);
+                if (!isValidSemiAutoSelection(nextSet)) {
+                    return alert(`⚠️ 限制：半自动抢票需满足 3x3 规则（连续场地号 + 连续时间段；可与已被预订格子组合成 3x3）。`);
+                }
+
                 selectedItems.add(key);
-                el.classList.add('selected');
             }
+            document.querySelectorAll(`.cell[data-key="${key}"]`).forEach(node => node.classList.toggle('selected', selectedItems.has(key)));
             updateBar();
         }
 
@@ -1102,8 +1386,7 @@
         function removeTag(key) {
             if (selectedItems.has(key)) {
                 selectedItems.delete(key);
-                const targetCell = document.querySelector(`.cell[data-key="${key}"]`);
-                if (targetCell) targetCell.classList.remove('selected');
+                document.querySelectorAll(`.cell[data-key="${key}"]`).forEach(node => node.classList.remove('selected'));
                 updateBar();
             }
         }
@@ -1486,12 +1769,8 @@
                 const btn = document.createElement('div');
                 btn.className = 'tag-btn';
                 btn.innerText = p + "号";
+                btn.dataset.place = String(p);
                 btn.onclick = () => {
-                    // 限制：最多选 3 个候选场地
-                    if (!btn.classList.contains('active')) {
-                        const count = document.querySelectorAll('#placeSelector .active').length;
-                        if (count >= 3) return alert("⚠️ 限制：同一时间段最多只能抢 3 个场地！");
-                    }
                     btn.classList.toggle('active');
                     updateTaskSummary();
                 };
@@ -1511,7 +1790,6 @@
                 btn.className = 'tag-btn';
                 btn.innerText = timeStr;
                 btn.onclick = () => {
-                    // 限制：如果当前未选中，且已选数量 >= 3，则禁止选中
                     if (!btn.classList.contains('active')) {
                         const count = document.querySelectorAll('#timeSelector .active').length;
                         if (count >= 3) return alert("⚠️ 限制：单个场地最多只能抢 3 个小时！");
@@ -1554,7 +1832,7 @@
             let text = '';
             if (selectedPlaces.length && selectedTimes.length) {
                 text = `已选 <b>${selectedPlaces.length}</b> 个候选场地 × <b>${selectedTimes.length}</b> 个时间段，` +
-                    `理论上最多可以凑出 <b>${selectedPlaces.length}</b> 块场地。`;
+                    `理论上最多可以凑出 <b>${selectedPlaces.length}</b> 块场地（候选场地可多选；时间段最多3个；总目标最多3块）。`;
             } else {
                 text = '请先选择候选场地和时间段';
             }
@@ -1770,7 +2048,8 @@
             const time = document.getElementById('taskTime').value;
             const type = document.getElementById('taskType').value;
             const offset = parseInt(document.getElementById('taskOffset').value || '0', 10);
-            const targetCount = parseInt(document.getElementById('taskTargetCount').value || '2', 10);
+            const targetCountRaw = parseInt(document.getElementById('taskTargetCount').value || '2', 10);
+            const targetCount = Math.min(Math.max(targetCountRaw, 1), 3);
 
             // 1. 收集时间（用按钮选中的）
             const times = [];
