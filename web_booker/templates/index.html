@@ -1170,6 +1170,15 @@
                 statusHtml = '<div style="background:#d4edda;color:#155724;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #c3e6cb;">✅ <b>实时数据</b>：当前显示的是最新的场地状态。</div>';
             }
 
+            const meta = data.meta || {};
+            let mineSyncHtml = '';
+            if (meta.mine_overlay_ok === true) {
+                mineSyncHtml = `<div style="background:#e8f4ff;color:#0b5cad;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #b9dbff;">🔵 <b>我的订单同步正常</b>：已识别 ${Number(meta.mine_slots_count || 0)} 个 mine 格子。</div>`;
+            } else if (meta.mine_overlay_ok === false) {
+                const reason = meta.mine_overlay_error || '未知原因';
+                mineSyncHtml = `<div style="background:#f8f9fa;color:#666;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #ddd;">⚠️ <b>我的订单同步失败</b>：mine 颜色可能不完整（${reason}）。</div>`;
+            }
+
             const normalizeStatus = (rawStatus, fakeMode) => {
                 if (fakeMode) return 'available';
                 if (rawStatus === undefined || rawStatus === null) return 'occupied';
@@ -1264,7 +1273,7 @@
             });
             cardHtml += '</div>';
 
-            document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${statusHtml}${legendHtml}${tableHtml}${cardHtml}</div>`;
+            document.getElementById('matrix-area').innerHTML = `<div class="matrix-container">${statusHtml}${mineSyncHtml}${legendHtml}${tableHtml}${cardHtml}</div>`;
             updateBar();
         }
 
@@ -1887,6 +1896,7 @@
                 : '未知';
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
+            text += `<br>执行策略：每批最多 3 块（稳定模式）`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');

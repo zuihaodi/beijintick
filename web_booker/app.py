@@ -435,16 +435,23 @@ class ApiClient:
             print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
 
             # 用我的订单覆盖 mine 状态（仅 showStatus=0 且非取消订单）
+            mine_overlay_ok = False
+            mine_overlay_error = ""
+            mine_slots_count = 0
+
             orders_res = self.get_place_orders()
             if "error" not in orders_res:
+                mine_overlay_ok = True
                 mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                mine_slots_count = len(mine_slots)
                 for p, t in mine_slots:
                     if p in matrix and t in matrix[p]:
                         matrix[p][t] = "mine"
                 if mine_slots:
                     print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
             else:
-                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {orders_res.get('error')}")
+                mine_overlay_error = str(orders_res.get('error') or '')
+                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
 
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
@@ -452,7 +459,12 @@ class ApiClient:
             return {
                 "places": sorted_places,
                 "times": sorted_times,
-                "matrix": matrix
+                "matrix": matrix,
+                "meta": {
+                    "mine_overlay_ok": mine_overlay_ok,
+                    "mine_slots_count": mine_slots_count,
+                    "mine_overlay_error": mine_overlay_error,
+                }
             }
             
         except Exception as e:
