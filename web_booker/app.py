@@ -18,6 +18,7 @@ import time
 import threading
 import os
 import hashlib
+import re
 
 HEALTH_CHECK_NEXT_RUN = None
 
@@ -265,6 +266,77 @@ class ApiClient:
                 return False, err
         return True, "Valid"
 
+    def get_place_orders(self, page_size=20, max_pages=6):
+        """获取我的场地订单列表（用于识别 mine 状态）。"""
+        url = f"https://{self.host}/easyserpClient/place/getPlaceOrder"
+        all_orders = []
+
+        for page_no in range(max_pages):
+            params = {
+                "pageNo": page_no,
+                "pageSize": page_size,
+                "shopNum": CONFIG["auth"]["shop_num"],
+                "token": self.token,
+            }
+            try:
+                resp = self.session.get(url, headers=self.headers, params=params, timeout=10, verify=False)
+                data = resp.json()
+            except Exception as e:
+                return {"error": f"获取订单失败: {e}"}
+
+            if not isinstance(data, dict):
+                return {"error": f"订单接口返回格式错误: {data}"}
+            if data.get("msg") != "success":
+                return {"error": f"订单接口返回异常: {data.get('msg')}"}
+
+            page_items = data.get("data") or []
+            if not isinstance(page_items, list):
+                page_items = []
+
+            all_orders.extend(page_items)
+            if len(page_items) < page_size:
+                break
+
+        return {"data": all_orders}
+
+    def _extract_mine_slots(self, orders, target_date):
+        """把订单列表转换为 mine 格子集合，格式: {(place, HH:MM)}。"""
+        mine_slots = set()
+        for order in orders:
+            if str(order.get("showStatus", "")) != "0":
+                continue
+            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+                continue
+
+            arr = order.get("jsonArray") or []
+            if not isinstance(arr, list):
+                continue
+
+            for seg in arr:
+                if str(seg.get("reversionDate", "")).strip() != target_date:
+                    continue
+
+                site_name = str(seg.get("siteName", ""))
+                m = re.search(r"(\d+)", site_name)
+                if not m:
+                    continue
+                place = m.group(1)
+
+                start = str(seg.get("start", "")).strip()
+                end = str(seg.get("end", "")).strip()
+                try:
+                    start_dt = datetime.strptime(start, "%H:%M:%S")
+                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                except ValueError:
+                    continue
+
+                cur = start_dt
+                while cur < end_dt:
+                    mine_slots.add((place, cur.strftime("%H:%M")))
+                    cur += timedelta(hours=1)
+
+        return mine_slots
+
     def get_matrix(self, date_str):
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
         params = {
@@ -361,14 +433,38 @@ class ApiClient:
                 matrix[p_num] = status_map
             
             print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
-                
+
+            # 用我的订单覆盖 mine 状态（仅 showStatus=0 且非取消订单）
+            mine_overlay_ok = False
+            mine_overlay_error = ""
+            mine_slots_count = 0
+
+            orders_res = self.get_place_orders()
+            if "error" not in orders_res:
+                mine_overlay_ok = True
+                mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                mine_slots_count = len(mine_slots)
+                for p, t in mine_slots:
+                    if p in matrix and t in matrix[p]:
+                        matrix[p][t] = "mine"
+                if mine_slots:
+                    print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+            else:
+                mine_overlay_error = str(orders_res.get('error') or '')
+                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
+
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
-            
+
             return {
                 "places": sorted_places,
                 "times": sorted_times,
-                "matrix": matrix
+                "matrix": matrix,
+                "meta": {
+                    "mine_overlay_ok": mine_overlay_ok,
+                    "mine_slots_count": mine_slots_count,
+                    "mine_overlay_error": mine_overlay_error,
+                }
             }
             
         except Exception as e:
@@ -579,6 +675,13 @@ class TaskManager:
             
     def add_task(self, task):
         # task: {id, type='daily'|'weekly', run_time='08:00', target_day_offset=2, items=[...]}
+        cfg = task.get('config') if isinstance(task, dict) else None
+        if isinstance(cfg, dict) and 'target_count' in cfg:
+            try:
+                cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+            except Exception:
+                cfg['target_count'] = 2
+
         task['id'] = int(time.time() * 1000)
         self.tasks.append(task)
         self.save_tasks()
@@ -854,7 +957,7 @@ class TaskManager:
             # --- 模式 A: 场地优先优先级序列 (priority) ---
             if config.get('mode') == 'priority':
                 sequences = config.get('priority_sequences', [])  # 例如 [["6","7"],["8","9"]]
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 第一轮：优先尝试完整序列
@@ -920,7 +1023,7 @@ class TaskManager:
                 if not candidate_places:
                     candidate_places = [str(i) for i in range(1, 16)]
 
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 优先尝试整段时间序列（比如 14-16 连续两小时）
@@ -984,7 +1087,7 @@ class TaskManager:
                     return
 
                 candidate_places = [str(p) for p in config['candidate_places']]
-                target_courts = int(config.get('target_count', 2))  # 目标是“几块场地”
+                target_courts = max(1, min(3, int(config.get('target_count', 2))))  # 目标是“几块场地”
                 smart_mode = config.get('smart_continuous', False)
 
                 if target_courts <= 0:
