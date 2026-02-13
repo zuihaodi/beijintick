@@ -859,7 +859,7 @@
 
             <button class="btn"
                 style="width:100%;padding:8px;font-size:13px;background:#f0f0f5;color:#333;border:1px solid #ddd;margin-bottom:10px;"
-                onclick="checkToken()">🔍 检查当前 Token 有效性</button>
+                onclick="checkToken()">🔍 检查凭证状态（查询/下单）</button>
 
             <div id="authUpdateArea" style="display:none;">
                 <textarea id="newToken" class="form-control" placeholder="粘贴新的 token (oy9...)" rows="1"
@@ -1577,11 +1577,23 @@
             try {
                 const res = await fetch('/api/config/check-token', { method: 'POST' });
                 const data = await res.json();
-                if (data.status === 'success') {
-                    alert('✅ ' + data.msg);
+
+                const queryLine = `查询链路：${data.query_auth_ok ? '✅ 通过' : '❌ 失败'}（${data.query_auth_msg || '无详情'}）`;
+                let bookingLine = '';
+                if (data.booking_auth_ok && data.booking_auth_unknown) {
+                    bookingLine = `下单链路：⚠️ 已探测但未确认（${data.booking_auth_msg || '无详情'}）`;
+                } else if (data.booking_auth_ok) {
+                    bookingLine = `下单链路：✅ 通过（${data.booking_auth_msg || '无详情'}）`;
+                } else if (data.booking_auth_unknown) {
+                    bookingLine = `下单链路：⚠️ 探测异常/未知（${data.booking_auth_msg || '无详情'}）`;
                 } else {
-                    alert('❌ ' + data.msg + '\n\n如果已配置手机号，系统尝试发送了报警短信。');
+                    bookingLine = `下单链路：❌ 疑似鉴权失败（${data.booking_auth_msg || '无详情'}）`;
                 }
+
+                const caution = '提示：查询通过 ≠ 一定下单成功；下单还可能受 cookie、风控、时机、并发抢占影响。';
+                const prefix = data.status === 'success' ? '✅ ' : '❌ ';
+                const smsTip = data.status === 'success' ? '' : '\n\n如果已配置手机号，系统尝试发送了报警短信。';
+                alert(prefix + (data.msg || '凭证检查完成') + `\n\n${queryLine}\n${bookingLine}\n\n${caution}` + smsTip);
             } catch (e) {
                 alert('网络请求失败');
             }

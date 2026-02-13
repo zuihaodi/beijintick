@@ -54,7 +54,16 @@ def health_check():
                 tokens=pushplus_tokens,
             )
     else:
-        log("✅ 健康检查通过：场地状态获取正常")
+        booking_probe = client.check_booking_auth_probe()
+        if booking_probe.get('ok') and booking_probe.get('unknown'):
+            log(f"✅ 健康检查通过：场地状态获取正常；⚠️ 下单链路仅完成探测，结果未确认( {booking_probe.get('msg')} )")
+        elif booking_probe.get('ok'):
+            log("✅ 健康检查通过：场地状态获取正常；下单鉴权探测未见明显异常")
+        else:
+            if booking_probe.get('unknown'):
+                log(f"✅ 健康检查通过：场地状态获取正常；⚠️ 下单链路探测异常/未知( {booking_probe.get('msg')} )")
+            else:
+                log(f"⚠️ 健康检查：查询正常，但下单链路疑似鉴权异常( {booking_probe.get('msg')} )")
 
 # 每隔一段时间执行健康检查
 def schedule_health_check():
@@ -298,6 +307,54 @@ class ApiClient:
             if any(k in err.lower() for k in ["token", "登录", "session", "失效", "凭证", "-1"]):
                 return False, err
         return True, "Valid"
+
+    def check_booking_auth_probe(self):
+        """
+        尝试用“无效业务参数”的轻量请求探测 reservationPlace 鉴权链路。
+        说明：此探测不提交有效场次，不会产生真实订单；
+        仅用于区分“鉴权失败”和“业务参数错误/未知”。
+        """
+        url = f"https://{self.host}/easyserpClient/place/reservationPlace"
+        probe_body = (
+            f"token={self.token}&"
+            f"shopNum={CONFIG['auth']['shop_num']}&"
+            f"fieldinfo=%5B%5D&"
+            f"cardStId={CONFIG['auth'].get('card_st_id', '')}&"
+            f"oldTotal=0.00&"
+            f"cardPayType=0&"
+            f"type=&"
+            f"offerId=&"
+            f"offerType=&"
+            f"total=0.00&"
+            f"premerother=&"
+            f"cardIndex={CONFIG['auth'].get('card_index', '')}"
+        )
+
+        try:
+            resp = self.session.post(url, headers=self.headers, data=probe_body, timeout=10, verify=False)
+            text = (resp.text or '').strip()
+            data = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = None
+
+            msg_raw = ''
+            if isinstance(data, dict):
+                msg_raw = str(data.get('msg') or data.get('data') or '')
+            if not msg_raw:
+                msg_raw = text[:160]
+            msg_l = msg_raw.lower()
+
+            auth_keywords = ['token', 'session', '登录', '失效', '凭证', '-1', '未登录']
+            if any(k in msg_l for k in auth_keywords):
+                return {'ok': False, 'unknown': False, 'msg': msg_raw}
+
+            # 能走到这里通常说明接口可达且未被直接鉴权拦截；
+            # 但由于是无效业务参数探测，不能视为“下单一定成功”。
+            return {'ok': True, 'unknown': True, 'msg': f"探测响应: {msg_raw}"}
+        except Exception as e:
+            return {'ok': False, 'unknown': True, 'msg': f"探测异常: {e}"}
 
     def get_place_orders(self, page_size=20, max_pages=6):
         """获取我的场地订单列表（用于识别 mine 状态）。"""
@@ -1581,13 +1638,27 @@ def run_task_now(task_id):
 
 @app.route('/api/config/check-token', methods=['POST'])
 def check_token_api():
-    valid, msg = client.check_token()
-    if valid:
-        return jsonify({"status": "success", "msg": "Token 有效喵！"})
+    query_ok, query_msg = client.check_token()
+    booking_probe = client.check_booking_auth_probe()
+
+    if query_ok:
+        status = "success"
+        msg = "查询链路鉴权通过。"
     else:
+        status = "error"
+        msg = f"查询链路鉴权失败: {query_msg}"
         # 如果失效，尝试发短信提醒（如果配置了手机号）
-        task_manager.send_notification(f"警告：您的 Token 可能已失效 ({msg})，请及时更新喵！")
-        return jsonify({"status": "error", "msg": f"Token 失效: {msg} 喵"})
+        task_manager.send_notification(f"警告：您的 Token 可能已失效 ({query_msg})，请及时更新喵！")
+
+    return jsonify({
+        "status": status,
+        "msg": msg,
+        "query_auth_ok": query_ok,
+        "query_auth_msg": query_msg,
+        "booking_auth_ok": booking_probe.get('ok', False),
+        "booking_auth_unknown": booking_probe.get('unknown', True),
+        "booking_auth_msg": booking_probe.get('msg', ''),
+    })
 
 @app.route('/api/config/test-sms', methods=['POST'])
 def test_sms():

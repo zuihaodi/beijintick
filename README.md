@@ -42,6 +42,8 @@ python web_booker/app.py
 - **分步向导脚本**: `python step_by_step_booker.py`
 
 ## 注意事项
+- 健康检查当前主要验证“查询链路”（能否获取场地状态）；查询正常不等于下单一定成功。
+- 下单失败除了 Token/Cookie 外，还可能受风控、并发抢占、时间窗口、参数配置影响。
 - 请确保 `web_booker/config.local.json` 中 Token 是最新有效值；Cookie 可选。
 - 本地运行数据使用 `*.local.json`（`config.local.json` / `tasks.local.json`），可避免拉取代码时覆盖。
 - 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
