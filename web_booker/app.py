@@ -18,6 +18,7 @@ import time
 import threading
 import os
 import hashlib
+import re
 
 HEALTH_CHECK_NEXT_RUN = None
 
@@ -245,8 +246,10 @@ class ApiClient:
             "Content-Type": "application/x-www-form-urlencoded",
             "Origin": f"https://{self.host}",
             "Referer": f"https://{self.host}/easyserp/index.html",
-            "Cookie": CONFIG["auth"]["cookie"]
         }
+        cookie = str(CONFIG["auth"].get("cookie", "")).strip()
+        if cookie:
+            self.headers["Cookie"] = cookie
         self.token = CONFIG["auth"]["token"]
         self.session = requests.Session()
 
@@ -264,6 +267,77 @@ class ApiClient:
             if any(k in err.lower() for k in ["token", "登录", "session", "失效", "凭证", "-1"]):
                 return False, err
         return True, "Valid"
+
+    def get_place_orders(self, page_size=20, max_pages=6):
+        """获取我的场地订单列表（用于识别 mine 状态）。"""
+        url = f"https://{self.host}/easyserpClient/place/getPlaceOrder"
+        all_orders = []
+
+        for page_no in range(max_pages):
+            params = {
+                "pageNo": page_no,
+                "pageSize": page_size,
+                "shopNum": CONFIG["auth"]["shop_num"],
+                "token": self.token,
+            }
+            try:
+                resp = self.session.get(url, headers=self.headers, params=params, timeout=10, verify=False)
+                data = resp.json()
+            except Exception as e:
+                return {"error": f"获取订单失败: {e}"}
+
+            if not isinstance(data, dict):
+                return {"error": f"订单接口返回格式错误: {data}"}
+            if data.get("msg") != "success":
+                return {"error": f"订单接口返回异常: {data.get('msg')}"}
+
+            page_items = data.get("data") or []
+            if not isinstance(page_items, list):
+                page_items = []
+
+            all_orders.extend(page_items)
+            if len(page_items) < page_size:
+                break
+
+        return {"data": all_orders}
+
+    def _extract_mine_slots(self, orders, target_date):
+        """把订单列表转换为 mine 格子集合，格式: {(place, HH:MM)}。"""
+        mine_slots = set()
+        for order in orders:
+            if str(order.get("showStatus", "")) != "0":
+                continue
+            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+                continue
+
+            arr = order.get("jsonArray") or []
+            if not isinstance(arr, list):
+                continue
+
+            for seg in arr:
+                if str(seg.get("reversionDate", "")).strip() != target_date:
+                    continue
+
+                site_name = str(seg.get("siteName", ""))
+                m = re.search(r"(\d+)", site_name)
+                if not m:
+                    continue
+                place = m.group(1)
+
+                start = str(seg.get("start", "")).strip()
+                end = str(seg.get("end", "")).strip()
+                try:
+                    start_dt = datetime.strptime(start, "%H:%M:%S")
+                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                except ValueError:
+                    continue
+
+                cur = start_dt
+                while cur < end_dt:
+                    mine_slots.add((place, cur.strftime("%H:%M")))
+                    cur += timedelta(hours=1)
+
+        return mine_slots
 
     def get_matrix(self, date_str):
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
@@ -291,7 +365,7 @@ class ApiClient:
                 print(f"❌ [API响应异常] 响应不是字典: {type(data)} - {data}")
                 # 特殊处理 -1 (通常代表 Session/Token 失效)
                 if data == -1 or str(data) == "-1":
-                    return {"error": "会话失效(返回-1)，请更新Token和Cookie"}
+                    return {"error": "会话失效(返回-1)，请更新Token（必要）与Cookie（可选）"}
                 return {"error": f"API返回格式错误: {data}"}
 
             if data.get("msg") != "success":
@@ -361,14 +435,38 @@ class ApiClient:
                 matrix[p_num] = status_map
             
             print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
-                
+
+            # 用我的订单覆盖 mine 状态（仅 showStatus=0 且非取消订单）
+            mine_overlay_ok = False
+            mine_overlay_error = ""
+            mine_slots_count = 0
+
+            orders_res = self.get_place_orders()
+            if "error" not in orders_res:
+                mine_overlay_ok = True
+                mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                mine_slots_count = len(mine_slots)
+                for p, t in mine_slots:
+                    if p in matrix and t in matrix[p]:
+                        matrix[p][t] = "mine"
+                if mine_slots:
+                    print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+            else:
+                mine_overlay_error = str(orders_res.get('error') or '')
+                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
+
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
-            
+
             return {
                 "places": sorted_places,
                 "times": sorted_times,
-                "matrix": matrix
+                "matrix": matrix,
+                "meta": {
+                    "mine_overlay_ok": mine_overlay_ok,
+                    "mine_slots_count": mine_slots_count,
+                    "mine_overlay_error": mine_overlay_error,
+                }
             }
             
         except Exception as e:
@@ -579,6 +677,13 @@ class TaskManager:
             
     def add_task(self, task):
         # task: {id, type='daily'|'weekly', run_time='08:00', target_day_offset=2, items=[...]}
+        cfg = task.get('config') if isinstance(task, dict) else None
+        if isinstance(cfg, dict) and 'target_count' in cfg:
+            try:
+                cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+            except Exception:
+                cfg['target_count'] = 2
+
         task['id'] = int(time.time() * 1000)
         self.tasks.append(task)
         self.save_tasks()
@@ -854,7 +959,7 @@ class TaskManager:
             # --- 模式 A: 场地优先优先级序列 (priority) ---
             if config.get('mode') == 'priority':
                 sequences = config.get('priority_sequences', [])  # 例如 [["6","7"],["8","9"]]
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 第一轮：优先尝试完整序列
@@ -920,7 +1025,7 @@ class TaskManager:
                 if not candidate_places:
                     candidate_places = [str(i) for i in range(1, 16)]
 
-                target_count = int(config.get('target_count', 2))
+                target_count = max(1, min(3, int(config.get('target_count', 2))))
                 allow_partial = config.get('allow_partial', True)
 
                 # 3.1 优先尝试整段时间序列（比如 14-16 连续两小时）
@@ -984,7 +1089,7 @@ class TaskManager:
                     return
 
                 candidate_places = [str(p) for p in config['candidate_places']]
-                target_courts = int(config.get('target_count', 2))  # 目标是“几块场地”
+                target_courts = max(1, min(3, int(config.get('target_count', 2))))  # 目标是“几块场地”
                 smart_mode = config.get('smart_continuous', False)
 
                 if target_courts <= 0:
@@ -1363,16 +1468,21 @@ def update_auth():
         if not data:
             return jsonify({"status": "error", "msg": "请求体为空"})
             
-        if 'token' in data and 'cookie' in data:
-            # 去除首尾空格
-            token = data['token'].strip()
-            cookie = data['cookie'].strip()
-            
-            CONFIG['auth']['token'] = token
+        token = str(data.get('token') or '').strip()
+        if not token:
+            return jsonify({"status": "error", "msg": "Token缺失"})
+
+        cookie_raw = data.get('cookie', None)
+        cookie = str(cookie_raw).strip() if cookie_raw is not None else ''
+        has_cookie_update = bool(cookie)
+
+        CONFIG['auth']['token'] = token
+        if has_cookie_update:
             CONFIG['auth']['cookie'] = cookie
-            
-            # 更新 client 实例
-            client.token = token
+
+        # 更新 client 实例
+        client.token = token
+        if has_cookie_update:
             client.headers['Cookie'] = cookie
             
             # 持久化保存
@@ -1388,7 +1498,10 @@ def update_auth():
                 if 'auth' not in saved: saved['auth'] = {}
                 
                 saved['auth']['token'] = token
-                saved['auth']['cookie'] = cookie
+                if has_cookie_update:
+                    saved['auth']['cookie'] = cookie
+                else:
+                    saved['auth']['cookie'] = CONFIG['auth'].get('cookie', '')
                 # 保留其他 auth 字段 (如 shop_num)
                 saved['auth']['card_index'] = CONFIG['auth'].get('card_index', '')
                 saved['auth']['card_st_id'] = CONFIG['auth'].get('card_st_id', '')
@@ -1400,9 +1513,12 @@ def update_auth():
             except Exception as e:
                 print(f"保存Auth配置失败: {e}")
                 # 即使保存失败，内存更新成功也算成功，但记录日志
-                
-            return jsonify({"status": "success", "msg": "凭证已更新"})
-        return jsonify({"status": "error", "msg": "Token或Cookie缺失"})
+
+            if has_cookie_update:
+                msg = "Token/Cookie 已更新"
+            else:
+                msg = "Token 已更新，Cookie 保持原值"
+            return jsonify({"status": "success", "msg": msg})
     except Exception as e:
         print(f"Update Auth Error: {e}")
         return jsonify({"status": "error", "msg": f"服务器内部错误: {str(e)}"})
