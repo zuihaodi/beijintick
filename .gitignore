@@ -6,3 +6,9 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Local runtime secrets
+web_booker/config.json
+web_booker/tasks.json
+web_booker/config.local.json
+web_booker/tasks.local.json
