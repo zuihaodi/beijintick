@@ -6,7 +6,9 @@
     "card_st_id": "<your-card-st-id>",
     "shop_num": "1001"
   },
-  "notification_phones": [],
+  "notification_phones": [
+    "<phone-number>"
+  ],
   "retry_interval": 1.0,
   "aggressive_retry_interval": 1.0,
   "locked_retry_interval": 1.0,

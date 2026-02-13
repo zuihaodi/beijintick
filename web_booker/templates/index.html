@@ -864,8 +864,11 @@
             <div id="authUpdateArea" style="display:none;">
                 <textarea id="newToken" class="form-control" placeholder="粘贴新的 token (oy9...)" rows="1"
                     style="margin-bottom:5px;font-size:12px;"></textarea>
-                <textarea id="newCookie" class="form-control" placeholder="粘贴新的 cookie (JSESSIONID=...)"
+                <textarea id="newCookie" class="form-control" placeholder="可选：粘贴新的 cookie（留空则保留当前值）"
                     rows="2" style="margin-bottom:5px;font-size:12px;"></textarea>
+                <div style="font-size:12px;color:#666;margin:4px 0 8px 0;">
+                    说明：多数接口仅需 Token；当遇到特定接口鉴权异常时再补充 Cookie。
+                </div>
                 <button class="btn btn-success" style="width:100%;padding:6px;font-size:13px;"
                     onclick="updateAuth()">💾 保存并更新</button>
             </div>
@@ -1587,13 +1590,15 @@
         async function updateAuth() {
             const token = document.getElementById('newToken').value.trim();
             const cookie = document.getElementById('newCookie').value.trim();
-            if (!token || !cookie) return alert("请填写完整的 Token 和 Cookie");
+            if (!token) return alert("请至少填写 Token");
 
             try {
+                const body = { token };
+                if (cookie) body.cookie = cookie;
                 const res = await fetch('/api/config/auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, cookie })
+                    body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 if (data.status === 'success') {

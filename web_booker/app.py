@@ -246,8 +246,10 @@ class ApiClient:
             "Content-Type": "application/x-www-form-urlencoded",
             "Origin": f"https://{self.host}",
             "Referer": f"https://{self.host}/easyserp/index.html",
-            "Cookie": CONFIG["auth"]["cookie"]
         }
+        cookie = str(CONFIG["auth"].get("cookie", "")).strip()
+        if cookie:
+            self.headers["Cookie"] = cookie
         self.token = CONFIG["auth"]["token"]
         self.session = requests.Session()
 
@@ -363,7 +365,7 @@ class ApiClient:
                 print(f"❌ [API响应异常] 响应不是字典: {type(data)} - {data}")
                 # 特殊处理 -1 (通常代表 Session/Token 失效)
                 if data == -1 or str(data) == "-1":
-                    return {"error": "会话失效(返回-1)，请更新Token和Cookie"}
+                    return {"error": "会话失效(返回-1)，请更新Token（必要）与Cookie（可选）"}
                 return {"error": f"API返回格式错误: {data}"}
 
             if data.get("msg") != "success":
@@ -1466,16 +1468,21 @@ def update_auth():
         if not data:
             return jsonify({"status": "error", "msg": "请求体为空"})
             
-        if 'token' in data and 'cookie' in data:
-            # 去除首尾空格
-            token = data['token'].strip()
-            cookie = data['cookie'].strip()
-            
-            CONFIG['auth']['token'] = token
+        token = str(data.get('token') or '').strip()
+        if not token:
+            return jsonify({"status": "error", "msg": "Token缺失"})
+
+        cookie_raw = data.get('cookie', None)
+        cookie = str(cookie_raw).strip() if cookie_raw is not None else ''
+        has_cookie_update = bool(cookie)
+
+        CONFIG['auth']['token'] = token
+        if has_cookie_update:
             CONFIG['auth']['cookie'] = cookie
-            
-            # 更新 client 实例
-            client.token = token
+
+        # 更新 client 实例
+        client.token = token
+        if has_cookie_update:
             client.headers['Cookie'] = cookie
             
             # 持久化保存
@@ -1491,7 +1498,10 @@ def update_auth():
                 if 'auth' not in saved: saved['auth'] = {}
                 
                 saved['auth']['token'] = token
-                saved['auth']['cookie'] = cookie
+                if has_cookie_update:
+                    saved['auth']['cookie'] = cookie
+                else:
+                    saved['auth']['cookie'] = CONFIG['auth'].get('cookie', '')
                 # 保留其他 auth 字段 (如 shop_num)
                 saved['auth']['card_index'] = CONFIG['auth'].get('card_index', '')
                 saved['auth']['card_st_id'] = CONFIG['auth'].get('card_st_id', '')
@@ -1503,9 +1513,12 @@ def update_auth():
             except Exception as e:
                 print(f"保存Auth配置失败: {e}")
                 # 即使保存失败，内存更新成功也算成功，但记录日志
-                
-            return jsonify({"status": "success", "msg": "凭证已更新"})
-        return jsonify({"status": "error", "msg": "Token或Cookie缺失"})
+
+            if has_cookie_update:
+                msg = "Token/Cookie 已更新"
+            else:
+                msg = "Token 已更新，Cookie 保持原值"
+            return jsonify({"status": "success", "msg": msg})
     except Exception as e:
         print(f"Update Auth Error: {e}")
         return jsonify({"status": "error", "msg": f"服务器内部错误: {str(e)}"})
