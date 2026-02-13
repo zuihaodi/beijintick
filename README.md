@@ -16,6 +16,15 @@
       pip install -r requirements.txt
       ```
 
+3.  **准备配置文件（必做）**
+    - 将 `web_booker/config.example.json` 复制为 `web_booker/config.local.json`。
+    - 填入你自己的 Token（必填）以及 Cookie（可选，建议保留）。
+    - 运行时优先读取 `web_booker/config.local.json`，避免被 `git pull` 覆盖。
+
+4.  **准备任务文件（可选）**
+    - 将 `web_booker/tasks.example.json` 复制为 `web_booker/tasks.local.json`。
+    - 运行时优先读取 `web_booker/tasks.local.json`，避免任务配置被 `git pull` 覆盖。
+
 ## 如何运行
 
 本项目包含多个脚本，主要使用 Web 界面版：
@@ -33,5 +42,7 @@ python web_booker/app.py
 - **分步向导脚本**: `python step_by_step_booker.py`
 
 ## 注意事项
-- 请确保 `config.json` 中的 Token 和 Cookie 是最新的。
+- 请确保 `web_booker/config.local.json` 中 Token 是最新有效值；Cookie 可选。
+- 本地运行数据使用 `*.local.json`（`config.local.json` / `tasks.local.json`），可避免拉取代码时覆盖。
+- 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
