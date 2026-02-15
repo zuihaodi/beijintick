@@ -143,7 +143,8 @@ CONFIG = {
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "config.local.json")
+CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -154,6 +155,34 @@ def log(msg):
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
     if len(LOG_BUFFER) > MAX_LOG_SIZE:
         LOG_BUFFER.pop(0)
+
+def migrate_runtime_file_if_needed(local_path, legacy_paths):
+    """首次升级时，把历史运行文件迁移到 *.local.json，避免被 git pull 覆盖。"""
+    if os.path.exists(local_path):
+        return
+    for path in legacy_paths:
+        if not path:
+            continue
+        if os.path.abspath(path) == os.path.abspath(local_path):
+            continue
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as src, open(local_path, 'w', encoding='utf-8') as dst:
+                    dst.write(src.read())
+                print(f"🔄 已迁移本地运行文件: {path} -> {local_path}")
+                return
+            except Exception as e:
+                print(f"迁移运行文件失败({path}): {e}")
+
+
+migrate_runtime_file_if_needed(
+    CONFIG_FILE,
+    [
+        CONFIG_TEMPLATE_FILE,
+        os.path.join(PROJECT_ROOT, "config.json"),
+        os.path.join(os.getcwd(), "config.json"),
+    ],
+)
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -184,7 +213,8 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_FILE = os.path.join(BASE_DIR, "tasks.json")
+TASKS_FILE = os.path.join(BASE_DIR, "tasks.local.json")
+TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
 
 def migrate_legacy_tasks_file():
     """
@@ -192,6 +222,7 @@ def migrate_legacy_tasks_file():
     现在统一迁移到 web_booker/tasks.json（即 TASKS_FILE）。
     """
     candidates = [
+        TASKS_TEMPLATE_FILE,
         os.path.join(PROJECT_ROOT, "tasks.json"),
         os.path.join(os.getcwd(), "tasks.json"),
     ]
