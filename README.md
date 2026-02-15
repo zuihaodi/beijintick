@@ -17,13 +17,13 @@
       ```
 
 3.  **准备配置文件（必做）**
-    - 将 `web_booker/config.example.json` 复制为 `web_booker/config.local.json`。
+    - 将 `web_booker/config.example.json` 复制为 `web_booker/config.json`。
     - 填入你自己的 Token（必填）以及 Cookie（可选，建议保留）。
-    - 运行时优先读取 `web_booker/config.local.json`，避免被 `git pull` 覆盖。
+    - 运行时使用 `web_booker/config.json`。
 
 4.  **准备任务文件（可选）**
-    - 将 `web_booker/tasks.example.json` 复制为 `web_booker/tasks.local.json`。
-    - 运行时优先读取 `web_booker/tasks.local.json`，避免任务配置被 `git pull` 覆盖。
+    - 将 `web_booker/tasks.example.json` 复制为 `web_booker/tasks.json`。
+    - 运行时使用 `web_booker/tasks.json`。
 
 ## 如何运行
 
@@ -44,7 +44,7 @@ python web_booker/app.py
 ## 注意事项
 - 健康检查当前主要验证“查询链路”（能否获取场地状态）；查询正常不等于下单一定成功。
 - 下单失败除了 Token/Cookie 外，还可能受风控、并发抢占、时间窗口、参数配置影响。
-- 请确保 `web_booker/config.local.json` 中 Token 是最新有效值；Cookie 可选。
-- 本地运行数据使用 `*.local.json`（`config.local.json` / `tasks.local.json`），可避免拉取代码时覆盖。
+- 请确保 `web_booker/config.json` 中 Token 是最新有效值；Cookie 可选。
+- 建议将 `web_booker/config.json` 与 `web_booker/tasks.json` 视为本地运行数据文件（默认已被 `.gitignore` 忽略）。
 - 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
