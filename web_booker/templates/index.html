@@ -893,6 +893,26 @@
         <div style="margin-top:12px;display:flex;justify-content:flex-end;">
             <button class="btn btn-success" style="padding:8px 16px;font-size:13px;" onclick="saveConfig()">💾 保存全部系统设置</button>
         </div>
+
+        <div class="form-group" style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <label style="font-weight:bold;">📟 运行日志（与后台 /api/logs 同源）</label>
+                <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
+            </div>
+            <div id="logConsole" style="
+                height: 180px;
+                background: #1e1e1e;
+                color: #00ff00;
+                font-family: monospace;
+                font-size: 12px;
+                padding: 10px;
+                overflow-y: auto;
+                display: none;
+                border-radius: 6px;
+            ">
+                <div id="logContent"></div>
+            </div>
+        </div>
     </div>
 
     </div>
@@ -919,50 +939,6 @@
         </div>
     </div>
 
-    {% if page_mode == 'settings' %}
-    <!-- 日志输出窗口 -->
-    <div id="logConsole" style="
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 150px;
-        background: #1e1e1e;
-        color: #00ff00;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 10px;
-        overflow-y: auto;
-        z-index: 200;
-        display: none;
-        border-top: 2px solid #333;
-    ">
-        <div
-            style="position:sticky;top:0;background:#1e1e1e;border-bottom:1px solid #333;margin-bottom:5px;display:flex;justify-content:space-between;">
-            <span>📟 运行日志（与后台 /api/logs 同源）</span>
-            <span style="cursor:pointer;color:#fff;" onclick="toggleLogConsole()">▼ 隐藏</span>
-        </div>
-        <div id="logContent"></div>
-    </div>
-
-    <!-- 悬浮日志按钮 -->
-    <div id="logToggleBtn" style="
-        position: fixed;
-        bottom: 130px;
-        left: 20px;
-        background: #333;
-        color: white;
-        padding: 8px 12px;
-        border-radius: 20px;
-        cursor: pointer;
-        z-index: 201;
-        font-size: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    " onclick="toggleLogConsole()">
-        📟 显示日志
-    </div>
-    {% endif %}
-
     <script>
         let currentDate = '{{ dates[0].val }}';
         let selectedItems = new Set();
@@ -977,18 +953,11 @@
 
         function toggleLogConsole() {
             const console = document.getElementById('logConsole');
-            const btn = document.getElementById('logToggleBtn');
-            const bar = document.getElementById('bottomBar');
-            if (!console || !btn || !bar) return;
+            if (!console) return;
             if (console.style.display === 'none') {
                 console.style.display = 'block';
-                btn.style.display = 'none';
-                // 调整底部栏位置防止遮挡 (如果有的话)
-                bar.style.bottom = '170px';
             } else {
                 console.style.display = 'none';
-                btn.style.display = 'block';
-                bar.style.bottom = '0';
             }
         }
 
@@ -1007,7 +976,8 @@
                     });
                     lastLogIndex = logs.length;
                     // 自动滚动到底部
-                    document.getElementById('logConsole').scrollTop = document.getElementById('logConsole').scrollHeight;
+                    const c = document.getElementById('logConsole');
+                    c.scrollTop = c.scrollHeight;
                 }
             } catch (e) { }
         }
@@ -1029,16 +999,9 @@
                 bar.style.display = 'none';
             }
 
-            const logBtn = document.getElementById('logToggleBtn');
             const logConsole = document.getElementById('logConsole');
-            if (logBtn && logConsole) {
-                if (tabId === 'semi-auto') {
-                    if (logConsole.style.display !== 'block') logBtn.style.display = 'block';
-                } else {
-                    logBtn.style.display = 'none';
-                    logConsole.style.display = 'none';
-                    bar.style.bottom = '0';
-                }
+            if (logConsole && tabId !== 'settings') {
+                logConsole.style.display = 'none';
             }
         }
 
