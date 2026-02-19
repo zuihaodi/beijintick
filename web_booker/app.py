@@ -690,7 +690,9 @@ class ApiClient:
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
                     verify_states.append(f"{p}号{t}={status}")
-                    booked_map.append(status == "booked")
+                    # get_matrix 会用“我的订单”覆盖成 mine；
+                    # 对提交后验证来说，mine 与 booked 都代表已成功占位。
+                    booked_map.append(status in ("booked", "mine"))
 
                 print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
                 verify_success_count = sum(1 for ok in booked_map if ok)
