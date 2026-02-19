@@ -780,6 +780,7 @@
             <button class="btn btn-primary" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
+        {% if page_mode == 'tasks' %}
         <div class="task-list" id="taskList">
             <!-- 动态生成 -->
         </div>
@@ -973,6 +974,19 @@
         let latestTimes = [];
         let latestCellStatus = {};
         let lastLogIndex = 0; // 记录日志位置
+        const PAGE_MODE = '{{ page_mode }}';
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('saveToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.toggle('error', !!isError);
+            toast.style.display = 'block';
+            clearTimeout(window.__toastTimer);
+            window.__toastTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2200);
+        }
 
         function showToast(msg, isError = false) {
             const toast = document.getElementById('saveToast');
