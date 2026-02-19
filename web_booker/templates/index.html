@@ -595,6 +595,23 @@
                 flex-wrap: wrap;
             }
         }
+
+        .toast-msg {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #34c759;
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: none;
+        }
+        .toast-msg.error { background: #ff3b30; }
+
     </style>
 </head>
 
@@ -678,18 +695,6 @@
                 </div>
 
 
-                <!-- 通知手机号（当前任务专用） -->
-                <div class="form-group">
-                    <label>📱 通知手机号 (本任务，多个用逗号分隔)</label>
-                    <input type="text" id="notificationPhones" class="form-control"
-                           placeholder="例如: 13800000000, 13900000000">
-                </div>
-                <div class="form-group">
-                    <label>💬 微信通知 Token (本任务，PushPlus，多个用逗号分隔)</label>
-                    <input type="text" id="taskPushplusTokens" class="form-control"
-                           placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
-                </div>
-
                 <!-- 日期选择 -->
                 <div class="form-group">
                     <label>📅 抢哪天的场？</label>
@@ -740,6 +745,18 @@
 
                 <div class="tag-selector" id="timeSelector">
                     <!-- JS 生成 10:00-22:00 -->
+                </div>
+
+                <!-- 通知手机号（当前任务专用） -->
+                <div class="form-group">
+                    <label>📱 通知手机号 (本任务，多个用逗号分隔)</label>
+                    <input type="text" id="notificationPhones" class="form-control"
+                           placeholder="例如: 13800000000, 13900000000">
+                </div>
+                <div class="form-group">
+                    <label>💬 微信通知 Token (本任务，PushPlus，多个用逗号分隔)</label>
+                    <input type="text" id="taskPushplusTokens" class="form-control"
+                           placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
                 </div>
 
                 <div id="timeRangeArea" style="display:none">
@@ -939,6 +956,8 @@
         </div>
     </div>
 
+    <div id="saveToast" class="toast-msg"></div>
+
     <script>
         let currentDate = '{{ dates[0].val }}';
         let selectedItems = new Set();
@@ -950,6 +969,19 @@
         let latestTimes = [];
         let latestCellStatus = {};
         let lastLogIndex = 0; // 记录日志位置
+        const PAGE_MODE = '{{ page_mode }}';
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('saveToast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.toggle('error', !!isError);
+            toast.style.display = 'block';
+            clearTimeout(window.__toastTimer);
+            window.__toastTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2200);
+        }
 
         function toggleLogConsole() {
             const console = document.getElementById('logConsole');
@@ -1006,7 +1038,14 @@
         }
 
         // 初始化
-        loadMatrix(currentDate);
+        const semiTab = document.getElementById('tab-semi-auto');
+        const taskTab = document.getElementById('tab-auto-plan');
+        const settingsTab = document.getElementById('tab-settings');
+        if (semiTab) semiTab.style.display = PAGE_MODE === 'semi' ? 'block' : 'none';
+        if (taskTab) taskTab.style.display = PAGE_MODE === 'tasks' ? 'block' : 'none';
+        if (settingsTab) settingsTab.style.display = PAGE_MODE === 'settings' ? 'block' : 'none';
+
+        if (document.getElementById('matrix-area')) loadMatrix(currentDate);
         syncTime();
         setInterval(updateClock, 30);
         {% if page_mode == 'settings' %}
@@ -1014,14 +1053,14 @@
         {% endif %}
 
         // 初始化任务区域 (页面加载时直接调用)
-        initDateSelector();
+        if (document.getElementById('targetDateList')) initDateSelector();
         // initPlaceSelector 移到 renderTable 之后调用，或者给个默认调用
-        initPlaceSelector();
-        initTimeSelector();
-        loadTasks();
+        if (document.getElementById('placeSelector')) initPlaceSelector();
+        if (document.getElementById('timeSelector')) initTimeSelector();
+        if (document.getElementById('taskList')) loadTasks();
         loadConfig();
-        updateTaskSummary();
-        onTaskTypeChange();
+        if (document.getElementById('taskSummary')) updateTaskSummary();
+        if (document.getElementById('taskType')) onTaskTypeChange();
 
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
@@ -1620,7 +1659,7 @@
             } catch (e) { alert('更新失败'); }
         }
 
-        async function saveConfig() {
+        async function saveConfig(showTip = true) {
             try {
                 const globalNotificationPhones = document
                     .getElementById('globalNotificationPhones')
@@ -1672,13 +1711,13 @@
 
                 const result = await res.json();
                 if (result.status === 'success') {
-                    alert('保存成功！');
+                    if (showTip) showToast('保存成功');
                 } else {
-                    alert('保存失败：' + (result.msg || '未知错误'));
+                    if (showTip) showToast('保存失败：' + (result.msg || '未知错误'), true);
                 }
             } catch (e) {
                 console.error('保存配置失败', e);
-                alert('保存失败，请查看控制台日志');
+                showToast('保存失败，请查看控制台日志', true);
             }
         }
 
@@ -2170,7 +2209,7 @@
             };
 
             try {
-                await saveConfig();  // 仍然保存全局配置（速度 & 全局手机号）
+                await saveConfig(false);  // 仍然保存全局配置（速度 & 全局手机号）
                 const resp = await fetch('/api/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2178,14 +2217,14 @@
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    alert('任务已保存');
+                    showToast('保存成功');
                     loadTasks();
                 } else {
                     alert('保存失败: ' + (data.msg || '未知错误'));
                 }
             } catch (e) {
                 console.error(e);
-                alert('保存失败，请查看控制台日志');
+                showToast('保存失败，请查看控制台日志', true);
             }
         }
 
