@@ -605,17 +605,21 @@
             <h2>🏸 抢票助手</h2>
             <div>
                 <span id="sys-clock" class="clock" style="font-size:16px;margin-right:10px;">--:--:--.---</span>
+                <a href="/" class="btn-manage" style="text-decoration:none;">半自动</a>
+                <a href="/tasks" class="btn-manage" style="text-decoration:none;">任务中心</a>
+                <a href="/settings" class="btn-manage" style="text-decoration:none;">系统设置</a>
             </div>
         </div>
 
         <!-- 标签页导航 -->
         <div class="tabs">
-            <div class="tab-btn active" onclick="switchTab('semi-auto', this)">🖐️ 半自动抢票</div>
-            <div class="tab-btn" onclick="switchTab('auto-plan', this)">🤖 自动抢票计划</div>
+            <div class="tab-btn {% if page_mode == 'semi' %}active{% endif %}" onclick="window.location.href='/'">🖐️ 半自动抢票</div>
+            <div class="tab-btn {% if page_mode == 'tasks' %}active{% endif %}" onclick="window.location.href='/tasks'">📋 任务中心</div>
+            <div class="tab-btn {% if page_mode == 'settings' %}active{% endif %}" onclick="window.location.href='/settings'">⚙️ 系统设置</div>
         </div>
 
         <!-- Tab 1: 半自动抢票 (原主页内容) -->
-        <div id="tab-semi-auto" class="tab-content active">
+        <div id="tab-semi-auto" class="tab-content {% if page_mode == 'semi' %}active{% endif %}" {% if page_mode != 'semi' %}style="display:none !important;"{% endif %}>
             <div class="date-scroll">
                 {% for d in dates %}
                 <button class="date-btn {% if loop.index0 == 0 %}active{% endif %}"
@@ -631,8 +635,8 @@
             </div>
         </div>
 
-        <!-- Tab 2: 自动抢票计划 (原配置区域) -->
-        <div id="tab-auto-plan" class="tab-content">
+        <!-- Tab 2: 任务中心 -->
+        <div id="tab-auto-plan" class="tab-content {% if page_mode == 'tasks' %}active{% endif %}" {% if page_mode != 'tasks' %}style="display:none !important;"{% endif %}>
             <div class="task-form">
                 <div
                     style="background:#e3f2fd;color:#0056b3;padding:10px;border-radius:6px;font-size:13px;margin-bottom:15px;">
@@ -756,9 +760,19 @@
             <button class="btn btn-primary" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
+        {% if page_mode == 'tasks' %}
         <div class="task-list" id="taskList">
             <!-- 动态生成 -->
         </div>
+
+        <div style="font-size:12px;color:#666;margin-top:8px;">
+            “⚡ 立即运行”按钮用于<strong>立刻执行一次该任务</strong>，不必等待计划时间到点。
+        </div>
+        {% endif %}
+        </div>
+
+        <!-- Tab 3: 系统设置 -->
+        <div id="tab-settings" class="tab-content {% if page_mode == 'settings' %}active{% endif %}" {% if page_mode != 'settings' %}style="display:none !important;"{% endif %}>
         <!-- 速度设置 -->
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
@@ -813,8 +827,6 @@
                        placeholder="例如: 13800000000, 13900000000">
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#eee;"
                         onclick="testSMS()">📡 测试</button>
-                <button class="btn btn-success" style="padding:6px 12px;font-size:12px;"
-                        onclick="saveConfig()">💾 确定保存</button>
             </div>
             <div style="font-size:12px;color:#999;margin-top:5px;">
                 * 这里填写的是“全局报警手机号”，用于 Token 失效 / 服务器崩溃 等系统级提醒。<br>
@@ -829,8 +841,6 @@
             <div style="display:flex;gap:10px;">
                 <input type="text" id="globalPushplusTokens" class="form-control"
                        placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
-                <button class="btn btn-success" style="padding:6px 12px;font-size:12px;"
-                        onclick="saveConfig()">💾 确定保存</button>
             </div>
             <div style="font-size:12px;color:#999;margin-top:5px;">
                 * 这里填写的是“全局微信通知 token”，用于健康检查等系统级提醒。<br>
@@ -879,12 +889,36 @@
                     style="font-size:12px;color:#007aff;text-decoration:none;">✏️ 我要更新 Token</a>
             </div>
         </div>
+
+        <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+            <button class="btn btn-success" style="padding:8px 16px;font-size:13px;" onclick="saveConfig()">💾 保存全部系统设置</button>
+        </div>
+
+        <div class="form-group" style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <label style="font-weight:bold;">📟 运行日志（与后台 /api/logs 同源）</label>
+                <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
+            </div>
+            <div id="logConsole" style="
+                height: 180px;
+                background: #1e1e1e;
+                color: #00ff00;
+                font-family: monospace;
+                font-size: 12px;
+                padding: 10px;
+                overflow-y: auto;
+                display: none;
+                border-radius: 6px;
+            ">
+                <div id="logContent"></div>
+            </div>
+        </div>
     </div>
 
     </div>
 
     <!-- 底部栏 (只在半自动页面显示) -->
-    <div class="bottom-bar" id="bottomBar">
+    <div class="bottom-bar" id="bottomBar" {% if page_mode != 'semi' %}style="display:none"{% endif %}>
         <div class="bar-content">
             <div class="selected-tags" id="tagList"></div>
             <div class="status-row">
@@ -905,48 +939,6 @@
         </div>
     </div>
 
-    <!-- 日志输出窗口 -->
-    <div id="logConsole" style="
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 150px;
-        background: #1e1e1e;
-        color: #00ff00;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 10px;
-        overflow-y: auto;
-        z-index: 200;
-        display: none;
-        border-top: 2px solid #333;
-    ">
-        <div
-            style="position:sticky;top:0;background:#1e1e1e;border-bottom:1px solid #333;margin-bottom:5px;display:flex;justify-content:space-between;">
-            <span>📟 运行日志</span>
-            <span style="cursor:pointer;color:#fff;" onclick="toggleLogConsole()">▼ 隐藏</span>
-        </div>
-        <div id="logContent"></div>
-    </div>
-
-    <!-- 悬浮日志按钮 -->
-    <div id="logToggleBtn" style="
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: #333;
-        color: white;
-        padding: 8px 12px;
-        border-radius: 20px;
-        cursor: pointer;
-        z-index: 201;
-        font-size: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    " onclick="toggleLogConsole()">
-        📟 显示日志
-    </div>
-
     <script>
         let currentDate = '{{ dates[0].val }}';
         let selectedItems = new Set();
@@ -961,16 +953,11 @@
 
         function toggleLogConsole() {
             const console = document.getElementById('logConsole');
-            const btn = document.getElementById('logToggleBtn');
+            if (!console) return;
             if (console.style.display === 'none') {
                 console.style.display = 'block';
-                btn.style.display = 'none';
-                // 调整底部栏位置防止遮挡 (如果有的话)
-                document.getElementById('bottomBar').style.bottom = '170px';
             } else {
                 console.style.display = 'none';
-                btn.style.display = 'block';
-                document.getElementById('bottomBar').style.bottom = '0';
             }
         }
 
@@ -981,6 +968,7 @@
                 if (logs.length > lastLogIndex) {
                     const newLogs = logs.slice(lastLogIndex);
                     const content = document.getElementById('logContent');
+                    if (!content) return;
                     newLogs.forEach(line => {
                         const div = document.createElement('div');
                         div.innerText = line;
@@ -988,7 +976,8 @@
                     });
                     lastLogIndex = logs.length;
                     // 自动滚动到底部
-                    document.getElementById('logConsole').scrollTop = document.getElementById('logConsole').scrollHeight;
+                    const c = document.getElementById('logConsole');
+                    c.scrollTop = c.scrollHeight;
                 }
             } catch (e) { }
         }
@@ -1009,13 +998,20 @@
             } else {
                 bar.style.display = 'none';
             }
+
+            const logConsole = document.getElementById('logConsole');
+            if (logConsole && tabId !== 'settings') {
+                logConsole.style.display = 'none';
+            }
         }
 
         // 初始化
         loadMatrix(currentDate);
         syncTime();
         setInterval(updateClock, 30);
+        {% if page_mode == 'settings' %}
         setInterval(pollLogs, 1000); // 每秒轮询日志
+        {% endif %}
 
         // 初始化任务区域 (页面加载时直接调用)
         initDateSelector();
@@ -1929,6 +1925,7 @@
 
         async function loadTasks() {
             const list = document.getElementById('taskList');
+            if (!list) return;
             list.innerHTML = '加载中...';
             try {
                 const res = await fetch('/api/tasks');
