@@ -613,13 +613,13 @@
 
         <!-- 标签页导航 -->
         <div class="tabs">
-            <div class="tab-btn {% if page_mode == 'semi' %}active{% endif %}" onclick="switchTab('semi-auto', this)">🖐️ 半自动抢票</div>
-            <div class="tab-btn {% if page_mode == 'tasks' %}active{% endif %}" onclick="switchTab('auto-plan', this)">📋 任务中心</div>
-            <div class="tab-btn {% if page_mode == 'settings' %}active{% endif %}" onclick="switchTab('settings', this)">⚙️ 系统设置</div>
+            <div class="tab-btn {% if page_mode == 'semi' %}active{% endif %}" onclick="window.location.href='/'">🖐️ 半自动抢票</div>
+            <div class="tab-btn {% if page_mode == 'tasks' %}active{% endif %}" onclick="window.location.href='/tasks'">📋 任务中心</div>
+            <div class="tab-btn {% if page_mode == 'settings' %}active{% endif %}" onclick="window.location.href='/settings'">⚙️ 系统设置</div>
         </div>
 
         <!-- Tab 1: 半自动抢票 (原主页内容) -->
-        <div id="tab-semi-auto" class="tab-content {% if page_mode == 'semi' %}active{% endif %}">
+        <div id="tab-semi-auto" class="tab-content {% if page_mode == 'semi' %}active{% endif %}" {% if page_mode != 'semi' %}style="display:none !important;"{% endif %}>
             <div class="date-scroll">
                 {% for d in dates %}
                 <button class="date-btn {% if loop.index0 == 0 %}active{% endif %}"
@@ -636,7 +636,7 @@
         </div>
 
         <!-- Tab 2: 任务中心 -->
-        <div id="tab-auto-plan" class="tab-content {% if page_mode == 'tasks' %}active{% endif %}">
+        <div id="tab-auto-plan" class="tab-content {% if page_mode == 'tasks' %}active{% endif %}" {% if page_mode != 'tasks' %}style="display:none !important;"{% endif %}>
             <div class="task-form">
                 <div
                     style="background:#e3f2fd;color:#0056b3;padding:10px;border-radius:6px;font-size:13px;margin-bottom:15px;">
@@ -772,7 +772,7 @@
         </div>
 
         <!-- Tab 3: 系统设置 -->
-        <div id="tab-settings" class="tab-content {% if page_mode == 'settings' %}active{% endif %}">
+        <div id="tab-settings" class="tab-content {% if page_mode == 'settings' %}active{% endif %}" {% if page_mode != 'settings' %}style="display:none !important;"{% endif %}>
         <!-- 速度设置 -->
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
@@ -919,7 +919,7 @@
         </div>
     </div>
 
-    {% if page_mode == 'semi' %}
+    {% if page_mode == 'settings' %}
     <!-- 日志输出窗口 -->
     <div id="logConsole" style="
         position: fixed;
@@ -939,7 +939,7 @@
     ">
         <div
             style="position:sticky;top:0;background:#1e1e1e;border-bottom:1px solid #333;margin-bottom:5px;display:flex;justify-content:space-between;">
-            <span>📟 运行日志</span>
+            <span>📟 运行日志（与后台 /api/logs 同源）</span>
             <span style="cursor:pointer;color:#fff;" onclick="toggleLogConsole()">▼ 隐藏</span>
         </div>
         <div id="logContent"></div>
@@ -1046,7 +1046,7 @@
         loadMatrix(currentDate);
         syncTime();
         setInterval(updateClock, 30);
-        {% if page_mode == 'semi' %}
+        {% if page_mode == 'settings' %}
         setInterval(pollLogs, 1000); // 每秒轮询日志
         {% endif %}
 
