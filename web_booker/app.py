@@ -1372,6 +1372,10 @@ threading.Thread(target=run_scheduler, daemon=True).start()
 
 @app.route('/')
 def index():
+    return render_main_page('semi')
+
+
+def build_dates():
     dates = []
     today = datetime.now()
     weekdays = ["周一","周二","周三","周四","周五","周六","周日"]
@@ -1383,7 +1387,26 @@ def index():
             "weekday": weekdays[d.weekday()],
             "date_only": d.strftime("%m-%d")
         })
-    return render_template('index.html', dates=dates, tasks=task_manager.tasks)
+    return dates
+
+
+def render_main_page(page_mode: str):
+    return render_template(
+        'index.html',
+        dates=build_dates(),
+        tasks=task_manager.tasks,
+        page_mode=page_mode,
+    )
+
+
+@app.route('/tasks')
+def tasks_page():
+    return render_main_page('tasks')
+
+
+@app.route('/settings')
+def settings_page():
+    return render_main_page('settings')
 
 @app.route('/api/matrix')
 def api_matrix():
