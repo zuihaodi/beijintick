@@ -1400,11 +1400,13 @@ def render_main_page(page_mode: str):
 
 
 @app.route('/tasks')
+@app.route('/tasks/')
 def tasks_page():
     return render_main_page('tasks')
 
 
 @app.route('/settings')
+@app.route('/settings/')
 def settings_page():
     return render_main_page('settings')
 
@@ -1708,6 +1710,27 @@ def test_sms():
     finally:
         # 恢复配置
         CONFIG['notification_phones'] = original_phones
+
+
+
+@app.route('/<path:path_like>')
+def page_route_fallback(path_like):
+    # reverse proxy / sub-path compatibility: support /xxx/tasks or /xxx/settings
+    normalized = (path_like or '').strip('/')
+    if not normalized:
+        return render_main_page('semi')
+
+    # keep API/static 404 behavior
+    if normalized.startswith('api/') or normalized.startswith('static/'):
+        return jsonify({"status": "error", "msg": "Not Found"}), 404
+
+    last = normalized.split('/')[-1]
+    if last in ('tasks', 'settings'):
+        return render_main_page(last)
+    if last in ('', 'index', 'semi'):
+        return render_main_page('semi')
+
+    return jsonify({"status": "error", "msg": "Not Found"}), 404
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():

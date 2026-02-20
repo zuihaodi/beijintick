@@ -668,7 +668,7 @@
                     <div class="form-group" style="flex:1;min-width:160px;">
                         <label>⏰ 触发时间</label>
                         <input type="time" id="taskTime" class="form-control" step="1" value="08:00:00"
-                            onchange="updateTaskSummary()">
+                            onchange="updateTaskDateSelector();updateTaskSummary()">
                     </div>
 
                     <div class="form-group" style="flex:1;min-width:140px;">
@@ -685,7 +685,7 @@
                     <div class="form-group" id="weeklyDayGroup"
                          style="flex:1;min-width:140px;display:none;">
                         <label>📆 周几执行</label>
-                        <select id="weeklyDay" class="form-control" onchange="updateTaskSummary()">
+                        <select id="weeklyDay" class="form-control" onchange="updateTaskDateSelector();updateTaskSummary()">
                             <option value="0">周一</option>
                             <option value="1">周二</option>
                             <option value="2">周三</option>
@@ -789,6 +789,7 @@
             “⚡ 立即运行”按钮用于<strong>立刻执行一次该任务</strong>，不必等待计划时间到点。
         </div>
         </div>
+        {% endif %}
         {% endif %}
 
         <!-- Tab 3: 系统设置 -->
@@ -1756,29 +1757,69 @@
             }
         }
 
-        function initDateSelector() {
-            const container = document.getElementById('targetDateList');
-            container.innerHTML = '';
-            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        function parseTaskTime() {
+            const timeVal = (document.getElementById('taskTime')?.value || '00:00:00').trim();
+            const parts = timeVal.split(':');
+            const hh = parseInt(parts[0] || '0', 10);
+            const mm = parseInt(parts[1] || '0', 10);
+            const ss = parseInt(parts[2] || '0', 10);
+            return {
+                hh: Number.isNaN(hh) ? 0 : hh,
+                mm: Number.isNaN(mm) ? 0 : mm,
+                ss: Number.isNaN(ss) ? 0 : ss,
+            };
+        }
 
-            // 生成未来14天
+        function calcNextRunFromCurrentForm() {
+            const now = new Date();
+            const type = document.getElementById('taskType')?.value || 'daily';
+            const { hh, mm, ss } = parseTaskTime();
+
+            const nextRun = new Date(now.getTime());
+            nextRun.setHours(hh, mm, ss, 0);
+
+            if (type === 'weekly') {
+                const weeklyDayVal = parseInt(document.getElementById('weeklyDay')?.value || '0', 10);
+                const targetWeekday = Number.isNaN(weeklyDayVal) ? 0 : weeklyDayVal; // 0=周一..6=周日
+                const todayJs = now.getDay(); // 0=周日..6=周六
+                const todayOur = (todayJs + 6) % 7; // 0=周一..6=周日
+
+                let diff = targetWeekday - todayOur;
+                if (diff < 0 || (diff === 0 && nextRun <= now)) {
+                    diff += 7;
+                }
+                nextRun.setDate(now.getDate() + diff);
+                nextRun.setHours(hh, mm, ss, 0);
+                return nextRun;
+            }
+
+            // daily / once：若今天该时间已过，则下一次是明天
+            if (nextRun <= now) {
+                nextRun.setDate(nextRun.getDate() + 1);
+            }
+            return nextRun;
+        }
+
+        function updateTaskDateSelector() {
+            const container = document.getElementById('targetDateList');
+            if (!container) return;
+
+            const selectedOffset = parseInt(document.getElementById('taskOffset')?.value || '2', 10);
+            const validSelectedOffset = Number.isNaN(selectedOffset) ? 2 : selectedOffset;
+            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const baseDate = calcNextRunFromCurrentForm();
+
+            container.innerHTML = '';
+
             for (let i = 0; i < 14; i++) {
-                const d = new Date();
+                const d = new Date(baseDate.getTime());
                 d.setDate(d.getDate() + i);
 
                 const month = d.getMonth() + 1;
                 const day = d.getDate();
                 const dateStr = `${month}/${day}`;
                 const weekStr = weekdays[d.getDay()];
-
-                // 第一行：偏移描述（今天 / 明天 / 后天 / N天后）
-                let offsetLabel;
-                if (i === 0) offsetLabel = '今天';
-                else if (i === 1) offsetLabel = '明天';
-                else if (i === 2) offsetLabel = '后天';
-                else offsetLabel = `${i}天后`;
-
-                // 第二行：具体日期 + 周几
+                const offsetLabel = `+${i}天`;
                 const detailLabel = `${dateStr} ${weekStr}`;
 
                 const btn = document.createElement('div');
@@ -1791,19 +1832,13 @@
                     font-size:12px;
                     background:white;
                 `;
-
-                // 颜色：今天红，明天绿，其他默认
-                let offsetColor = '#333';
-                if (i === 0) offsetColor = 'red';
-                else if (i === 1) offsetColor = 'green';
-
                 btn.innerHTML = `
-                    <div style="font-weight:bold;color:${offsetColor};">${offsetLabel}</div>
+                    <div style="font-weight:bold;color:#333;">${offsetLabel}</div>
                     <div style="color:#666;font-size:11px">${detailLabel}</div>
                 `;
 
                 btn.onclick = () => {
-                    document.querySelectorAll('#targetDateList div').forEach(b => {
+                    document.querySelectorAll('#targetDateList > div').forEach(b => {
                         b.style.borderColor = '#ddd';
                         b.style.background = 'white';
                         b.style.color = '#333';
@@ -1812,16 +1847,22 @@
                     btn.style.background = '#e3f2fd';
                     btn.style.color = '#007aff';
 
-                    // 仍然用「i」作为 target_day_offset，后端逻辑不变
                     document.getElementById('taskOffset').value = i;
                     updateTaskSummary();
                 };
 
-                // 默认选中后天 (i=2)
-                if (i === 2) btn.click();
-
                 container.appendChild(btn);
             }
+
+            const toSelect = Math.max(0, Math.min(13, validSelectedOffset));
+            const defaultBtn = container.children[toSelect] || container.children[2] || container.children[0];
+            if (defaultBtn) {
+                defaultBtn.click();
+            }
+        }
+
+        function initDateSelector() {
+            updateTaskDateSelector();
         }
 
 
@@ -1905,8 +1946,10 @@
 
             if (type === 'weekly') {
                 weeklyGroup.style.display = 'block';
+                updateTaskDateSelector();
             } else {
                 weeklyGroup.style.display = 'none';
+                updateTaskDateSelector();
             }
         }
 
@@ -1986,7 +2029,7 @@
                 }
 
                 tasks.forEach(t => {
-                    // 1. 频率文案（每天 / 每周几 / 只执行一次）
+                    // 1. 频率文案（每天 / 每周几 / 单次）
                     let desc = "";
                     if (t.type === 'daily') {
                         desc = `每天 ${t.run_time}`;
@@ -1995,7 +2038,7 @@
                         const wd = Number(t.weekly_day || 0);
                         desc = `每周${weekNames[wd]} ${t.run_time}`;
                     } else if (t.type === 'once') {
-                        desc = `只执行一次 ${t.run_time}`;
+                        desc = `单次 ${t.run_time}`;
                     } else {
                         desc = `${t.run_time}`;
                     }
@@ -2052,7 +2095,8 @@
                     else if (offset === 2) dayPrefix = '后天';
                     else dayPrefix = `${offset}天后`;
 
-                    const dayDesc = `${dayPrefix} (${monthStr}-${dayStr} ${weekLabel})`;
+                    const dayDesc = `${dayPrefix}的场`;
+                    const dateLine = `☀︎日期：(${monthStr}-${dayStr} ${weekLabel})`;
 
                     // 5. 任务策略说明
                     let detail;
@@ -2060,12 +2104,14 @@
                         if (t.config.mode === 'priority') {
                             const seqStr = t.config.priority_sequences.map(s => `[${s.join('+')}]`).join(', ');
                             const tStr = t.config.target_times.join(',');
-                            detail = `🎯 目标：<b>${t.config.target_count}</b>块 (优先级)<br>🔥 序列：${seqStr}<br>⌚ 时间：${tStr}`;
+                            detail = `🎯 目标：${t.config.target_count}块 (优先级)<br>🔥 序列：${seqStr}<br>⌚ 时间：${tStr}`;
                         } else {
                             const pStr = (t.config.candidate_places || []).join(',');
                             const tStr = (t.config.target_times || []).join(',');
                             const modeStr = t.config.smart_continuous ? "连号优先" : "普通模式";
-                            detail = `🎯 目标：<b>${t.config.target_count}</b>块 (${modeStr})<br>🏸 候选：${pStr}号<br>⌚ 时间：${tStr}`;
+                            const placeLabel = pStr ? `${pStr}号` : '-';
+                            const timeLabel = tStr || '-';
+                            detail = `🎯 目标：${t.config.target_count}块 (${modeStr})<br>🏸 候选：${placeLabel}<br>⌚ 时间：${timeLabel}`;
                         }
                     } else if (t.items) {
                         const itemsStr = t.items.map(i => `${i.place}号${i.time}`).join(', ');
@@ -2089,8 +2135,8 @@
                     div.className = 'task-item';
                     div.innerHTML = `
                         <div>
-                            <div class="task-info"><b>${desc}</b> 自动抢 <b>${dayDesc}</b> 的场</div>
-                            <div class="task-meta" style="color:#666;margin-top:5px;line-height:1.4;">${detail}</div>
+                            <div class="task-info"><b>${desc}</b> 自动抢 <b>${dayDesc}</b></div>
+                            <div class="task-meta" style="color:#666;margin-top:5px;line-height:1.5;">${dateLine}<br>${detail}</div>
                         </div>
                         <div style="display:flex;gap:5px;align-items:center;">
                             <button class="btn-manage" style="background:#34c759;font-size:12px;padding:4px 8px;" onclick="runTask('${t.id}')">⚡ 立即运行</button>
