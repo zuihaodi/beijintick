@@ -1,21 +1,23 @@
 {
   "auth": {
-    "token": "<your-token>",
-    "cookie": "<optional-cookie>",
-    "card_index": "<your-card-index>",
-    "card_st_id": "<your-card-st-id>",
+    "token": "oy9Aj1Y7gmOS31lnOQgkXiEvgoyc",
+    "cookie": "7E1788B12E69E0034DF983EA3FD3A3A6",
+    "card_index": "0873612446",
+    "card_st_id": "289",
     "shop_num": "1001"
   },
-  "notification_phones": [],
+  "notification_phones": [
+    "13910424189"
+  ],
   "retry_interval": 1.0,
   "aggressive_retry_interval": 1.0,
   "locked_retry_interval": 1.0,
   "locked_max_seconds": 60.0,
   "sms": {
-    "user": "<sms-user>",
-    "api_key": "<sms-api-key>"
+    "user": "18600291931",
+    "api_key": "6127d94d28a04c06a8f61b70eac79cc3"
   },
   "health_check_interval_min": 30.0,
   "health_check_enabled": true,
-  "health_check_start_time": "00:00"
+  "health_check_start_time": "00:55"
 }
