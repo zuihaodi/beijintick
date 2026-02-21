@@ -775,6 +775,33 @@ class TaskManager:
         self.save_tasks()
         self.refresh_schedule()
 
+    def update_task(self, task_id, task):
+        task_id = int(task_id)
+        for i, old in enumerate(self.tasks):
+            if int(old.get('id', -1)) == task_id:
+                cfg = task.get('config') if isinstance(task, dict) else None
+                if isinstance(cfg, dict) and 'target_count' in cfg:
+                    try:
+                        cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+                    except Exception:
+                        cfg['target_count'] = 2
+
+                task['id'] = task_id
+                task['last_run_at'] = old.get('last_run_at')
+                self.tasks[i] = task
+                self.save_tasks()
+                self.refresh_schedule()
+                return True
+        return False
+
+    def mark_task_run(self, task_id):
+        task_id = int(task_id)
+        for task in self.tasks:
+            if int(task.get('id', -1)) == task_id:
+                task['last_run_at'] = int(time.time() * 1000)
+                self.save_tasks()
+                return
+
     def delete_task(self, task_id, refresh=True):
         self.tasks = [t for t in self.tasks if t['id'] != int(task_id)]
         self.save_tasks()
@@ -887,6 +914,8 @@ class TaskManager:
 
     def execute_task(self, task):
         log(f"⏰ [自动任务] 开始执行任务: {task.get('id')}")
+        if task.get('id') is not None:
+            self.mark_task_run(task['id'])
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
@@ -1726,6 +1755,14 @@ def del_task(task_id):
     task_manager.delete_task(task_id)
     return jsonify({"status": "success"})
 
+@app.route('/api/tasks/<task_id>', methods=['PUT'])
+def update_task(task_id):
+    data = request.json or {}
+    ok = task_manager.update_task(task_id, data)
+    if not ok:
+        return jsonify({"status": "error", "msg": "Task not found"}), 404
+    return jsonify({"status": "success"})
+
 @app.route('/api/tasks/<task_id>/run', methods=['POST'])
 def run_task_now(task_id):
     # Find task
@@ -1733,7 +1770,7 @@ def run_task_now(task_id):
     if task:
         # Run in a separate thread to avoid blocking the response
         threading.Thread(target=task_manager.execute_task, args=(task,)).start()
-    return jsonify({"status": "success", "msg": "Task started"})
+        return jsonify({"status": "success", "msg": "Task started"})
     return jsonify({"status": "error", "msg": "Task not found"}), 404
 
 @app.route('/api/config/check-token', methods=['POST'])
