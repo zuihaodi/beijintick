@@ -6,6 +6,7 @@
 """
 
 from flask import Flask, render_template, request, jsonify
+from jinja2 import Environment, TemplateSyntaxError
 import requests
 import json
 import urllib.parse
@@ -143,8 +144,10 @@ CONFIG = {
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
-CONFIG_FILE = os.path.join(BASE_DIR, "config.local.json")
+CONFIG_LOCAL_FILE = os.path.join(BASE_DIR, "config.local.json")
 CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
+# 优先使用已存在的 *.local.json；若不存在则直接使用 config.json（不自动生成 local 文件）
+CONFIG_FILE = CONFIG_LOCAL_FILE if os.path.exists(CONFIG_LOCAL_FILE) else CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -175,15 +178,6 @@ def migrate_runtime_file_if_needed(local_path, legacy_paths):
                 print(f"迁移运行文件失败({path}): {e}")
 
 
-migrate_runtime_file_if_needed(
-    CONFIG_FILE,
-    [
-        CONFIG_TEMPLATE_FILE,
-        os.path.join(PROJECT_ROOT, "config.json"),
-        os.path.join(os.getcwd(), "config.json"),
-    ],
-)
-
 if os.path.exists(CONFIG_FILE):
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -213,13 +207,15 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_FILE = os.path.join(BASE_DIR, "tasks.local.json")
+TASKS_LOCAL_FILE = os.path.join(BASE_DIR, "tasks.local.json")
 TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
+# 优先使用已存在的 *.local.json；若不存在则直接使用 tasks.json（不自动生成 local 文件）
+TASKS_FILE = TASKS_LOCAL_FILE if os.path.exists(TASKS_LOCAL_FILE) else TASKS_TEMPLATE_FILE
 
 def migrate_legacy_tasks_file():
     """
     兼容历史版本：老版本会把 tasks.json 写到“当前工作目录”。
-    现在统一迁移到 web_booker/tasks.json（即 TASKS_FILE）。
+    现在统一迁移到当前生效任务文件（TASKS_FILE）。
     """
     candidates = [
         TASKS_TEMPLATE_FILE,
@@ -1353,7 +1349,31 @@ class TaskManager:
                 print(f"❌ 添加任务失败: {e}")
 
 
+
+
+def validate_templates_on_startup():
+    """启动前快速检查关键模板语法，避免线上运行时才暴露 TemplateSyntaxError。"""
+    template_file = os.path.join(BASE_DIR, 'templates', 'index.html')
+    try:
+        with open(template_file, 'r', encoding='utf-8') as f:
+            Environment().parse(f.read())
+        print('✅ 模板语法检查通过: templates/index.html')
+    except FileNotFoundError:
+        raise RuntimeError(f'模板文件不存在: {template_file}')
+    except TemplateSyntaxError as e:
+        raise RuntimeError(f'模板语法错误({template_file}:{e.lineno}): {e.message}')
+
 task_manager = TaskManager()
+
+
+
+def smoke_render_pages_on_startup():
+    """启动前做最小页面渲染回归，尽早发现模板运行时问题。"""
+    with app.test_request_context('/'):
+        render_main_page('semi')
+        render_main_page('tasks')
+        render_main_page('settings')
+    print('✅ 页面渲染冒烟检查通过: /, /tasks, /settings')
 
 def run_scheduler():
     print("🚀 [后台] 任务调度线程已启动...")
@@ -1400,11 +1420,13 @@ def render_main_page(page_mode: str):
 
 
 @app.route('/tasks')
+@app.route('/tasks/')
 def tasks_page():
     return render_main_page('tasks')
 
 
 @app.route('/settings')
+@app.route('/settings/')
 def settings_page():
     return render_main_page('settings')
 
@@ -1709,11 +1731,35 @@ def test_sms():
         # 恢复配置
         CONFIG['notification_phones'] = original_phones
 
+
+
+@app.route('/<path:path_like>')
+def page_route_fallback(path_like):
+    # reverse proxy / sub-path compatibility: support /xxx/tasks or /xxx/settings
+    normalized = (path_like or '').strip('/')
+    if not normalized:
+        return render_main_page('semi')
+
+    # keep API/static 404 behavior
+    if normalized.startswith('api/') or normalized.startswith('static/'):
+        return jsonify({"status": "error", "msg": "Not Found"}), 404
+
+    last = normalized.split('/')[-1]
+    if last in ('tasks', 'settings'):
+        return render_main_page(last)
+    if last in ('', 'index', 'semi'):
+        return render_main_page('semi')
+
+    return jsonify({"status": "error", "msg": "Not Found"}), 404
+
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
     return jsonify(LOG_BUFFER)
 
 if __name__ == "__main__":
+    validate_templates_on_startup()
+    smoke_render_pages_on_startup()
+
     # 首次启动刷新调度
     task_manager.refresh_schedule()
 
