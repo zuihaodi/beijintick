@@ -1365,6 +1365,16 @@ def validate_templates_on_startup():
 
 task_manager = TaskManager()
 
+
+
+def smoke_render_pages_on_startup():
+    """启动前做最小页面渲染回归，尽早发现模板运行时问题。"""
+    with app.test_request_context('/'):
+        render_main_page('semi')
+        render_main_page('tasks')
+        render_main_page('settings')
+    print('✅ 页面渲染冒烟检查通过: /, /tasks, /settings')
+
 def run_scheduler():
     print("🚀 [后台] 任务调度线程已启动...")
     while True:
@@ -1748,6 +1758,7 @@ def get_logs():
 
 if __name__ == "__main__":
     validate_templates_on_startup()
+    smoke_render_pages_on_startup()
 
     # 首次启动刷新调度
     task_manager.refresh_schedule()
