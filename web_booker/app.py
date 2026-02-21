@@ -847,10 +847,13 @@ class TaskManager:
             except Exception:
                 return date_str
 
-        def notify_task_result(success, message, items=None, date_str=None):
-            prefix = "预订成功。" if success else "【预订失败】"
+        def notify_task_result(success, message, items=None, date_str=None, partial=False):
+            if partial:
+                prefix = "预订部分成功。"
+            else:
+                prefix = "预订成功。" if success else "【预订失败】"
             details = message
-            if success and date_str and items:
+            if (success or partial) and date_str and items:
                 places = sorted({str(it.get("place")) for it in items if it.get("place") is not None})
                 times = []
                 for it in items:
@@ -896,9 +899,10 @@ class TaskManager:
         if not config and 'items' in task:
             res = client.submit_order(target_date, task['items'])
             status = res.get("status")
-            if status in ("success", "partial"):
-                msg = "全部成功" if status == "success" else "部分成功"
-                notify_task_result(True, f"下单完成：{msg}（{status}）", items=task['items'], date_str=target_date)
+            if status == "success":
+                notify_task_result(True, "已预订", items=task['items'], date_str=target_date)
+            elif status == "partial":
+                notify_task_result(False, "部分成功", items=task['items'], date_str=target_date, partial=True)
             else:
                 notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
             return
@@ -1191,21 +1195,30 @@ class TaskManager:
                 log(f"[submit_order调试] 批次响应: {res}")
 
                 status = res.get("status")
-                if status in ("success", "partial"):
-                    msg = "全部成功" if status == "success" else "部分成功"
-                    log(f"✅ 下单完成: {msg} ({status})")
-
-                    # 发通知短信
+                if status == "success":
+                    log(f"✅ 下单完成: 全部成功 ({status})")
                     try:
                         notify_task_result(
                             True,
-                            f"已预订",
+                            "已预订",
                             items=final_items,
                             date_str=target_date,
                         )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
-
+                    return
+                elif status == "partial":
+                    log(f"⚠️ 下单完成: 部分成功 ({status})")
+                    try:
+                        notify_task_result(
+                            False,
+                            "部分成功",
+                            items=final_items,
+                            date_str=target_date,
+                            partial=True,
+                        )
+                    except Exception as e:
+                        log(f"构建短信内容失败: {e}")
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
