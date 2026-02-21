@@ -1369,15 +1369,19 @@ def validate_templates_on_startup():
     try:
         with open(template_file, 'r', encoding='utf-8') as f:
             content = f.read()
-            Environment().parse(content)
-        digest = hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
-        print(f'✅ 模板语法检查通过: {template_file} (md5:{digest})')
     except FileNotFoundError:
         raise RuntimeError(f'模板文件不存在: {template_file}')
+
+    digest = hashlib.md5(content.encode('utf-8')).hexdigest()[:8]
+    print(f'🔎 模板文件校验: {template_file} (md5:{digest})')
+
+    try:
+        Environment().parse(content)
+        print('✅ 模板语法检查通过')
     except TemplateSyntaxError as e:
         context = _template_context_lines(content, e.lineno, radius=2)
         raise RuntimeError(
-            f'模板语法错误({template_file}:{e.lineno}): {e.message}\n附近内容:\n{context}'
+            f'模板语法错误({template_file}:{e.lineno}, md5:{digest}): {e.message}\n附近内容:\n{context}'
         )
 
 task_manager = TaskManager()
