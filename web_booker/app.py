@@ -904,9 +904,19 @@ class TaskManager:
                 return date_str
 
         def notify_task_result(success, message, items=None, date_str=None):
-            prefix = "【预订成功】" if success else "【预订失败】"
+            prefix = "预订成功。" if success else "【预订失败】"
             details = message
-            if date_str:
+            if success and date_str and items:
+                places = sorted({str(it.get("place")) for it in items if it.get("place") is not None})
+                times = []
+                for it in items:
+                    t = it.get("time")
+                    if t and t not in times:
+                        times.append(str(t))
+                places_text = f"{'、'.join(places)}号" if places else ""
+                times_text = ",".join(times)
+                details = f"{build_date_display(date_str)}，{places_text}， {times_text}"
+            elif date_str:
                 details = f"{build_date_display(date_str)} {message}"
             content = f"{prefix}{details}"
             self.send_notification(content, phones=task_phones)
