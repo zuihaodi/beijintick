@@ -458,7 +458,21 @@
             border-radius: 8px;
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .task-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-actions {
+            display: flex;
+            gap: 5px;
             align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
         }
 
         .task-info {
@@ -774,7 +788,7 @@
                 请配置任务...
             </div>
 
-            <button class="btn btn-primary" style="width:100%" onclick="createTask()">✅ 保存计划</button>
+            <button class="btn btn-primary" id="saveTaskBtn" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
         <div class="task-list" id="taskList">
@@ -786,8 +800,6 @@
         </div>
         </div>
         {% endif %}
-        {% endif %}
-
         <!-- Tab 3: 系统设置 -->
         {% if page_mode == 'settings' %}
         <div id="tab-settings" class="tab-content active">
@@ -971,6 +983,7 @@
         let latestTimes = [];
         let latestCellStatus = {};
         let lastLogIndex = 0; // 记录日志位置
+        let editingTaskId = null;
         const PAGE_MODE = '{{ page_mode }}';
 
         function showToast(msg, isError = false) {
@@ -2018,13 +2031,20 @@
             try {
                 const res = await fetch('/api/tasks');
                 const tasks = await res.json();
+                window.__tasksCache = tasks;
                 list.innerHTML = '';
                 if (tasks.length === 0) {
                     list.innerHTML = '<div style="text-align:center;color:#999">暂无任务</div>';
                     return;
                 }
 
-                tasks.forEach(t => {
+                const sortedTasks = [...tasks].sort((a, b) => {
+                    const diff = Number(b.last_run_at || 0) - Number(a.last_run_at || 0);
+                    if (diff !== 0) return diff;
+                    return Number(b.id || 0) - Number(a.id || 0);
+                });
+
+                sortedTasks.forEach(t => {
                     // 1. 频率文案（每天 / 每周几 / 单次）
                     let desc = "";
                     if (t.type === 'daily') {
@@ -2092,7 +2112,7 @@
                     else dayPrefix = `${offset}天后`;
 
                     const dayDesc = `${dayPrefix}的场`;
-                    const dateLine = `☀︎日期：(${monthStr}-${dayStr} ${weekLabel})`;
+                    const dateLine = `🗓️ 日期：(${monthStr}-${dayStr} ${weekLabel})`;
 
                     // 5. 任务策略说明
                     let detail;
@@ -2125,16 +2145,21 @@
                         const tokenStr = t.pushplus_tokens.join(', ');
                         detail += `<br>💬 微信通知：${tokenStr}`;
                     }
+                    if (t.last_run_at) {
+                        detail += `<br>🕒 最近执行：${new Date(Number(t.last_run_at)).toLocaleString('zh-CN', { hour12: false })}`;
+                    }
 
                     // 7. 渲染到任务列表里
                     const div = document.createElement('div');
                     div.className = 'task-item';
                     div.innerHTML = `
-                        <div>
+                        <div class="task-main">
                             <div class="task-info"><b>${desc}</b> 自动抢 <b>${dayDesc}</b></div>
                             <div class="task-meta" style="color:#666;margin-top:5px;line-height:1.5;">${dateLine}<br>${detail}</div>
                         </div>
-                        <div style="display:flex;gap:5px;align-items:center;">
+                        <div class="task-actions">
+                            <button class="btn-manage" style="background:#007aff;font-size:12px;padding:4px 8px;" onclick="startEditTask('${t.id}')">编辑</button>
+                            <button class="btn-manage" style="background:#5856d6;font-size:12px;padding:4px 8px;" onclick="copyTask('${t.id}')">复制</button>
                             <button class="btn-manage" style="background:#34c759;font-size:12px;padding:4px 8px;" onclick="runTask('${t.id}')">⚡ 立即运行</button>
                             <button class="btn-del" onclick="deleteTask('${t.id}')">删除</button>
                         </div>
@@ -2262,14 +2287,18 @@
 
             try {
                 await saveConfig(false);  // 仍然保存全局配置（速度 & 全局手机号）
-                const resp = await fetch('/api/tasks', {
-                    method: 'POST',
+                const isEditing = editingTaskId !== null;
+                const resp = await fetch(isEditing ? `/api/tasks/${editingTaskId}` : '/api/tasks', {
+                    method: isEditing ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(task)
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    showToast('保存成功');
+                    showToast(isEditing ? '修改成功' : '保存成功');
+                    editingTaskId = null;
+                    const saveBtn = document.getElementById('saveTaskBtn');
+                    if (saveBtn) saveBtn.innerText = '✅ 保存计划';
                     loadTasks();
                 } else {
                     alert('保存失败: ' + (data.msg || '未知错误'));
@@ -2285,6 +2314,77 @@
             if (!confirm('确定删除?')) return;
             await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
             loadTasks();
+        }
+
+        function startEditTask(id) {
+            const tasks = window.__tasksCache || [];
+            const t = tasks.find(x => String(x.id) === String(id));
+            if (!t) return alert('任务不存在');
+
+            editingTaskId = String(id);
+            document.getElementById('taskTime').value = t.run_time || '08:00:00';
+            document.getElementById('taskType').value = t.type || 'daily';
+            document.getElementById('weeklyDay').value = String(t.weekly_day || 0);
+            onTaskTypeChange();
+
+            const offset = Number(t.target_day_offset || 0);
+            document.getElementById('taskOffset').value = String(offset);
+            updateTaskDateSelector();
+            const dateBtns = document.querySelectorAll('#targetDateList .date-btn');
+            const idx = Math.max(0, Math.min(13, offset));
+            if (dateBtns[idx]) dateBtns[idx].click();
+
+            const targetCount = Number((t.config && t.config.target_count) || 2);
+            document.getElementById('taskTargetCount').value = String(Math.max(1, Math.min(3, targetCount)));
+            document.getElementById('taskSmartMode').checked = !!(t.config && t.config.smart_continuous);
+            document.getElementById('notificationPhones').value = (t.notification_phones || []).join(', ');
+            document.getElementById('taskPushplusTokens').value = (t.pushplus_tokens || []).join(', ');
+
+            document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
+            const places = (t.config && t.config.candidate_places) || [];
+            places.forEach(p => {
+                const hit = document.querySelector(`#placeSelector .tag-btn[data-place="${String(p)}"]`);
+                if (hit) hit.classList.add('active');
+            });
+
+            document.querySelectorAll('#timeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
+            const times = (t.config && t.config.target_times) || [];
+            times.forEach(ts => {
+                const hit = Array.from(document.querySelectorAll('#timeSelector .tag-btn')).find(btn => btn.innerText === String(ts));
+                if (hit) hit.classList.add('active');
+            });
+
+            const saveBtn = document.getElementById('saveTaskBtn');
+            if (saveBtn) saveBtn.innerText = '💾 保存修改';
+            updateTaskSummary();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function copyTask(id) {
+            const tasks = window.__tasksCache || [];
+            const t = tasks.find(x => String(x.id) === String(id));
+            if (!t) return alert('任务不存在');
+
+            const cloned = JSON.parse(JSON.stringify(t));
+            delete cloned.id;
+            delete cloned.last_run_at;
+            try {
+                const resp = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cloned)
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('复制成功');
+                    loadTasks();
+                } else {
+                    alert('复制失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('复制失败: 网络错误');
+            }
         }
     </script>
 
