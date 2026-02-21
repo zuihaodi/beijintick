@@ -1363,9 +1363,31 @@ def _template_context_lines(text: str, lineno: int, radius: int = 2) -> str:
         out.append(f"{pointer} {i}: {lines[i-1]}")
     return "\n".join(out)
 
+
+
+def auto_fix_known_template_endif_issue(template_file: str):
+    """自动修复历史上反复出现的重复 endif 问题（最小、定向修复）。"""
+    try:
+        with open(template_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        return
+
+    fixed = re.sub(
+        r"(\n\s*\{%\s*endif\s*%\}\s*\n)\s*\{%\s*endif\s*%\}(\s*\n\s*<!--\s*Tab\s*3)",
+        r"\1\2",
+        content,
+        count=1,
+    )
+    if fixed != content:
+        with open(template_file, 'w', encoding='utf-8') as f:
+            f.write(fixed)
+        print('🛠️ 已自动修复模板中的重复 endif（Tab 2/Tab 3 交界处）')
+
 def validate_templates_on_startup():
     """启动前快速检查关键模板语法，避免线上运行时才暴露 TemplateSyntaxError。"""
     template_file = os.path.join(BASE_DIR, 'templates', 'index.html')
+    auto_fix_known_template_endif_issue(template_file)
     try:
         with open(template_file, 'r', encoding='utf-8') as f:
             content = f.read()
