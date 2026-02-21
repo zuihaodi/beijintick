@@ -20,6 +20,7 @@ import threading
 import os
 import hashlib
 import re
+import random
 
 HEALTH_CHECK_NEXT_RUN = None
 
@@ -136,6 +137,8 @@ CONFIG = {
     "aggressive_retry_interval": 1.0,
     "batch_retry_times": 2,
     "batch_retry_interval": 0.5,
+    "batch_min_interval": 0.8,
+    "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
     # 🔍 新增：凭证健康检查
@@ -174,6 +177,10 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['batch_retry_times'] = saved['batch_retry_times']
             if 'batch_retry_interval' in saved:
                 CONFIG['batch_retry_interval'] = saved['batch_retry_interval']
+            if 'batch_min_interval' in saved:
+                CONFIG['batch_min_interval'] = saved['batch_min_interval']
+            if 'refill_window_seconds' in saved:
+                CONFIG['refill_window_seconds'] = saved['refill_window_seconds']
             # ✅ 新增：锁定重试的两个配置
             if 'locked_retry_interval' in saved:
                 CONFIG['locked_retry_interval'] = saved['locked_retry_interval']
@@ -489,11 +496,29 @@ class ApiClient:
         batch_size = 3
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
+        batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
+        refill_window_seconds = float(CONFIG.get("refill_window_seconds", 8.0))
 
         def is_retryable_fail(msg):
             text = str(msg or "")
             keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
             return any(k in text for k in keywords)
+
+        def filter_still_available(items):
+            try:
+                verify = self.get_matrix(date_str)
+                if not isinstance(verify, dict) or verify.get("error"):
+                    return list(items)
+                matrix = verify.get("matrix") or {}
+                remain = []
+                for it in items:
+                    p = str(it.get("place"))
+                    t = it.get("time")
+                    if matrix.get(p, {}).get(t) == "available":
+                        remain.append(it)
+                return remain
+            except Exception:
+                return list(items)
 
         # 将 items 分组，每组最多 3 个 (保守策略)
         for i in range(0, len(selected_items), batch_size):
@@ -597,11 +622,12 @@ class ApiClient:
                         fail_msg = resp.text
 
                     if attempt < batch_retry_times and is_retryable_fail(fail_msg):
+                        sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
                         print(
                             f"⏳ 批次 {i // batch_size + 1} 命中可重试错误，"
-                            f"{batch_retry_interval}s 后重试 ({attempt + 1}/{batch_retry_times})"
+                            f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{batch_retry_times})"
                         )
-                        time.sleep(batch_retry_interval)
+                        time.sleep(sleep_s)
                         continue
 
                     final_result = {"status": "fail", "msg": fail_msg, "batch": batch}
@@ -619,8 +645,86 @@ class ApiClient:
 
             results.append(final_result or {"status": "error", "msg": "未知错误", "batch": batch})
 
-            # 稍作停顿防止并发过快
-            time.sleep(CONFIG.get("retry_interval", 0.5))
+            # 批次间最小停顿，防止触发“操作过快”
+            time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+
+        # 对失败项做补提（窗口内仅补提仍 available 的项）
+        try:
+            refill_deadline = time.time() + max(0.0, refill_window_seconds)
+            while time.time() < refill_deadline:
+                failed_items = []
+                for r in results:
+                    if r.get("status") in ("fail", "error"):
+                        failed_items.extend(r.get("batch") or [])
+                if not failed_items:
+                    break
+
+                still_available = filter_still_available(failed_items)
+                if not still_available:
+                    break
+
+                print(f"🔁 [补提] 窗口内补提仍可用项: {still_available}")
+                results = [r for r in results if r.get("status") == "success"]
+                for i in range(0, len(still_available), batch_size):
+                    batch = still_available[i:i + batch_size]
+                    field_info_list = []
+                    total_money = 0
+                    for item in batch:
+                        p_num = item["place"]
+                        start = item["time"]
+                        try:
+                            st_obj = datetime.strptime(start, "%H:%M")
+                            et_obj = st_obj + timedelta(hours=1)
+                            end = et_obj.strftime("%H:%M")
+                            price = 80 if st_obj.hour < 14 else 100
+                        except Exception:
+                            end = "22:00"
+                            price = 100
+                        try:
+                            p_int = int(p_num)
+                        except (TypeError, ValueError):
+                            p_int = None
+                        if p_int is not None and p_int >= 15:
+                            place_short = f"mdb{p_num}"
+                            place_name = f"木地板{p_num}"
+                        else:
+                            place_short = f"ymq{p_num}"
+                            place_name = f"羽毛球{p_num}"
+                        field_info_list.append({
+                            "day": date_str,
+                            "oldMoney": price,
+                            "startTime": start,
+                            "endTime": end,
+                            "placeShortName": place_short,
+                            "name": place_name,
+                            "stageTypeShortName": "ymq",
+                            "newMoney": price,
+                        })
+                        total_money += price
+                    info_str = urllib.parse.quote(json.dumps(field_info_list, separators=(",", ":"), ensure_ascii=False))
+                    type_encoded = urllib.parse.quote("羽毛球")
+                    body = (
+                        f"token={self.token}&shopNum={CONFIG['auth']['shop_num']}&fieldinfo={info_str}&"
+                        f"cardStId={CONFIG['auth']['card_st_id']}&oldTotal={total_money}.00&cardPayType=0&"
+                        f"type={type_encoded}&offerId=&offerType=&total={total_money}.00&premerother=&"
+                        f"cardIndex={CONFIG['auth']['card_index']}"
+                    )
+                    try:
+                        resp = self.session.post(url, headers=self.headers, data=body, timeout=10, verify=False)
+                        resp_data = resp.json() if resp.text else None
+                        if isinstance(resp_data, dict) and resp_data.get("msg") == "success":
+                            results.append({"status": "success", "batch": batch})
+                        else:
+                            msg = resp_data.get("data") if isinstance(resp_data, dict) else resp.text
+                            results.append({"status": "fail", "msg": msg, "batch": batch})
+                    except Exception as e:
+                        results.append({"status": "error", "msg": str(e), "batch": batch})
+                    time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+
+                # 补提只做一轮，避免无限轰炸
+                break
+        except Exception as e:
+            print(f"⚠️ [补提] 处理异常: {e}")
 
         # ---------- 下单后验证 ----------
         verify_success_count = None
@@ -1555,6 +1659,10 @@ def update_config():
     - pushplus_tokens：全局微信通知 token（列表或逗号分隔）
     - retry_interval：普通重试间隔
     - aggressive_retry_interval：死磕模式重试间隔
+    - batch_retry_times：分批失败重试次数
+    - batch_retry_interval：分批失败重试间隔
+    - batch_min_interval：批次间最小间隔
+    - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
     - health_check_enabled: 健康检查是否开启
@@ -1621,6 +1729,8 @@ def update_config():
         _update_float_field('retry_interval', 0.1, CONFIG.get('retry_interval', 1.0))
         _update_float_field('aggressive_retry_interval', 0.1, CONFIG.get('aggressive_retry_interval', 0.3))
         _update_float_field('batch_retry_interval', 0.1, CONFIG.get('batch_retry_interval', 0.5))
+        _update_float_field('batch_min_interval', 0.1, CONFIG.get('batch_min_interval', 0.8))
+        _update_float_field('refill_window_seconds', 0.0, CONFIG.get('refill_window_seconds', 8.0))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
