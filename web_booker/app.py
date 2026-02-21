@@ -143,11 +143,8 @@ CONFIG = {
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-CONFIG_LOCAL_FILE = os.path.join(BASE_DIR, "config.local.json")
 CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
-# 优先使用已存在的 *.local.json；若不存在则直接使用 config.json（不自动生成 local 文件）
-CONFIG_FILE = CONFIG_LOCAL_FILE if os.path.exists(CONFIG_LOCAL_FILE) else CONFIG_TEMPLATE_FILE
+CONFIG_FILE = CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -158,25 +155,6 @@ def log(msg):
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
     if len(LOG_BUFFER) > MAX_LOG_SIZE:
         LOG_BUFFER.pop(0)
-
-def migrate_runtime_file_if_needed(local_path, legacy_paths):
-    """首次升级时，把历史运行文件迁移到 *.local.json，避免被 git pull 覆盖。"""
-    if os.path.exists(local_path):
-        return
-    for path in legacy_paths:
-        if not path:
-            continue
-        if os.path.abspath(path) == os.path.abspath(local_path):
-            continue
-        if os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as src, open(local_path, 'w', encoding='utf-8') as dst:
-                    dst.write(src.read())
-                print(f"🔄 已迁移本地运行文件: {path} -> {local_path}")
-                return
-            except Exception as e:
-                print(f"迁移运行文件失败({path}): {e}")
-
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -207,71 +185,8 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_LOCAL_FILE = os.path.join(BASE_DIR, "tasks.local.json")
 TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
-# 优先使用已存在的 *.local.json；若不存在则直接使用 tasks.json（不自动生成 local 文件）
-TASKS_FILE = TASKS_LOCAL_FILE if os.path.exists(TASKS_LOCAL_FILE) else TASKS_TEMPLATE_FILE
-
-def migrate_legacy_tasks_file():
-    """
-    兼容历史版本：老版本会把 tasks.json 写到“当前工作目录”。
-    现在统一迁移到当前生效任务文件（TASKS_FILE）。
-    """
-    candidates = [
-        TASKS_TEMPLATE_FILE,
-        os.path.join(PROJECT_ROOT, "tasks.json"),
-        os.path.join(os.getcwd(), "tasks.json"),
-    ]
-    target_data = []
-
-    if os.path.exists(TASKS_FILE):
-        try:
-            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    target_data = data
-        except Exception as e:
-            print(f"读取目标任务文件失败: {e}")
-
-    merged = list(target_data)
-    seen_ids = {str(t.get('id')) for t in merged if isinstance(t, dict) and t.get('id') is not None}
-
-    for path in candidates:
-        if os.path.abspath(path) == os.path.abspath(TASKS_FILE):
-            continue
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if not isinstance(data, list):
-                continue
-            added = 0
-            for task in data:
-                if not isinstance(task, dict):
-                    continue
-                tid = task.get('id')
-                key = str(tid) if tid is not None else None
-                if key and key in seen_ids:
-                    continue
-                merged.append(task)
-                if key:
-                    seen_ids.add(key)
-                added += 1
-            if added > 0:
-                print(f"🔄 已从历史任务文件迁移 {added} 条任务: {path}")
-        except Exception as e:
-            print(f"迁移历史任务文件失败({path}): {e}")
-
-    if merged != target_data:
-        try:
-            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, ensure_ascii=False, indent=2)
-            print(f"✅ 任务已统一写入: {TASKS_FILE}")
-        except Exception as e:
-            print(f"写入统一任务文件失败: {e}")
-
-migrate_legacy_tasks_file()
+TASKS_FILE = TASKS_TEMPLATE_FILE
 
 class ApiClient:
     def __init__(self):
