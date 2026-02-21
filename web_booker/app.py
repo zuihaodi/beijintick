@@ -134,6 +134,8 @@ CONFIG = {
     "pushplus_tokens": [],
     "retry_interval": 1.0,
     "aggressive_retry_interval": 1.0,
+    "batch_retry_times": 2,
+    "batch_retry_interval": 0.5,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
     # 🔍 新增：凭证健康检查
@@ -168,6 +170,10 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['retry_interval'] = saved['retry_interval']
             if 'aggressive_retry_interval' in saved:
                 CONFIG['aggressive_retry_interval'] = saved['aggressive_retry_interval']
+            if 'batch_retry_times' in saved:
+                CONFIG['batch_retry_times'] = saved['batch_retry_times']
+            if 'batch_retry_interval' in saved:
+                CONFIG['batch_retry_interval'] = saved['batch_retry_interval']
             # ✅ 新增：锁定重试的两个配置
             if 'locked_retry_interval' in saved:
                 CONFIG['locked_retry_interval'] = saved['locked_retry_interval']
@@ -481,6 +487,13 @@ class ApiClient:
 
         results = []
         batch_size = 3
+        batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
+        batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
+
+        def is_retryable_fail(msg):
+            text = str(msg or "")
+            keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
+            return any(k in text for k in keywords)
 
         # 将 items 分组，每组最多 3 个 (保守策略)
         for i in range(0, len(selected_items), batch_size):
@@ -557,56 +570,80 @@ class ApiClient:
                 f"cardIndex={CONFIG['auth']['card_index']}"
             )
 
-            try:
-                resp = self.session.post(
-                    url, headers=self.headers, data=body, timeout=10, verify=False
-                )
-
-                # 解析响应并输出调试
+            final_result = None
+            for attempt in range(batch_retry_times + 1):
                 try:
-                    resp_data = resp.json()
-                except ValueError:
-                    resp_data = None
+                    resp = self.session.post(
+                        url, headers=self.headers, data=body, timeout=10, verify=False
+                    )
 
-                print(
-                    f"📨 [submit_order调试] 批次 {i // batch_size + 1} 响应: {resp.text}"
-                )
+                    try:
+                        resp_data = resp.json()
+                    except ValueError:
+                        resp_data = None
 
-                if resp_data and resp_data.get("msg") == "success":
-                    results.append({"status": "success"})
-                else:
+                    print(
+                        f"📨 [submit_order调试] 批次 {i // batch_size + 1} 响应: {resp.text}"
+                    )
+
+                    if resp_data and resp_data.get("msg") == "success":
+                        final_result = {"status": "success", "batch": batch}
+                        break
+
                     fail_msg = None
                     if isinstance(resp_data, dict):
                         fail_msg = resp_data.get("data") or resp_data.get("msg")
                     if not fail_msg:
                         fail_msg = resp.text
-                    results.append({"status": "fail", "msg": fail_msg})
-            except Exception as e:
-                results.append({"status": "error", "msg": str(e)})
+
+                    if attempt < batch_retry_times and is_retryable_fail(fail_msg):
+                        print(
+                            f"⏳ 批次 {i // batch_size + 1} 命中可重试错误，"
+                            f"{batch_retry_interval}s 后重试 ({attempt + 1}/{batch_retry_times})"
+                        )
+                        time.sleep(batch_retry_interval)
+                        continue
+
+                    final_result = {"status": "fail", "msg": fail_msg, "batch": batch}
+                    break
+                except Exception as e:
+                    if attempt < batch_retry_times:
+                        print(
+                            f"⏳ 批次 {i // batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
+                            f"({attempt + 1}/{batch_retry_times}): {e}"
+                        )
+                        time.sleep(batch_retry_interval)
+                        continue
+                    final_result = {"status": "error", "msg": str(e), "batch": batch}
+                    break
+
+            results.append(final_result or {"status": "error", "msg": "未知错误", "batch": batch})
 
             # 稍作停顿防止并发过快
             time.sleep(CONFIG.get("retry_interval", 0.5))
 
         # ---------- 下单后验证 ----------
         verify_success_count = None
+        verify_success_items = []
+        verify_failed_items = []
         try:
             verify = self.get_matrix(date_str)
             if isinstance(verify, dict) and not verify.get("error"):
                 v_matrix = verify["matrix"]
                 verify_states = []
-                booked_map = []
 
                 for item in selected_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
                     verify_states.append(f"{p}号{t}={status}")
-                    # get_matrix 会用“我的订单”覆盖成 mine；
-                    # 对提交后验证来说，mine 与 booked 都代表已成功占位。
-                    booked_map.append(status in ("booked", "mine"))
+                    if status in ("booked", "mine"):
+                        verify_success_items.append({"place": p, "time": t})
+                    else:
+                        verify_failed_items.append({"place": p, "time": t})
 
                 print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
-                verify_success_count = sum(1 for ok in booked_map if ok)
+                verify_success_count = len(verify_success_items)
             else:
                 print(
                     f"🧾 [提交后验证调试] 获取矩阵失败: "
@@ -637,11 +674,18 @@ class ApiClient:
             return {"status": "fail", "msg": msg}
 
         if success_count == denominator:
-            return {"status": "success", "msg": "全部下单成功"}
+            return {
+                "status": "success",
+                "msg": "全部下单成功",
+                "success_items": verify_success_items,
+                "failed_items": verify_failed_items,
+            }
         elif success_count > 0:
             return {
                 "status": "partial",
                 "msg": f"部分成功 ({success_count}/{denominator})",
+                "success_items": verify_success_items,
+                "failed_items": verify_failed_items,
             }
         else:
             # 特殊情况：接口返回 success，但验证结果全是 available
@@ -650,7 +694,12 @@ class ApiClient:
             else:
                 first_fail = results[0] if results else {"msg": "无数据"}
                 msg = first_fail.get("msg")
-            return {"status": "fail", "msg": msg}
+            return {
+                "status": "fail",
+                "msg": msg,
+                "success_items": verify_success_items,
+                "failed_items": verify_failed_items,
+            }
 
     def x_submit_order_old(self, date_str, selected_items):
         pass
@@ -854,15 +903,20 @@ class TaskManager:
                 prefix = "预订成功。" if success else "【预订失败】"
             details = message
             if (success or partial) and date_str and items:
-                places = sorted({str(it.get("place")) for it in items if it.get("place") is not None})
-                times = []
+                success_pairs = []
+                seen = set()
                 for it in items:
+                    p = it.get("place")
                     t = it.get("time")
-                    if t and t not in times:
-                        times.append(str(t))
-                places_text = f"{'、'.join(places)}号" if places else ""
-                times_text = ",".join(times)
-                details = f"{build_date_display(date_str)}，{places_text}， {times_text}"
+                    if p is None or not t:
+                        continue
+                    key = f"{p}|{t}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    success_pairs.append(f"{p}号{t}")
+                pair_text = "、".join(success_pairs) if success_pairs else message
+                details = f"{build_date_display(date_str)}，{pair_text}"
             elif date_str:
                 details = f"{build_date_display(date_str)} {message}"
             content = f"{prefix}{details}"
@@ -900,9 +954,9 @@ class TaskManager:
             res = client.submit_order(target_date, task['items'])
             status = res.get("status")
             if status == "success":
-                notify_task_result(True, "已预订", items=task['items'], date_str=target_date)
+                notify_task_result(True, "已预订", items=res.get('success_items') or task['items'], date_str=target_date)
             elif status == "partial":
-                notify_task_result(False, "部分成功", items=task['items'], date_str=target_date, partial=True)
+                notify_task_result(False, "部分成功", items=res.get('success_items') or task['items'], date_str=target_date, partial=True)
             else:
                 notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
             return
@@ -1201,7 +1255,7 @@ class TaskManager:
                         notify_task_result(
                             True,
                             "已预订",
-                            items=final_items,
+                            items=res.get('success_items') or final_items,
                             date_str=target_date,
                         )
                     except Exception as e:
@@ -1213,7 +1267,7 @@ class TaskManager:
                         notify_task_result(
                             False,
                             "部分成功",
-                            items=final_items,
+                            items=res.get('success_items') or final_items,
                             date_str=target_date,
                             partial=True,
                         )
@@ -1566,9 +1620,19 @@ def update_config():
         # 2) 各类重试 / 限制配置
         _update_float_field('retry_interval', 0.1, CONFIG.get('retry_interval', 1.0))
         _update_float_field('aggressive_retry_interval', 0.1, CONFIG.get('aggressive_retry_interval', 0.3))
+        _update_float_field('batch_retry_interval', 0.1, CONFIG.get('batch_retry_interval', 0.5))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
+
+        if 'batch_retry_times' in data:
+            try:
+                val = int(data['batch_retry_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('batch_retry_times', 2))
+            val = max(0, min(5, val))
+            CONFIG['batch_retry_times'] = val
+            saved['batch_retry_times'] = val
 
         if 'health_check_start_time' in data:
             time_str = normalize_time_str(data['health_check_start_time'])
