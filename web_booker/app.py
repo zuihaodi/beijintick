@@ -1351,6 +1351,18 @@ class TaskManager:
 
 
 
+
+
+def _template_context_lines(text: str, lineno: int, radius: int = 2) -> str:
+    lines = text.splitlines()
+    start = max(1, lineno - radius)
+    end = min(len(lines), lineno + radius)
+    out = []
+    for i in range(start, end + 1):
+        pointer = '>>' if i == lineno else '  '
+        out.append(f"{pointer} {i}: {lines[i-1]}")
+    return "\n".join(out)
+
 def validate_templates_on_startup():
     """启动前快速检查关键模板语法，避免线上运行时才暴露 TemplateSyntaxError。"""
     template_file = os.path.join(BASE_DIR, 'templates', 'index.html')
@@ -1363,7 +1375,10 @@ def validate_templates_on_startup():
     except FileNotFoundError:
         raise RuntimeError(f'模板文件不存在: {template_file}')
     except TemplateSyntaxError as e:
-        raise RuntimeError(f'模板语法错误({template_file}:{e.lineno}): {e.message}')
+        context = _template_context_lines(content, e.lineno, radius=2)
+        raise RuntimeError(
+            f'模板语法错误({template_file}:{e.lineno}): {e.message}\n附近内容:\n{context}'
+        )
 
 task_manager = TaskManager()
 
