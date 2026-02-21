@@ -622,9 +622,6 @@
             <h2>🏸 抢票助手</h2>
             <div>
                 <span id="sys-clock" class="clock" style="font-size:16px;margin-right:10px;">--:--:--.---</span>
-                <a href="/" class="btn-manage" style="text-decoration:none;">半自动</a>
-                <a href="/tasks" class="btn-manage" style="text-decoration:none;">任务中心</a>
-                <a href="/settings" class="btn-manage" style="text-decoration:none;">系统设置</a>
             </div>
         </div>
 
@@ -780,7 +777,6 @@
             <button class="btn btn-primary" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
-        {% if page_mode == 'tasks' %}
         <div class="task-list" id="taskList">
             <!-- 动态生成 -->
         </div>
@@ -816,7 +812,6 @@
                 * 建议值：普通 0.5s，死磕 0.3s。太快可能会被封IP。
             </div>
         </div>
-        {% endif %}
         <div style="display:flex;gap:10px;margin-top:8px;">
           <div style="flex:1">
             <label>锁定状态重试间隔 (秒)</label>
@@ -936,6 +931,7 @@
                 <div id="logContent"></div>
             </div>
         </div>
+        {% endif %}
     </div>
 
     </div>
@@ -2096,7 +2092,7 @@
                     else dayPrefix = `${offset}天后`;
 
                     const dayDesc = `${dayPrefix}的场`;
-                    const dateLine = `🗓️日期：(${monthStr}-${dayStr} ${weekLabel})`;
+                    const dateLine = `☀︎日期：(${monthStr}-${dayStr} ${weekLabel})`;
 
                     // 5. 任务策略说明
                     let detail;

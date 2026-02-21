@@ -143,8 +143,10 @@ CONFIG = {
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
-CONFIG_FILE = os.path.join(BASE_DIR, "config.local.json")
+CONFIG_LOCAL_FILE = os.path.join(BASE_DIR, "config.local.json")
 CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
+# 优先使用已存在的 *.local.json；若不存在则直接使用 config.json（不自动生成 local 文件）
+CONFIG_FILE = CONFIG_LOCAL_FILE if os.path.exists(CONFIG_LOCAL_FILE) else CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -175,15 +177,6 @@ def migrate_runtime_file_if_needed(local_path, legacy_paths):
                 print(f"迁移运行文件失败({path}): {e}")
 
 
-migrate_runtime_file_if_needed(
-    CONFIG_FILE,
-    [
-        CONFIG_TEMPLATE_FILE,
-        os.path.join(PROJECT_ROOT, "config.json"),
-        os.path.join(os.getcwd(), "config.json"),
-    ],
-)
-
 if os.path.exists(CONFIG_FILE):
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -213,13 +206,15 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_FILE = os.path.join(BASE_DIR, "tasks.local.json")
+TASKS_LOCAL_FILE = os.path.join(BASE_DIR, "tasks.local.json")
 TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
+# 优先使用已存在的 *.local.json；若不存在则直接使用 tasks.json（不自动生成 local 文件）
+TASKS_FILE = TASKS_LOCAL_FILE if os.path.exists(TASKS_LOCAL_FILE) else TASKS_TEMPLATE_FILE
 
 def migrate_legacy_tasks_file():
     """
     兼容历史版本：老版本会把 tasks.json 写到“当前工作目录”。
-    现在统一迁移到 web_booker/tasks.json（即 TASKS_FILE）。
+    现在统一迁移到当前生效任务文件（TASKS_FILE）。
     """
     candidates = [
         TASKS_TEMPLATE_FILE,
