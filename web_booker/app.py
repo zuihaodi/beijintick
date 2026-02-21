@@ -6,6 +6,7 @@
 """
 
 from flask import Flask, render_template, request, jsonify
+from jinja2 import Environment, TemplateSyntaxError
 import requests
 import json
 import urllib.parse
@@ -1348,6 +1349,20 @@ class TaskManager:
                 print(f"❌ 添加任务失败: {e}")
 
 
+
+
+def validate_templates_on_startup():
+    """启动前快速检查关键模板语法，避免线上运行时才暴露 TemplateSyntaxError。"""
+    template_file = os.path.join(BASE_DIR, 'templates', 'index.html')
+    try:
+        with open(template_file, 'r', encoding='utf-8') as f:
+            Environment().parse(f.read())
+        print('✅ 模板语法检查通过: templates/index.html')
+    except FileNotFoundError:
+        raise RuntimeError(f'模板文件不存在: {template_file}')
+    except TemplateSyntaxError as e:
+        raise RuntimeError(f'模板语法错误({template_file}:{e.lineno}): {e.message}')
+
 task_manager = TaskManager()
 
 def run_scheduler():
@@ -1732,6 +1747,8 @@ def get_logs():
     return jsonify(LOG_BUFFER)
 
 if __name__ == "__main__":
+    validate_templates_on_startup()
+
     # 首次启动刷新调度
     task_manager.refresh_schedule()
 

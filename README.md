@@ -48,3 +48,19 @@ python web_booker/app.py
 - 建议将 `web_booker/config.json` / `web_booker/tasks.json`（以及可选的 `*.local.json`）视为本地运行数据文件（默认已被 `.gitignore` 忽略）。
 - 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
+
+
+## 发布前自检（推荐）
+
+建议每次改动 `web_booker/templates/index.html` 后先执行：
+
+```bash
+python - <<'PY'
+from jinja2 import Environment
+from pathlib import Path
+Environment().parse(Path('web_booker/templates/index.html').read_text(encoding='utf-8'))
+print('template syntax ok')
+PY
+```
+
+这样可以在启动前尽早发现 `if/endif` 配对错误。
