@@ -143,11 +143,8 @@ CONFIG = {
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-CONFIG_LOCAL_FILE = os.path.join(BASE_DIR, "config.local.json")
 CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
-# 优先使用已存在的 *.local.json；若不存在则直接使用 config.json（不自动生成 local 文件）
-CONFIG_FILE = CONFIG_LOCAL_FILE if os.path.exists(CONFIG_LOCAL_FILE) else CONFIG_TEMPLATE_FILE
+CONFIG_FILE = CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 
@@ -158,25 +155,6 @@ def log(msg):
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
     if len(LOG_BUFFER) > MAX_LOG_SIZE:
         LOG_BUFFER.pop(0)
-
-def migrate_runtime_file_if_needed(local_path, legacy_paths):
-    """首次升级时，把历史运行文件迁移到 *.local.json，避免被 git pull 覆盖。"""
-    if os.path.exists(local_path):
-        return
-    for path in legacy_paths:
-        if not path:
-            continue
-        if os.path.abspath(path) == os.path.abspath(local_path):
-            continue
-        if os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as src, open(local_path, 'w', encoding='utf-8') as dst:
-                    dst.write(src.read())
-                print(f"🔄 已迁移本地运行文件: {path} -> {local_path}")
-                return
-            except Exception as e:
-                print(f"迁移运行文件失败({path}): {e}")
-
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -207,71 +185,8 @@ if os.path.exists(CONFIG_FILE):
     except Exception as e:
         print(f"加载配置失败: {e}")
 
-TASKS_LOCAL_FILE = os.path.join(BASE_DIR, "tasks.local.json")
 TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
-# 优先使用已存在的 *.local.json；若不存在则直接使用 tasks.json（不自动生成 local 文件）
-TASKS_FILE = TASKS_LOCAL_FILE if os.path.exists(TASKS_LOCAL_FILE) else TASKS_TEMPLATE_FILE
-
-def migrate_legacy_tasks_file():
-    """
-    兼容历史版本：老版本会把 tasks.json 写到“当前工作目录”。
-    现在统一迁移到当前生效任务文件（TASKS_FILE）。
-    """
-    candidates = [
-        TASKS_TEMPLATE_FILE,
-        os.path.join(PROJECT_ROOT, "tasks.json"),
-        os.path.join(os.getcwd(), "tasks.json"),
-    ]
-    target_data = []
-
-    if os.path.exists(TASKS_FILE):
-        try:
-            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    target_data = data
-        except Exception as e:
-            print(f"读取目标任务文件失败: {e}")
-
-    merged = list(target_data)
-    seen_ids = {str(t.get('id')) for t in merged if isinstance(t, dict) and t.get('id') is not None}
-
-    for path in candidates:
-        if os.path.abspath(path) == os.path.abspath(TASKS_FILE):
-            continue
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if not isinstance(data, list):
-                continue
-            added = 0
-            for task in data:
-                if not isinstance(task, dict):
-                    continue
-                tid = task.get('id')
-                key = str(tid) if tid is not None else None
-                if key and key in seen_ids:
-                    continue
-                merged.append(task)
-                if key:
-                    seen_ids.add(key)
-                added += 1
-            if added > 0:
-                print(f"🔄 已从历史任务文件迁移 {added} 条任务: {path}")
-        except Exception as e:
-            print(f"迁移历史任务文件失败({path}): {e}")
-
-    if merged != target_data:
-        try:
-            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(merged, f, ensure_ascii=False, indent=2)
-            print(f"✅ 任务已统一写入: {TASKS_FILE}")
-        except Exception as e:
-            print(f"写入统一任务文件失败: {e}")
-
-migrate_legacy_tasks_file()
+TASKS_FILE = TASKS_TEMPLATE_FILE
 
 class ApiClient:
     def __init__(self):
@@ -775,6 +690,33 @@ class TaskManager:
         self.save_tasks()
         self.refresh_schedule()
 
+    def update_task(self, task_id, task):
+        task_id = int(task_id)
+        for i, old in enumerate(self.tasks):
+            if int(old.get('id', -1)) == task_id:
+                cfg = task.get('config') if isinstance(task, dict) else None
+                if isinstance(cfg, dict) and 'target_count' in cfg:
+                    try:
+                        cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+                    except Exception:
+                        cfg['target_count'] = 2
+
+                task['id'] = task_id
+                task['last_run_at'] = old.get('last_run_at')
+                self.tasks[i] = task
+                self.save_tasks()
+                self.refresh_schedule()
+                return True
+        return False
+
+    def mark_task_run(self, task_id):
+        task_id = int(task_id)
+        for task in self.tasks:
+            if int(task.get('id', -1)) == task_id:
+                task['last_run_at'] = int(time.time() * 1000)
+                self.save_tasks()
+                return
+
     def delete_task(self, task_id, refresh=True):
         self.tasks = [t for t in self.tasks if t['id'] != int(task_id)]
         self.save_tasks()
@@ -887,6 +829,8 @@ class TaskManager:
 
     def execute_task(self, task):
         log(f"⏰ [自动任务] 开始执行任务: {task.get('id')}")
+        if task.get('id') is not None:
+            self.mark_task_run(task['id'])
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
@@ -903,10 +847,23 @@ class TaskManager:
             except Exception:
                 return date_str
 
-        def notify_task_result(success, message, items=None, date_str=None):
-            prefix = "【预订成功】" if success else "【预订失败】"
+        def notify_task_result(success, message, items=None, date_str=None, partial=False):
+            if partial:
+                prefix = "预订部分成功。"
+            else:
+                prefix = "预订成功。" if success else "【预订失败】"
             details = message
-            if date_str:
+            if (success or partial) and date_str and items:
+                places = sorted({str(it.get("place")) for it in items if it.get("place") is not None})
+                times = []
+                for it in items:
+                    t = it.get("time")
+                    if t and t not in times:
+                        times.append(str(t))
+                places_text = f"{'、'.join(places)}号" if places else ""
+                times_text = ",".join(times)
+                details = f"{build_date_display(date_str)}，{places_text}， {times_text}"
+            elif date_str:
                 details = f"{build_date_display(date_str)} {message}"
             content = f"{prefix}{details}"
             self.send_notification(content, phones=task_phones)
@@ -942,9 +899,10 @@ class TaskManager:
         if not config and 'items' in task:
             res = client.submit_order(target_date, task['items'])
             status = res.get("status")
-            if status in ("success", "partial"):
-                msg = "全部成功" if status == "success" else "部分成功"
-                notify_task_result(True, f"下单完成：{msg}（{status}）", items=task['items'], date_str=target_date)
+            if status == "success":
+                notify_task_result(True, "已预订", items=task['items'], date_str=target_date)
+            elif status == "partial":
+                notify_task_result(False, "部分成功", items=task['items'], date_str=target_date, partial=True)
             else:
                 notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
             return
@@ -1237,21 +1195,30 @@ class TaskManager:
                 log(f"[submit_order调试] 批次响应: {res}")
 
                 status = res.get("status")
-                if status in ("success", "partial"):
-                    msg = "全部成功" if status == "success" else "部分成功"
-                    log(f"✅ 下单完成: {msg} ({status})")
-
-                    # 发通知短信
+                if status == "success":
+                    log(f"✅ 下单完成: 全部成功 ({status})")
                     try:
                         notify_task_result(
                             True,
-                            f"已预订",
+                            "已预订",
                             items=final_items,
                             date_str=target_date,
                         )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
-
+                    return
+                elif status == "partial":
+                    log(f"⚠️ 下单完成: 部分成功 ({status})")
+                    try:
+                        notify_task_result(
+                            False,
+                            "部分成功",
+                            items=final_items,
+                            date_str=target_date,
+                            partial=True,
+                        )
+                    except Exception as e:
+                        log(f"构建短信内容失败: {e}")
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
@@ -1716,6 +1683,14 @@ def del_task(task_id):
     task_manager.delete_task(task_id)
     return jsonify({"status": "success"})
 
+@app.route('/api/tasks/<task_id>', methods=['PUT'])
+def update_task(task_id):
+    data = request.json or {}
+    ok = task_manager.update_task(task_id, data)
+    if not ok:
+        return jsonify({"status": "error", "msg": "Task not found"}), 404
+    return jsonify({"status": "success"})
+
 @app.route('/api/tasks/<task_id>/run', methods=['POST'])
 def run_task_now(task_id):
     # Find task
@@ -1723,7 +1698,7 @@ def run_task_now(task_id):
     if task:
         # Run in a separate thread to avoid blocking the response
         threading.Thread(target=task_manager.execute_task, args=(task,)).start()
-    return jsonify({"status": "success", "msg": "Task started"})
+        return jsonify({"status": "success", "msg": "Task started"})
     return jsonify({"status": "error", "msg": "Task not found"}), 404
 
 @app.route('/api/config/check-token', methods=['POST'])
