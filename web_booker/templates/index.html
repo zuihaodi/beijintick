@@ -2098,6 +2098,7 @@
                 }
 
                 const nowForSort = new Date();
+                const serverBaseDateStr = '{{ dates[0].val if dates and dates|length > 0 else "" }}';
                 const calcNextRunTime = (task, now) => {
                     const runTimeStr = task.run_time || "00:00:00";
                     const [hhStr, mmStr, ssStr] = runTimeStr.split(':');
@@ -2189,7 +2190,9 @@
 
                     // 3. 在「下一次执行日期」基础上 + offset，得到真正要抢的场地日期
                     const offset = Number(t.target_day_offset || 0);
-                    const targetDate = new Date(nextRun.getTime());
+                    const targetDate = serverBaseDateStr
+                        ? new Date(`${serverBaseDateStr}T00:00:00`)
+                        : new Date(now.getTime());
                     targetDate.setDate(targetDate.getDate() + offset);
 
                     const monthStr = String(targetDate.getMonth() + 1).padStart(2, "0"); // 月
@@ -2205,7 +2208,7 @@
                     else dayPrefix = `${offset}天后`;
 
                     const dayDesc = `${dayPrefix}的场`;
-                    const dateLine = `🗓️下次目标日期：(${monthStr}-${dayStr} ${weekLabel})`;
+                    const dateLine = `🗓️目标日期：(${monthStr}-${dayStr} ${weekLabel})`;
 
                     // 5. 任务策略说明
                     let detail;
