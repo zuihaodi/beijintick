@@ -2187,9 +2187,10 @@
                         nextRun.setHours(hh, minute, ss, 0);
                     }
 
-                    // 3. 在「下一次执行日期」基础上 + offset 天，得到真正要抢的场地日期
+                    // 3. “立即运行”按钮实际使用的是“当前时刻 + offset”
+                    // 为避免与实际下单日期不一致，这里显示立即运行口径的目标日期
                     const offset = Number(t.target_day_offset || 0);
-                    const targetDate = new Date(nextRun.getTime());
+                    const targetDate = new Date(now.getTime());
                     targetDate.setDate(targetDate.getDate() + offset);
 
                     const monthStr = String(targetDate.getMonth() + 1).padStart(2, "0"); // 月
@@ -2205,7 +2206,7 @@
                     else dayPrefix = `${offset}天后`;
 
                     const dayDesc = `${dayPrefix}的场`;
-                    const dateLine = `🗓️下次目标日期：(${monthStr}-${dayStr} ${weekLabel})`;
+                    const dateLine = `🗓️立即运行目标日期：(${monthStr}-${dayStr} ${weekLabel})`;
 
                     // 5. 任务策略说明
                     let detail;
