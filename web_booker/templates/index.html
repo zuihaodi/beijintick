@@ -818,38 +818,38 @@
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
             <label style="font-weight:bold;margin-bottom:8px;">⚡ 抢票速度设置 (秒)</label>
-            <div style="display:flex;gap:10px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">普通重试间隔</label>
                     <input type="number" id="retryInterval" class="form-control" value="0.5" step="0.1"
                         min="0.1">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;color:#ff3b30;">🔥 死磕模式间隔</label>
                     <input type="number" id="aggressiveRetryInterval" class="form-control" value="0.3"
                         step="0.1" min="0.1">
                 </div>
             </div>
-            <div style="display:flex;gap:10px;margin-top:8px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">单批提交上限 (1-9)</label>
                     <input type="number" id="submitBatchSize" class="form-control" value="3" step="1" min="1" max="9">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">分批失败重试次数</label>
                     <input type="number" id="batchRetryTimes" class="form-control" value="2" step="1" min="0" max="5">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">分批失败重试间隔 (秒)</label>
                     <input type="number" id="batchRetryInterval" class="form-control" value="0.5" step="0.1" min="0.1">
                 </div>
             </div>
-            <div style="display:flex;gap:10px;margin-top:8px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">批次间最小间隔 (秒)</label>
                     <input type="number" id="batchMinInterval" class="form-control" value="0.8" step="0.1" min="0.1">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">失败后补提窗口 (秒)</label>
                     <input type="number" id="refillWindowSeconds" class="form-control" value="8" step="1" min="0">
                 </div>
@@ -859,8 +859,8 @@
                 * 建议值：普通 0.5s，死磕 0.3s，分批重试间隔 0.5s。太快可能会被封IP。
             </div>
         </div>
-        <div style="display:flex;gap:10px;margin-top:8px;">
-          <div style="flex:1">
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
             <label>锁定状态重试间隔 (秒)</label>
             <input type="number"
                    id="lockedRetryInterval"
@@ -869,7 +869,7 @@
                    min="0.1"
                    placeholder="例如 0.5">
           </div>
-          <div style="flex:1">
+          <div style="flex:1;min-width:180px;">
             <label>锁定状态最多刷 N 秒</label>
             <input type="number"
                    id="lockedMaxSeconds"
@@ -887,8 +887,9 @@
             <label style="font-weight:bold;margin-bottom:8px;">
                 📢 全局通知手机号 (Token失效 / 系统异常报警)
             </label>
-            <div style="display:flex;gap:10px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <input type="text" id="globalNotificationPhones" class="form-control"
+                       style="min-width:220px;"
                        placeholder="例如: 13800000000, 13900000000">
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#eee;"
                         onclick="testSMS()">📡 测试</button>
@@ -903,8 +904,9 @@
             <label style="font-weight:bold;margin-bottom:8px;">
                 💬 全局微信通知 Token (PushPlus)
             </label>
-            <div style="display:flex;gap:10px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <input type="text" id="globalPushplusTokens" class="form-control"
+                       style="min-width:220px;"
                        placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
             </div>
             <div style="font-size:12px;color:#999;margin-top:5px;">
