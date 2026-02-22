@@ -519,7 +519,13 @@ class ApiClient:
 
         def should_degrade(msg):
             text = str(msg or "")
-            return is_retryable_fail(text) or ("规则" in text)
+            rule_keywords = [
+                "规则",
+                "最多预约3个",
+                "最多预约",
+                "上限",
+            ]
+            return is_retryable_fail(text) or any(k in text for k in rule_keywords)
 
         def filter_still_available(items):
             try:
@@ -537,9 +543,44 @@ class ApiClient:
             except Exception:
                 return list(items)
 
+        submit_items = list(selected_items or [])
+        preblocked_items = []
+        try:
+            verify = self.get_matrix(date_str)
+            if isinstance(verify, dict) and not verify.get("error"):
+                matrix = verify.get("matrix") or {}
+                mine_by_time = {}
+                for row in matrix.values():
+                    if not isinstance(row, dict):
+                        continue
+                    for t, state in row.items():
+                        if state == "mine":
+                            mine_by_time[t] = mine_by_time.get(t, 0) + 1
+
+                planned_by_time = {}
+                allowed_items = []
+                for it in submit_items:
+                    t = it.get("time")
+                    quota = max(0, 3 - mine_by_time.get(t, 0))
+                    used = planned_by_time.get(t, 0)
+                    if used < quota:
+                        allowed_items.append(it)
+                        planned_by_time[t] = used + 1
+                    else:
+                        preblocked_items.append(it)
+
+                if preblocked_items:
+                    print(
+                        f"⚠️ [同时段上限预检] 检测到已有mine占位导致同一时段超限，"
+                        f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
+                    )
+                submit_items = allowed_items
+        except Exception as e:
+            print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+
         # 首轮提交：按“本次选择数量”自适应分批
-        for i in range(0, len(selected_items), initial_batch_size):
-            batch = selected_items[i:i + initial_batch_size]
+        for i in range(0, len(submit_items), initial_batch_size):
+            batch = submit_items[i:i + initial_batch_size]
             print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
 
             field_info_list = []
@@ -807,6 +848,13 @@ class ApiClient:
         except Exception as e:
             print(f"⚠️ [补提] 处理异常: {e}")
 
+        if preblocked_items:
+            results.append({
+                "status": "fail",
+                "msg": "同一时间的场地最多预约3个(含已预约mine)",
+                "batch": preblocked_items,
+            })
+
         # ---------- 下单后验证 ----------
         verify_success_count = None
         verify_success_items = []
@@ -817,7 +865,7 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
-                for item in selected_items:
+                for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
@@ -826,6 +874,13 @@ class ApiClient:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
+
+                if preblocked_items:
+                    verify_failed_items.extend(preblocked_items)
+                    verify_states.extend([
+                        f"{str(it.get('place'))}号{it.get('time')}=preblocked"
+                        for it in preblocked_items
+                    ])
 
                 print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
                 verify_success_count = len(verify_success_items)
