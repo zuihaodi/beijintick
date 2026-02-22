@@ -137,6 +137,7 @@ CONFIG = {
     "aggressive_retry_interval": 1.0,
     "batch_retry_times": 2,
     "batch_retry_interval": 0.5,
+    "submit_batch_size": 3,
     "batch_min_interval": 0.8,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -177,6 +178,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['batch_retry_times'] = saved['batch_retry_times']
             if 'batch_retry_interval' in saved:
                 CONFIG['batch_retry_interval'] = saved['batch_retry_interval']
+            if 'submit_batch_size' in saved:
+                CONFIG['submit_batch_size'] = saved['submit_batch_size']
             if 'batch_min_interval' in saved:
                 CONFIG['batch_min_interval'] = saved['batch_min_interval']
             if 'refill_window_seconds' in saved:
@@ -493,7 +496,11 @@ class ApiClient:
         url = f"https://{self.host}/easyserpClient/place/reservationPlace"
 
         results = []
-        batch_size = 3
+        try:
+            batch_size = int(CONFIG.get("submit_batch_size", 3))
+        except Exception:
+            batch_size = 3
+        batch_size = max(1, min(9, batch_size))
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
@@ -629,6 +636,71 @@ class ApiClient:
                         )
                         time.sleep(sleep_s)
                         continue
+
+                    # 如果当前批次规模>3 且失败，自动降级为每批3个重提一次，
+                    # 兼容服务端可能存在的单次下单上限，避免大批次整单失败。
+                    if batch_size > 3:
+                        print(f"↘️ 批次 {i // batch_size + 1} 降级重提: size {batch_size} -> 3")
+                        degrade_fail = []
+                        for j in range(0, len(batch), 3):
+                            sub = batch[j:j + 3]
+                            try:
+                                sub_field_info = []
+                                sub_total = 0
+                                for item in sub:
+                                    p_num = item["place"]
+                                    start = item["time"]
+                                    try:
+                                        st_obj = datetime.strptime(start, "%H:%M")
+                                        et_obj = st_obj + timedelta(hours=1)
+                                        end = et_obj.strftime("%H:%M")
+                                        price = 80 if st_obj.hour < 14 else 100
+                                    except Exception:
+                                        end = "22:00"
+                                        price = 100
+                                    try:
+                                        p_int = int(p_num)
+                                    except (TypeError, ValueError):
+                                        p_int = None
+                                    if p_int is not None and p_int >= 15:
+                                        place_short = f"mdb{p_num}"
+                                        place_name = f"木地板{p_num}"
+                                    else:
+                                        place_short = f"ymq{p_num}"
+                                        place_name = f"羽毛球{p_num}"
+                                    sub_field_info.append({
+                                        "day": date_str,
+                                        "oldMoney": price,
+                                        "startTime": start,
+                                        "endTime": end,
+                                        "placeShortName": place_short,
+                                        "name": place_name,
+                                        "stageTypeShortName": "ymq",
+                                        "newMoney": price,
+                                    })
+                                    sub_total += price
+
+                                info_str = urllib.parse.quote(json.dumps(sub_field_info, separators=(",", ":"), ensure_ascii=False))
+                                type_encoded = urllib.parse.quote("羽毛球")
+                                sub_body = (
+                                    f"token={self.token}&shopNum={CONFIG['auth']['shop_num']}&fieldinfo={info_str}&"
+                                    f"cardStId={CONFIG['auth']['card_st_id']}&oldTotal={sub_total}.00&cardPayType=0&"
+                                    f"type={type_encoded}&offerId=&offerType=&total={sub_total}.00&premerother=&"
+                                    f"cardIndex={CONFIG['auth']['card_index']}"
+                                )
+                                sub_resp = self.session.post(url, headers=self.headers, data=sub_body, timeout=10, verify=False)
+                                sub_data = sub_resp.json() if sub_resp.text else None
+                                if not (isinstance(sub_data, dict) and sub_data.get("msg") == "success"):
+                                    degrade_fail.extend(sub)
+                            except Exception:
+                                degrade_fail.extend(sub)
+                            time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+
+                        if not degrade_fail:
+                            final_result = {"status": "success", "batch": batch}
+                        else:
+                            final_result = {"status": "fail", "msg": fail_msg, "batch": degrade_fail}
+                        break
 
                     final_result = {"status": "fail", "msg": fail_msg, "batch": batch}
                     break
@@ -1661,6 +1733,7 @@ def update_config():
     - aggressive_retry_interval：死磕模式重试间隔
     - batch_retry_times：分批失败重试次数
     - batch_retry_interval：分批失败重试间隔
+    - submit_batch_size：单批提交上限
     - batch_min_interval：批次间最小间隔
     - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
@@ -1743,6 +1816,15 @@ def update_config():
             val = max(0, min(5, val))
             CONFIG['batch_retry_times'] = val
             saved['batch_retry_times'] = val
+
+        if 'submit_batch_size' in data:
+            try:
+                val = int(data['submit_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_batch_size', 3))
+            val = max(1, min(9, val))
+            CONFIG['submit_batch_size'] = val
+            saved['submit_batch_size'] = val
 
         if 'health_check_start_time' in data:
             time_str = normalize_time_str(data['health_check_start_time'])

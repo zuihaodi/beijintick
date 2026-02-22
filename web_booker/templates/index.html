@@ -832,6 +832,10 @@
             </div>
             <div style="display:flex;gap:10px;margin-top:8px;">
                 <div style="flex:1">
+                    <label style="font-size:12px;">单批提交上限 (1-9)</label>
+                    <input type="number" id="submitBatchSize" class="form-control" value="3" step="1" min="1" max="9">
+                </div>
+                <div style="flex:1">
                     <label style="font-size:12px;">分批失败重试次数</label>
                     <input type="number" id="batchRetryTimes" class="form-control" value="2" step="1" min="0" max="5">
                 </div>
@@ -1622,6 +1626,10 @@
                                 config.aggressive_retry_interval;
                         }
 
+                        if (config.submit_batch_size != null) {
+                            document.getElementById('submitBatchSize').value = config.submit_batch_size;
+                        }
+
                         if (config.batch_retry_times != null) {
                             document.getElementById('batchRetryTimes').value = config.batch_retry_times;
                         }
@@ -1733,6 +1741,7 @@
 
                 const retryInterval = parseFloat(document.getElementById('retryInterval').value);
                 const aggressiveRetryInterval = parseFloat(document.getElementById('aggressiveRetryInterval').value);
+                const submitBatchSize = parseInt(document.getElementById('submitBatchSize').value || '3', 10);
                 const batchRetryTimes = parseInt(document.getElementById('batchRetryTimes').value || '2', 10);
                 const batchRetryInterval = parseFloat(document.getElementById('batchRetryInterval').value);
                 const batchMinInterval = parseFloat(document.getElementById('batchMinInterval').value);
@@ -1750,6 +1759,7 @@
                     pushplus_tokens: globalPushplusTokens,
                     retry_interval: isNaN(retryInterval) ? 1.0 : retryInterval,
                     aggressive_retry_interval: isNaN(aggressiveRetryInterval) ? 0.3 : aggressiveRetryInterval,
+                    submit_batch_size: isNaN(submitBatchSize) ? 3 : submitBatchSize,
                     batch_retry_times: isNaN(batchRetryTimes) ? 2 : batchRetryTimes,
                     batch_retry_interval: isNaN(batchRetryInterval) ? 0.5 : batchRetryInterval,
                     batch_min_interval: isNaN(batchMinInterval) ? 0.8 : batchMinInterval,
