@@ -12,7 +12,7 @@ import json
 import urllib.parse
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import traceback
 import schedule
 import time
@@ -219,6 +219,25 @@ class ApiClient:
             self.headers["Cookie"] = cookie
         self.token = CONFIG["auth"]["token"]
         self.session = requests.Session()
+        self.server_time_offset_seconds = 0.0
+
+    def _update_server_time_offset(self, resp, started_at, ended_at):
+        date_header = (resp.headers or {}).get("Date") if resp is not None else None
+        if not date_header:
+            return
+        try:
+            from email.utils import parsedate_to_datetime
+            server_dt = parsedate_to_datetime(date_header)
+            if server_dt.tzinfo is None:
+                server_dt = server_dt.replace(tzinfo=timezone.utc)
+            server_ts = server_dt.timestamp()
+            midpoint = (started_at + ended_at) / 2.0
+            self.server_time_offset_seconds = server_ts - midpoint
+        except Exception:
+            return
+
+    def get_aligned_now(self):
+        return datetime.now() + timedelta(seconds=float(self.server_time_offset_seconds or 0.0))
 
     def check_token(self):
         # 简单请求一次接口，看是否返回 token 失效相关的错误
@@ -366,8 +385,11 @@ class ApiClient:
             # 抢票高峰期服务器响应慢，适当缩短超时以便快速重试，或者延长等待？
             # 考虑到 "Read timed out" (10s)，说明服务器卡死了。
             # 策略：保持 10s 超时，但在上层增加重试次数。
+            started_at = time.time()
             resp = self.session.get(url, headers=self.headers, params=params, timeout=10, verify=False)
-            
+            ended_at = time.time()
+            self._update_server_time_offset(resp, started_at, ended_at)
+
             try:
                 data = resp.json()
             except json.JSONDecodeError:
@@ -1177,9 +1199,41 @@ class TaskManager:
         if target_mode == 'fixed' and task.get('target_date'):
             target_date = str(task['target_date'])
         else:
-            # 兼容：老任务可能没有 target_day_offset 字段，默认按 0 天处理
             offset_days = int(task.get('target_day_offset', 0))
-            target_date = (datetime.now() + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+            run_time = str(task.get('run_time') or '00:00:00')
+            if len(run_time) == 5:
+                run_time += ':00'
+            try:
+                hh, mm, ss = [int(x) for x in run_time.split(':')[:3]]
+            except Exception:
+                hh, mm, ss = 0, 0, 0
+
+            aligned_now = client.get_aligned_now()
+            base_run = aligned_now.replace(hour=hh, minute=mm, second=ss, microsecond=0)
+            t_type = task.get('type', 'daily')
+            if t_type in ('daily', 'once'):
+                if base_run <= aligned_now:
+                    base_run = base_run + timedelta(days=1)
+            elif t_type == 'weekly':
+                current_weekday = aligned_now.weekday()  # 周一=0
+                target_weekday = int(task.get('weekly_day', 0))
+                diff = target_weekday - current_weekday
+                if diff < 0 or (diff == 0 and base_run <= aligned_now):
+                    diff += 7
+                base_run = base_run + timedelta(days=diff)
+
+            target_date = (base_run + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+            log(
+                f"🕒 [时间对齐] server_offset={round(client.server_time_offset_seconds, 3)}s, "
+                f"base_run={base_run.strftime('%Y-%m-%d %H:%M:%S')}, target_date={target_date}"
+            )
+
+            aligned_now_after = client.get_aligned_now()
+            if aligned_now_after < base_run:
+                wait_s = (base_run - aligned_now_after).total_seconds()
+                if 0 < wait_s <= 120:
+                    log(f"⏳ [时间对齐] 服务端未到触发时刻，等待 {round(wait_s, 2)}s 后开始抢票")
+                    time.sleep(wait_s)
 
         config = task.get('config')
 

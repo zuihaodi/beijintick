@@ -2188,8 +2188,7 @@
                         nextRun.setHours(hh, minute, ss, 0);
                     }
 
-                    // 3. 目标日期统一按“服务端日期基准 + offset”计算，
-                    // 与上方 +N 天选择器及后端执行口径保持一致
+                    // 3. 在「下一次执行日期」基础上 + offset，得到真正要抢的场地日期
                     const offset = Number(t.target_day_offset || 0);
                     const targetDate = serverBaseDateStr
                         ? new Date(`${serverBaseDateStr}T00:00:00`)
