@@ -2152,9 +2152,8 @@
 
                     // 3. 在「下一次执行日期」基础上 + offset，得到真正要抢的场地日期
                     const offset = Number(t.target_day_offset || 0);
-                    const targetDate = serverBaseDateStr
-                        ? new Date(`${serverBaseDateStr}T00:00:00`)
-                        : new Date(now.getTime());
+                    const targetDate = new Date(nextRun.getTime());
+                    targetDate.setHours(0, 0, 0, 0);
                     targetDate.setDate(targetDate.getDate() + offset);
 
                     const monthStr = String(targetDate.getMonth() + 1).padStart(2, "0"); // 月
