@@ -497,19 +497,35 @@ class ApiClient:
 
         results = []
         try:
-            batch_size = int(CONFIG.get("submit_batch_size", 3))
+            degrade_batch_size = int(CONFIG.get("submit_batch_size", 3))
         except Exception:
-            batch_size = 3
-        batch_size = max(1, min(9, batch_size))
+            degrade_batch_size = 3
+        degrade_batch_size = max(1, min(9, degrade_batch_size))
+        initial_batch_size = max(1, min(9, len(selected_items) or 1))
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
         refill_window_seconds = float(CONFIG.get("refill_window_seconds", 8.0))
 
+        print(
+            f"🧭 [批次策略] 首批=按本次选择数量({len(selected_items)})→{initial_batch_size}；"
+            f"降级=按配置 submit_batch_size→{degrade_batch_size}"
+        )
+
         def is_retryable_fail(msg):
             text = str(msg or "")
             keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
             return any(k in text for k in keywords)
+
+        def should_degrade(msg):
+            text = str(msg or "")
+            rule_keywords = [
+                "规则",
+                "最多预约3个",
+                "最多预约",
+                "上限",
+            ]
+            return is_retryable_fail(text) or any(k in text for k in rule_keywords)
 
         def filter_still_available(items):
             try:
@@ -527,10 +543,45 @@ class ApiClient:
             except Exception:
                 return list(items)
 
-        # 将 items 分组，每组最多 3 个 (保守策略)
-        for i in range(0, len(selected_items), batch_size):
-            batch = selected_items[i:i + batch_size]
-            print(f"📦 正在提交分批订单 ({i // batch_size + 1}): {batch}")
+        submit_items = list(selected_items or [])
+        preblocked_items = []
+        try:
+            verify = self.get_matrix(date_str)
+            if isinstance(verify, dict) and not verify.get("error"):
+                matrix = verify.get("matrix") or {}
+                mine_by_time = {}
+                for row in matrix.values():
+                    if not isinstance(row, dict):
+                        continue
+                    for t, state in row.items():
+                        if state == "mine":
+                            mine_by_time[t] = mine_by_time.get(t, 0) + 1
+
+                planned_by_time = {}
+                allowed_items = []
+                for it in submit_items:
+                    t = it.get("time")
+                    quota = max(0, 3 - mine_by_time.get(t, 0))
+                    used = planned_by_time.get(t, 0)
+                    if used < quota:
+                        allowed_items.append(it)
+                        planned_by_time[t] = used + 1
+                    else:
+                        preblocked_items.append(it)
+
+                if preblocked_items:
+                    print(
+                        f"⚠️ [同时段上限预检] 检测到已有mine占位导致同一时段超限，"
+                        f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
+                    )
+                submit_items = allowed_items
+        except Exception as e:
+            print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+
+        # 首轮提交：按“本次选择数量”自适应分批
+        for i in range(0, len(submit_items), initial_batch_size):
+            batch = submit_items[i:i + initial_batch_size]
+            print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
 
             field_info_list = []
             total_money = 0
@@ -615,7 +666,7 @@ class ApiClient:
                         resp_data = None
 
                     print(
-                        f"📨 [submit_order调试] 批次 {i // batch_size + 1} 响应: {resp.text}"
+                        f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
                     )
 
                     if resp_data and resp_data.get("msg") == "success":
@@ -631,19 +682,18 @@ class ApiClient:
                     if attempt < batch_retry_times and is_retryable_fail(fail_msg):
                         sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
                         print(
-                            f"⏳ 批次 {i // batch_size + 1} 命中可重试错误，"
+                            f"⏳ 批次 {i // initial_batch_size + 1} 命中可重试错误，"
                             f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{batch_retry_times})"
                         )
                         time.sleep(sleep_s)
                         continue
 
-                    # 如果当前批次规模>3 且失败，自动降级为每批3个重提一次，
-                    # 兼容服务端可能存在的单次下单上限，避免大批次整单失败。
-                    if batch_size > 3:
-                        print(f"↘️ 批次 {i // batch_size + 1} 降级重提: size {batch_size} -> 3")
+                    # 命中“可重试/规则异常”时，按配置分批降级重提一次
+                    if len(batch) > degrade_batch_size and should_degrade(fail_msg):
+                        print(f"↘️ 批次 {i // initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
                         degrade_fail = []
-                        for j in range(0, len(batch), 3):
-                            sub = batch[j:j + 3]
+                        for j in range(0, len(batch), degrade_batch_size):
+                            sub = batch[j:j + degrade_batch_size]
                             try:
                                 sub_field_info = []
                                 sub_total = 0
@@ -707,7 +757,7 @@ class ApiClient:
                 except Exception as e:
                     if attempt < batch_retry_times:
                         print(
-                            f"⏳ 批次 {i // batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
+                            f"⏳ 批次 {i // initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
                             f"({attempt + 1}/{batch_retry_times}): {e}"
                         )
                         time.sleep(batch_retry_interval)
@@ -737,8 +787,8 @@ class ApiClient:
 
                 print(f"🔁 [补提] 窗口内补提仍可用项: {still_available}")
                 results = [r for r in results if r.get("status") == "success"]
-                for i in range(0, len(still_available), batch_size):
-                    batch = still_available[i:i + batch_size]
+                for i in range(0, len(still_available), degrade_batch_size):
+                    batch = still_available[i:i + degrade_batch_size]
                     field_info_list = []
                     total_money = 0
                     for item in batch:
@@ -798,6 +848,13 @@ class ApiClient:
         except Exception as e:
             print(f"⚠️ [补提] 处理异常: {e}")
 
+        if preblocked_items:
+            results.append({
+                "status": "fail",
+                "msg": "同一时间的场地最多预约3个(含已预约mine)",
+                "batch": preblocked_items,
+            })
+
         # ---------- 下单后验证 ----------
         verify_success_count = None
         verify_success_items = []
@@ -808,7 +865,7 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
-                for item in selected_items:
+                for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
@@ -817,6 +874,13 @@ class ApiClient:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
+
+                if preblocked_items:
+                    verify_failed_items.extend(preblocked_items)
+                    verify_states.extend([
+                        f"{str(it.get('place'))}号{it.get('time')}=preblocked"
+                        for it in preblocked_items
+                    ])
 
                 print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
                 verify_success_count = len(verify_success_items)
