@@ -818,38 +818,38 @@
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
             <label style="font-weight:bold;margin-bottom:8px;">⚡ 抢票速度设置 (秒)</label>
-            <div style="display:flex;gap:10px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">普通重试间隔</label>
                     <input type="number" id="retryInterval" class="form-control" value="0.5" step="0.1"
                         min="0.1">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;color:#ff3b30;">🔥 死磕模式间隔</label>
                     <input type="number" id="aggressiveRetryInterval" class="form-control" value="0.3"
                         step="0.1" min="0.1">
                 </div>
             </div>
-            <div style="display:flex;gap:10px;margin-top:8px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">单批提交上限 (1-9)</label>
                     <input type="number" id="submitBatchSize" class="form-control" value="3" step="1" min="1" max="9">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">分批失败重试次数</label>
                     <input type="number" id="batchRetryTimes" class="form-control" value="2" step="1" min="0" max="5">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">分批失败重试间隔 (秒)</label>
                     <input type="number" id="batchRetryInterval" class="form-control" value="0.5" step="0.1" min="0.1">
                 </div>
             </div>
-            <div style="display:flex;gap:10px;margin-top:8px;">
-                <div style="flex:1">
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">批次间最小间隔 (秒)</label>
                     <input type="number" id="batchMinInterval" class="form-control" value="0.8" step="0.1" min="0.1">
                 </div>
-                <div style="flex:1">
+                <div style="flex:1;min-width:180px;">
                     <label style="font-size:12px;">失败后补提窗口 (秒)</label>
                     <input type="number" id="refillWindowSeconds" class="form-control" value="8" step="1" min="0">
                 </div>
@@ -859,8 +859,8 @@
                 * 建议值：普通 0.5s，死磕 0.3s，分批重试间隔 0.5s。太快可能会被封IP。
             </div>
         </div>
-        <div style="display:flex;gap:10px;margin-top:8px;">
-          <div style="flex:1">
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
             <label>锁定状态重试间隔 (秒)</label>
             <input type="number"
                    id="lockedRetryInterval"
@@ -869,7 +869,7 @@
                    min="0.1"
                    placeholder="例如 0.5">
           </div>
-          <div style="flex:1">
+          <div style="flex:1;min-width:180px;">
             <label>锁定状态最多刷 N 秒</label>
             <input type="number"
                    id="lockedMaxSeconds"
@@ -887,8 +887,9 @@
             <label style="font-weight:bold;margin-bottom:8px;">
                 📢 全局通知手机号 (Token失效 / 系统异常报警)
             </label>
-            <div style="display:flex;gap:10px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <input type="text" id="globalNotificationPhones" class="form-control"
+                       style="min-width:220px;"
                        placeholder="例如: 13800000000, 13900000000">
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#eee;"
                         onclick="testSMS()">📡 测试</button>
@@ -903,8 +904,9 @@
             <label style="font-weight:bold;margin-bottom:8px;">
                 💬 全局微信通知 Token (PushPlus)
             </label>
-            <div style="display:flex;gap:10px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <input type="text" id="globalPushplusTokens" class="form-control"
+                       style="min-width:220px;"
                        placeholder="例如: xxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyy">
             </div>
             <div style="font-size:12px;color:#999;margin-top:5px;">
@@ -1836,17 +1838,23 @@
             };
         }
 
-        function calcNextRunFromCurrentForm() {
-            const now = new Date();
-            const type = document.getElementById('taskType')?.value || 'daily';
-            const { hh, mm, ss } = parseTaskTime();
+        function calcNextRunForTask(task, nowDate = new Date()) {
+            const now = new Date(nowDate.getTime());
+            const runTimeStr = (task?.run_time || '00:00:00').trim();
+            const parts = runTimeStr.split(':');
+            const hh = parseInt(parts[0] || '0', 10);
+            const mm = parseInt(parts[1] || '0', 10);
+            const ss = parseInt(parts[2] || '0', 10);
+            const safeH = Number.isNaN(hh) ? 0 : hh;
+            const safeM = Number.isNaN(mm) ? 0 : mm;
+            const safeS = Number.isNaN(ss) ? 0 : ss;
 
-            const nextRun = new Date(now.getTime());
-            nextRun.setHours(hh, mm, ss, 0);
+            let nextRun = new Date(now.getTime());
+            nextRun.setHours(safeH, safeM, safeS, 0);
 
+            const type = task?.type || 'daily';
             if (type === 'weekly') {
-                const weeklyDayVal = parseInt(document.getElementById('weeklyDay')?.value || '0', 10);
-                const targetWeekday = Number.isNaN(weeklyDayVal) ? 0 : weeklyDayVal; // 0=周一..6=周日
+                const targetWeekday = Number(task?.weekly_day || 0); // 0=周一..6=周日
                 const todayJs = now.getDay(); // 0=周日..6=周六
                 const todayOur = (todayJs + 6) % 7; // 0=周一..6=周日
 
@@ -1854,16 +1862,28 @@
                 if (diff < 0 || (diff === 0 && nextRun <= now)) {
                     diff += 7;
                 }
+                nextRun = new Date(now.getTime());
                 nextRun.setDate(now.getDate() + diff);
-                nextRun.setHours(hh, mm, ss, 0);
+                nextRun.setHours(safeH, safeM, safeS, 0);
                 return nextRun;
             }
 
-            // daily / once：若今天该时间已过，则下一次是明天
             if (nextRun <= now) {
                 nextRun.setDate(nextRun.getDate() + 1);
             }
             return nextRun;
+        }
+
+        function calcNextRunFromCurrentForm() {
+            const type = document.getElementById('taskType')?.value || 'daily';
+            const { hh, mm, ss } = parseTaskTime();
+            const weeklyDayVal = parseInt(document.getElementById('weeklyDay')?.value || '0', 10);
+            const targetWeekday = Number.isNaN(weeklyDayVal) ? 0 : weeklyDayVal;
+            return calcNextRunForTask({
+                type,
+                run_time: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`,
+                weekly_day: targetWeekday,
+            });
         }
 
         function updateTaskDateSelector() {
@@ -2096,30 +2116,7 @@
                 }
 
                 const nowForSort = new Date();
-                const calcNextRunTime = (task, now) => {
-                    const runTimeStr = task.run_time || "00:00:00";
-                    const [hhStr, mmStr, ssStr] = runTimeStr.split(':');
-                    const hh = parseInt(hhStr || '0', 10);
-                    const minute = parseInt(mmStr || '0', 10);
-                    const ss = parseInt(ssStr || '0', 10);
-
-                    let nextRun = new Date(now.getTime());
-                    nextRun.setHours(hh, minute, ss, 0);
-
-                    if (task.type === 'daily' || task.type === 'once') {
-                        if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
-                    } else if (task.type === 'weekly') {
-                        const targetWeekday = Number(task.weekly_day || 0);
-                        const jsToday = now.getDay();
-                        const ourToday = (jsToday + 6) % 7;
-                        let diff = targetWeekday - ourToday;
-                        if (diff < 0 || (diff === 0 && nextRun <= now)) diff += 7;
-                        nextRun = new Date(now.getTime());
-                        nextRun.setDate(now.getDate() + diff);
-                        nextRun.setHours(hh, minute, ss, 0);
-                    }
-                    return nextRun.getTime();
-                };
+                const calcNextRunTime = (task, now) => calcNextRunForTask(task, now).getTime();
 
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const aLast = Number(a.last_run_at || 0);
@@ -2151,41 +2148,9 @@
                     }
 
                     // 2. 计算「下一次执行日期」
-                    const now = new Date();
-                    const runTimeStr = t.run_time || "00:00:00";
-                    const [hhStr, mmStr, ssStr] = runTimeStr.split(':');
-                    const hh = parseInt(hhStr || '0', 10);
-                    const minute = parseInt(mmStr || '0', 10);   // 用 minute 表示“分钟”
-                    const ss = parseInt(ssStr || '0', 10);
+                    const nextRun = calcNextRunForTask(t);
 
-                    let nextRun = new Date(now.getTime());
-                    nextRun.setHours(hh, minute, ss, 0);
-
-                    if (t.type === 'daily' || t.type === 'once') {
-                        // 每天 / 单次：今天已经过了这个时间，则从明天开始算
-                        if (nextRun <= now) {
-                            nextRun.setDate(nextRun.getDate() + 1);
-                        }
-                    } else if (t.type === 'weekly') {
-                        // 每周：找到下一次到达指定 weekday 的那一天
-                        // 后端保存的 weekday：0=周一,...,6=周日
-                        const targetWeekday = Number(t.weekly_day || 0);
-
-                        // JS 的 getDay(): 0=周日,...,6=周六
-                        const jsToday = now.getDay();              // 0..6 (日..六)
-                        const ourToday = (jsToday + 6) % 7;        // 转成 0..6 (一..日)
-
-                        let diff = targetWeekday - ourToday;
-                        // 如果今天已经过了触发时间，或今天不是目标周几，就往后推一周
-                        if (diff < 0 || (diff === 0 && nextRun <= now)) {
-                            diff += 7;
-                        }
-                        nextRun = new Date(now.getTime());
-                        nextRun.setDate(now.getDate() + diff);
-                        nextRun.setHours(hh, minute, ss, 0);
-                    }
-
-                    // 3. 在「下一次执行日期」基础上 + offset 天，得到真正要抢的场地日期
+                    // 3. 在「下一次执行日期」基础上 + offset，得到真正要抢的场地日期
                     const offset = Number(t.target_day_offset || 0);
                     const targetDate = new Date(nextRun.getTime());
                     targetDate.setDate(targetDate.getDate() + offset);
