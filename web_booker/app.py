@@ -497,19 +497,29 @@ class ApiClient:
 
         results = []
         try:
-            batch_size = int(CONFIG.get("submit_batch_size", 3))
+            degrade_batch_size = int(CONFIG.get("submit_batch_size", 3))
         except Exception:
-            batch_size = 3
-        batch_size = max(1, min(9, batch_size))
+            degrade_batch_size = 3
+        degrade_batch_size = max(1, min(9, degrade_batch_size))
+        initial_batch_size = max(1, min(9, len(selected_items) or 1))
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
         refill_window_seconds = float(CONFIG.get("refill_window_seconds", 8.0))
 
+        print(
+            f"🧭 [批次策略] 首批=按本次选择数量({len(selected_items)})→{initial_batch_size}；"
+            f"降级=按配置 submit_batch_size→{degrade_batch_size}"
+        )
+
         def is_retryable_fail(msg):
             text = str(msg or "")
             keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
             return any(k in text for k in keywords)
+
+        def should_degrade(msg):
+            text = str(msg or "")
+            return is_retryable_fail(text) or ("规则" in text)
 
         def filter_still_available(items):
             try:
@@ -527,10 +537,10 @@ class ApiClient:
             except Exception:
                 return list(items)
 
-        # 将 items 分组，每组最多 3 个 (保守策略)
-        for i in range(0, len(selected_items), batch_size):
-            batch = selected_items[i:i + batch_size]
-            print(f"📦 正在提交分批订单 ({i // batch_size + 1}): {batch}")
+        # 首轮提交：按“本次选择数量”自适应分批
+        for i in range(0, len(selected_items), initial_batch_size):
+            batch = selected_items[i:i + initial_batch_size]
+            print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
 
             field_info_list = []
             total_money = 0
@@ -615,7 +625,7 @@ class ApiClient:
                         resp_data = None
 
                     print(
-                        f"📨 [submit_order调试] 批次 {i // batch_size + 1} 响应: {resp.text}"
+                        f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
                     )
 
                     if resp_data and resp_data.get("msg") == "success":
@@ -631,19 +641,18 @@ class ApiClient:
                     if attempt < batch_retry_times and is_retryable_fail(fail_msg):
                         sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
                         print(
-                            f"⏳ 批次 {i // batch_size + 1} 命中可重试错误，"
+                            f"⏳ 批次 {i // initial_batch_size + 1} 命中可重试错误，"
                             f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{batch_retry_times})"
                         )
                         time.sleep(sleep_s)
                         continue
 
-                    # 如果当前批次规模>3 且失败，自动降级为每批3个重提一次，
-                    # 兼容服务端可能存在的单次下单上限，避免大批次整单失败。
-                    if batch_size > 3:
-                        print(f"↘️ 批次 {i // batch_size + 1} 降级重提: size {batch_size} -> 3")
+                    # 命中“可重试/规则异常”时，按配置分批降级重提一次
+                    if len(batch) > degrade_batch_size and should_degrade(fail_msg):
+                        print(f"↘️ 批次 {i // initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
                         degrade_fail = []
-                        for j in range(0, len(batch), 3):
-                            sub = batch[j:j + 3]
+                        for j in range(0, len(batch), degrade_batch_size):
+                            sub = batch[j:j + degrade_batch_size]
                             try:
                                 sub_field_info = []
                                 sub_total = 0
@@ -707,7 +716,7 @@ class ApiClient:
                 except Exception as e:
                     if attempt < batch_retry_times:
                         print(
-                            f"⏳ 批次 {i // batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
+                            f"⏳ 批次 {i // initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
                             f"({attempt + 1}/{batch_retry_times}): {e}"
                         )
                         time.sleep(batch_retry_interval)
@@ -737,8 +746,8 @@ class ApiClient:
 
                 print(f"🔁 [补提] 窗口内补提仍可用项: {still_available}")
                 results = [r for r in results if r.get("status") == "success"]
-                for i in range(0, len(still_available), batch_size):
-                    batch = still_available[i:i + batch_size]
+                for i in range(0, len(still_available), degrade_batch_size):
+                    batch = still_available[i:i + degrade_batch_size]
                     field_info_list = []
                     total_money = 0
                     for item in batch:
