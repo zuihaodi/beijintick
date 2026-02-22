@@ -2154,7 +2154,7 @@
                     const offset = Number(t.target_day_offset || 0);
                     const targetDate = serverBaseDateStr
                         ? new Date(`${serverBaseDateStr}T00:00:00`)
-                        : new Date(now.getTime());
+                        : new Date(nowForSort.getTime());
                     targetDate.setDate(targetDate.getDate() + offset);
 
                     const monthStr = String(targetDate.getMonth() + 1).padStart(2, "0"); // 月
