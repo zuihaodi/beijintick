@@ -537,9 +537,29 @@ class ApiClient:
             f"降级=按配置 submit_batch_size→{degrade_batch_size}"
         )
 
+        def normalize_fail_message(msg):
+            text = str(msg or "").strip()
+            if not text:
+                return "下单失败(空响应)"
+            lower = text.lower()
+            if "<html" in lower and "404" in lower:
+                return "下单接口暂时不可用(404)"
+            if "404 not found" in lower:
+                return "下单接口暂时不可用(404)"
+            if "502" in lower or "503" in lower or "504" in lower:
+                return "下单接口暂时不可用(网关异常)"
+            if len(text) > 180:
+                return text[:180] + "..."
+            return text
+
         def is_retryable_fail(msg):
-            text = str(msg or "")
-            keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
+            text = str(msg or "").lower()
+            keywords = [
+                "操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁",
+                "404 not found", "nginx", "bad gateway", "service unavailable",
+                "502", "503", "504", "timeout", "timed out", "connection reset",
+                "max retries exceeded", "temporarily unavailable", "non-json", "非json",
+            ]
             return any(k in text for k in keywords)
 
         def should_degrade(msg):
@@ -703,6 +723,7 @@ class ApiClient:
                         fail_msg = resp_data.get("data") or resp_data.get("msg")
                     if not fail_msg:
                         fail_msg = resp.text
+                    fail_msg = normalize_fail_message(fail_msg)
 
                     if attempt < batch_retry_times and is_retryable_fail(fail_msg):
                         sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
@@ -1577,7 +1598,12 @@ class TaskManager:
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
-                    last_fail_reason = res.get('msg') or "下单失败"
+                    last_fail_reason = str(res.get('msg') or "下单失败")
+                    last_fail_lower = last_fail_reason.lower()
+                    if "<html" in last_fail_lower and "404" in last_fail_lower:
+                        last_fail_reason = "下单接口暂时不可用(404)"
+                    elif len(last_fail_reason) > 120:
+                        last_fail_reason = last_fail_reason[:120] + "..."
 
             # 5. 根据 locked 状态决定是否继续死磕（使用锁定配置 + 最多刷 N 秒保护）
             if locked_exists:
