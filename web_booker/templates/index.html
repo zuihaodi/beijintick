@@ -90,6 +90,37 @@
             margin-bottom: 10px;
         }
 
+        .mine-overview {
+            background: #fffaf1;
+            border: 1px solid #f7d8a8;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 12px;
+        }
+
+        .mine-overview-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #9a5800;
+            margin-bottom: 6px;
+        }
+
+        .mine-overview-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 12px;
+            color: #7a4b00;
+        }
+
+        .mine-overview-item {
+            background: #fff;
+            border: 1px solid #f2d2a1;
+            border-radius: 999px;
+            padding: 4px 8px;
+            white-space: nowrap;
+        }
+
         .legend-item {
             display: inline-flex;
             align-items: center;
@@ -671,6 +702,11 @@
                 {% endfor %}
             </div>
 
+            <div id="mine-overview" class="mine-overview" style="display:none;">
+                <div class="mine-overview-title">📌 我的已预订总览（全部日期）</div>
+                <div id="mine-overview-list" class="mine-overview-list"></div>
+            </div>
+
             <div id="matrix-area">
                 <div class="loading">加载中...</div>
             </div>
@@ -1124,7 +1160,7 @@
         }
 
         // 初始化
-        if (document.getElementById('matrix-area')) loadMatrix(currentDate);
+        if (document.getElementById('matrix-area')) { loadMatrix(currentDate); loadMineOverview(); }
         syncTime();
         setInterval(updateClock, 30);
         {% if page_mode == 'settings' %}
@@ -1194,6 +1230,36 @@
             loadMatrix(date);
             selectedItems.clear();
             updateBar();
+        }
+
+        async function loadMineOverview() {
+            const box = document.getElementById('mine-overview');
+            const list = document.getElementById('mine-overview-list');
+            if (!box || !list) return;
+            try {
+                const res = await fetch('/api/mine-overview');
+                const data = await res.json();
+                if (data.error) {
+                    box.style.display = 'none';
+                    return;
+                }
+                const records = data.records || {};
+                const dates = Object.keys(records).sort();
+                if (!dates.length) {
+                    box.style.display = 'none';
+                    return;
+                }
+                const items = [];
+                dates.forEach(d => {
+                    (records[d] || []).forEach(it => {
+                        items.push(`<span class="mine-overview-item">${d} ${it.place}号 ${it.time}</span>`);
+                    });
+                });
+                list.innerHTML = items.join('');
+                box.style.display = 'block';
+            } catch (e) {
+                box.style.display = 'none';
+            }
         }
 
         async function loadMatrix(date) {

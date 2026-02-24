@@ -376,6 +376,46 @@ class ApiClient:
 
         return mine_slots
 
+    def extract_mine_slots_by_date(self, orders):
+        """按日期聚合 mine 格子，返回 {date: [{'place':'7','time':'20:00'}]}。"""
+        grouped = {}
+        for order in orders or []:
+            if str(order.get("showStatus", "")) != "0":
+                continue
+            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+                continue
+            arr = order.get("jsonArray") or []
+            if not isinstance(arr, list):
+                continue
+            for seg in arr:
+                date_str = str(seg.get("reversionDate", "")).strip()
+                if not date_str:
+                    continue
+                site_name = str(seg.get("siteName", ""))
+                m = re.search(r"(\d+)", site_name)
+                if not m:
+                    continue
+                place = m.group(1)
+                start = str(seg.get("start", "")).strip()
+                end = str(seg.get("end", "")).strip()
+                try:
+                    start_dt = datetime.strptime(start, "%H:%M:%S")
+                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                except ValueError:
+                    continue
+                cur = start_dt
+                while cur < end_dt:
+                    grouped.setdefault(date_str, set()).add((place, cur.strftime("%H:%M")))
+                    cur += timedelta(hours=1)
+
+        result = {}
+        for d, slots in grouped.items():
+            result[d] = [
+                {"place": p, "time": t}
+                for p, t in sorted(slots, key=lambda x: (int(x[0]) if str(x[0]).isdigit() else 999, x[1]))
+            ]
+        return result
+
     def get_matrix(self, date_str):
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
         params = {
@@ -1860,6 +1900,15 @@ def settings_page():
 def api_matrix():
     date = request.args.get('date')
     return jsonify(client.get_matrix(date))
+
+@app.route('/api/mine-overview')
+def api_mine_overview():
+    orders_res = client.get_place_orders()
+    if 'error' in orders_res:
+        return jsonify({'error': orders_res.get('error')})
+    grouped = client.extract_mine_slots_by_date(orders_res.get('data') or [])
+    return jsonify({'records': grouped})
+
 
 @app.route('/api/time')
 def api_time():
