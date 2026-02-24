@@ -944,10 +944,12 @@ class ApiClient:
         api_success_count = sum(1 for r in results if r.get("status") == "success")
 
         # 2) 真实已被占用的场次数量（如果验证成功）
-        if verify_success_count is not None:
+        verify_ok = verify_success_count is not None
+        if verify_ok:
             success_count = verify_success_count
         else:
-            success_count = api_success_count
+            # 验证失败时不再把“接口 success”直接当作最终成功，避免误报
+            success_count = 0
 
         # 3) 本次计划总共尝试下单的场次数
         total_items = len(selected_items) if selected_items else 0
@@ -960,14 +962,14 @@ class ApiClient:
             msg = "没有生成任何下单项目，请检查配置或场地状态。"
             return {"status": "fail", "msg": msg}
 
-        if success_count == denominator:
+        if verify_ok and success_count == denominator:
             return {
                 "status": "success",
                 "msg": "全部下单成功",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
             }
-        elif success_count > 0:
+        elif verify_ok and success_count > 0:
             return {
                 "status": "partial",
                 "msg": f"部分成功 ({success_count}/{denominator})",
@@ -975,8 +977,10 @@ class ApiClient:
                 "failed_items": verify_failed_items,
             }
         else:
-            # 特殊情况：接口返回 success，但验证结果全是 available
-            if api_success_count > 0 and verify_success_count == 0:
+            # 验证失败时，宁可报失败也不误报成功
+            if not verify_ok and api_success_count > 0:
+                msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
+            elif api_success_count > 0 and verify_success_count == 0:
                 msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
             else:
                 first_fail = results[0] if results else {"msg": "无数据"}
