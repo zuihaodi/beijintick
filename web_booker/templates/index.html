@@ -879,6 +879,17 @@
                    placeholder="例如 10">
           </div>
         </div>
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
+            <label>开放后继续重试窗口 (秒)</label>
+            <input type="number"
+                   id="openRetrySeconds"
+                   class="form-control"
+                   step="1"
+                   min="0"
+                   placeholder="例如 20">
+          </div>
+        </div>
 
 
         <!-- 全局通知手机号 + 保存配置 -->
@@ -1658,6 +1669,11 @@
                                 config.locked_max_seconds;
                         }
 
+                        if (config.open_retry_seconds != null) {
+                            document.getElementById('openRetrySeconds').value =
+                                config.open_retry_seconds;
+                        }
+
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
                             const chk = document.getElementById('healthCheckEnabled');
@@ -1750,6 +1766,7 @@
                 const refillWindowSeconds = parseFloat(document.getElementById('refillWindowSeconds').value);
                 const lockedRetryInterval = parseFloat(document.getElementById('lockedRetryInterval').value);
                 const lockedMaxSeconds = parseFloat(document.getElementById('lockedMaxSeconds').value);
+                const openRetrySeconds = parseFloat(document.getElementById('openRetrySeconds').value);
 
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
@@ -1768,6 +1785,7 @@
                     refill_window_seconds: isNaN(refillWindowSeconds) ? 8 : refillWindowSeconds,
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
+                    open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
                 };
 
                 // 健康检查字段
@@ -2119,15 +2137,13 @@
                 const calcNextRunTime = (task, now) => calcNextRunForTask(task, now).getTime();
 
                 const sortedTasks = [...tasks].sort((a, b) => {
-                    const aLast = Number(a.last_run_at || 0);
-                    const bLast = Number(b.last_run_at || 0);
-                    if (aLast > 0 || bLast > 0) {
-                        if (bLast !== aLast) return bLast - aLast;
-                    }
-
                     const aNext = calcNextRunTime(a, nowForSort);
                     const bNext = calcNextRunTime(b, nowForSort);
                     if (aNext !== bNext) return aNext - bNext;
+
+                    const aLast = Number(a.last_run_at || 0);
+                    const bLast = Number(b.last_run_at || 0);
+                    if (bLast !== aLast) return bLast - aLast;
 
                     return Number(b.id || 0) - Number(a.id || 0);
                 });
