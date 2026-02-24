@@ -9,15 +9,24 @@
   "notification_phones": [
     "<phone-number>"
   ],
+  "pushplus_tokens": [
+    "<pushplus-token>"
+  ],
   "retry_interval": 1.0,
   "aggressive_retry_interval": 1.0,
+  "batch_retry_times": 2,
+  "batch_retry_interval": 0.5,
+  "submit_batch_size": 3,
+  "batch_min_interval": 0.8,
+  "refill_window_seconds": 8.0,
   "locked_retry_interval": 1.0,
   "locked_max_seconds": 60.0,
+  "open_retry_seconds": 20.0,
   "sms": {
     "user": "<sms-user>",
     "api_key": "<sms-api-key>"
   },
-  "health_check_interval_min": 30.0,
   "health_check_enabled": true,
+  "health_check_interval_min": 30.0,
   "health_check_start_time": "00:00"
 }
