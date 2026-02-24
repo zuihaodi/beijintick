@@ -714,7 +714,7 @@
         <div id="tab-semi-auto" class="tab-content active">
             <div class="date-scroll">
                 {% for d in dates %}
-                <button class="date-btn {% if loop.index0 == 0 %}active{% endif %}"
+                <button class="date-btn {% if loop.index0 == 0 %}active{% endif %}" data-date="{{ d.val }}"
                     onclick="selectDate('{{ d.val }}', this)">
                     <div style="font-size:12px;color:#666;">{{ d.weekday }}</div>
                     <div style="font-size:16px;font-weight:bold;">{{ d.date_only }}</div>
@@ -1087,6 +1087,15 @@
         let latestPlaces = [];
         let latestTimes = [];
         let latestCellStatus = {};
+        const mineDateSet = new Set();
+
+        function refreshMineDateBadges() {
+            document.querySelectorAll('.date-btn[data-date]').forEach(btn => {
+                const d = btn.getAttribute('data-date');
+                if (d && mineDateSet.has(d)) btn.classList.add('mine-date');
+                else btn.classList.remove('mine-date');
+            });
+        }
         let lastLogIndex = 0; // 记录日志位置
         let editingTaskId = null;
         const PAGE_MODE = '{{ page_mode }}';
@@ -1154,6 +1163,7 @@
             // 切换按钮样式
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             btn.classList.add('active');
+            refreshMineDateBadges();
 
             // 底部栏只在半自动模式显示
             const bar = document.getElementById('bottomBar');
