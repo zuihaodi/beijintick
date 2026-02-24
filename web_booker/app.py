@@ -952,12 +952,29 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
+                mine_slots = set()
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                else:
+                    print(
+                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_res.get('error')}"
+                    )
+
                 for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
-                    verify_states.append(f"{p}号{t}={status}")
-                    if status in ("booked", "mine"):
+                    mine_hit = (p, t) in mine_slots
+                    verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
+
+                    # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
+                    if mine_slots:
+                        success = mine_hit
+                    else:
+                        success = status in ("booked", "mine")
+
+                    if success:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
