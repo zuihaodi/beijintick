@@ -73,6 +73,7 @@
             font-weight: bold;
         }
 
+
         /* 矩阵 */
         .matrix-container {
             overflow-x: hidden;
@@ -87,6 +88,37 @@
             flex-wrap: wrap;
             gap: 8px;
             margin-bottom: 10px;
+        }
+
+        .mine-overview {
+            background: #fffaf1;
+            border: 1px solid #f7d8a8;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 12px;
+        }
+
+        .mine-overview-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #9a5800;
+            margin-bottom: 6px;
+        }
+
+        .mine-overview-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 12px;
+            color: #7a4b00;
+        }
+
+        .mine-overview-item {
+            background: #fff;
+            border: 1px solid #f2d2a1;
+            border-radius: 999px;
+            padding: 4px 8px;
+            white-space: nowrap;
         }
 
         .legend-item {
@@ -177,7 +209,7 @@
         }
 
         .cell.mine {
-            background-color: #5ac8fa;
+            background-color: #d97706;
             cursor: not-allowed;
             opacity: 0.9;
         }
@@ -225,8 +257,8 @@
         }
 
         .place-pill.occupied {
-            background: #ff3b30;
-            opacity: 0.45;
+            background: #e25555;
+            opacity: 0.28;
             cursor: not-allowed;
         }
 
@@ -237,7 +269,7 @@
         }
 
         .place-pill.mine {
-            background: #5ac8fa;
+            background: #d97706;
             cursor: not-allowed;
         }
 
@@ -670,6 +702,11 @@
                 {% endfor %}
             </div>
 
+            <div id="mine-overview" class="mine-overview" style="display:none;">
+                <div class="mine-overview-title">📌 我的已预订总览（全部日期）</div>
+                <div id="mine-overview-list" class="mine-overview-list"></div>
+            </div>
+
             <div id="matrix-area">
                 <div class="loading">加载中...</div>
             </div>
@@ -877,6 +914,17 @@
                    step="1"
                    min="1"
                    placeholder="例如 10">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
+            <label>开放后继续重试窗口 (秒)</label>
+            <input type="number"
+                   id="openRetrySeconds"
+                   class="form-control"
+                   step="1"
+                   min="0"
+                   placeholder="例如 20">
           </div>
         </div>
 
@@ -1102,7 +1150,7 @@
         }
 
         // 初始化
-        if (document.getElementById('matrix-area')) loadMatrix(currentDate);
+        if (document.getElementById('matrix-area')) { loadMatrix(currentDate); loadMineOverview(); }
         syncTime();
         setInterval(updateClock, 30);
         {% if page_mode == 'settings' %}
@@ -1172,6 +1220,36 @@
             loadMatrix(date);
             selectedItems.clear();
             updateBar();
+        }
+
+        async function loadMineOverview() {
+            const box = document.getElementById('mine-overview');
+            const list = document.getElementById('mine-overview-list');
+            if (!box || !list) return;
+            try {
+                const res = await fetch('/api/mine-overview');
+                const data = await res.json();
+                if (data.error) {
+                    box.style.display = 'none';
+                    return;
+                }
+                const records = data.records || {};
+                const dates = Object.keys(records).sort();
+                if (!dates.length) {
+                    box.style.display = 'none';
+                    return;
+                }
+                const items = [];
+                dates.forEach(d => {
+                    (records[d] || []).forEach(it => {
+                        items.push(`<span class="mine-overview-item">${d} ${it.place}号 ${it.time}</span>`);
+                    });
+                });
+                list.innerHTML = items.join('');
+                box.style.display = 'block';
+            } catch (e) {
+                box.style.display = 'none';
+            }
         }
 
         async function loadMatrix(date) {
@@ -1266,9 +1344,24 @@
             }
 
             const meta = data.meta || {};
+            const collectMineSlots = () => {
+                const slots = [];
+                times.forEach(t => {
+                    places.forEach(p => {
+                        const raw = matrix[p]?.[t];
+                        const rawStr = String(raw ?? '').toLowerCase();
+                        if (rawStr === 'mine' || rawStr === 'self' || rawStr === 'booked_by_me') {
+                            slots.push(`${p}号 ${t}`);
+                        }
+                    });
+                });
+                return slots;
+            };
+            const mineSlots = collectMineSlots();
             let mineSyncHtml = '';
             if (meta.mine_overlay_ok === true) {
-                mineSyncHtml = `<div style="background:#e8f4ff;color:#0b5cad;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #b9dbff;">🔵 <b>我的订单同步正常</b>：已识别 ${Number(meta.mine_slots_count || 0)} 个 mine 格子。</div>`;
+                const mineText = mineSlots.length > 0 ? mineSlots.join('，') : '当前日期未识别到我的已预订场地';
+                mineSyncHtml = `<div style="background:#e8f4ff;color:#0b5cad;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #b9dbff;">🔵 <b>我的订单同步正常</b>：已识别 ${Number(meta.mine_slots_count || 0)} 个 mine 格子。<br>📌 <b>我的已预订：</b>${mineText}</div>`;
             } else if (meta.mine_overlay_ok === false) {
                 const reason = meta.mine_overlay_error || '未知原因';
                 mineSyncHtml = `<div style="background:#f8f9fa;color:#666;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #ddd;">⚠️ <b>我的订单同步失败</b>：mine 颜色可能不完整（${reason}）。</div>`;
@@ -1315,8 +1408,8 @@
                 <div class="matrix-legend">
                     <span class="legend-item"><span class="legend-dot" style="background:#34c759"></span>空闲</span>
                     <span class="legend-item"><span class="legend-dot" style="background:#8e8e93"></span>锁定</span>
-                    <span class="legend-item"><span class="legend-dot" style="background:#5ac8fa"></span>我的已预订</span>
-                    <span class="legend-item"><span class="legend-dot" style="background:#ff3b30"></span>他人已预订</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#d97706"></span>我的已预订</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#e25555"></span>他人已预订</span>
                 </div>`;
 
             let tableHtml = '<div class="matrix-table-view"><table><thead><tr><th>时间 \\ 场地</th>';
@@ -1658,6 +1751,11 @@
                                 config.locked_max_seconds;
                         }
 
+                        if (config.open_retry_seconds != null) {
+                            document.getElementById('openRetrySeconds').value =
+                                config.open_retry_seconds;
+                        }
+
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
                             const chk = document.getElementById('healthCheckEnabled');
@@ -1750,6 +1848,7 @@
                 const refillWindowSeconds = parseFloat(document.getElementById('refillWindowSeconds').value);
                 const lockedRetryInterval = parseFloat(document.getElementById('lockedRetryInterval').value);
                 const lockedMaxSeconds = parseFloat(document.getElementById('lockedMaxSeconds').value);
+                const openRetrySeconds = parseFloat(document.getElementById('openRetrySeconds').value);
 
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
@@ -1768,6 +1867,7 @@
                     refill_window_seconds: isNaN(refillWindowSeconds) ? 8 : refillWindowSeconds,
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
+                    open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
                 };
 
                 // 健康检查字段
@@ -2119,15 +2219,13 @@
                 const calcNextRunTime = (task, now) => calcNextRunForTask(task, now).getTime();
 
                 const sortedTasks = [...tasks].sort((a, b) => {
-                    const aLast = Number(a.last_run_at || 0);
-                    const bLast = Number(b.last_run_at || 0);
-                    if (aLast > 0 || bLast > 0) {
-                        if (bLast !== aLast) return bLast - aLast;
-                    }
-
                     const aNext = calcNextRunTime(a, nowForSort);
                     const bNext = calcNextRunTime(b, nowForSort);
                     if (aNext !== bNext) return aNext - bNext;
+
+                    const aLast = Number(a.last_run_at || 0);
+                    const bLast = Number(b.last_run_at || 0);
+                    if (bLast !== aLast) return bLast - aLast;
 
                     return Number(b.id || 0) - Number(a.id || 0);
                 });
