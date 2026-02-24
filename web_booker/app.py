@@ -142,6 +142,7 @@ CONFIG = {
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
+    "open_retry_seconds": 20,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
@@ -189,6 +190,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['locked_retry_interval'] = saved['locked_retry_interval']
             if 'locked_max_seconds' in saved:
                 CONFIG['locked_max_seconds'] = saved['locked_max_seconds']
+            if 'open_retry_seconds' in saved:
+                CONFIG['open_retry_seconds'] = saved['open_retry_seconds']
             if 'health_check_enabled' in saved:
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
@@ -534,9 +537,30 @@ class ApiClient:
             f"降级=按配置 submit_batch_size→{degrade_batch_size}"
         )
 
+        def normalize_fail_message(msg):
+            text = str(msg or "").strip()
+            if not text:
+                return "下单失败(空响应)"
+            lower = text.lower()
+            if "<html" in lower and "404" in lower:
+                return "下单接口暂时不可用(404)"
+            if "404 not found" in lower:
+                return "下单接口暂时不可用(404)"
+            if "502" in lower or "503" in lower or "504" in lower:
+                return "下单接口暂时不可用(网关异常)"
+            if len(text) > 180:
+                return text[:180] + "..."
+            return text
+
         def is_retryable_fail(msg):
-            text = str(msg or "")
-            keywords = ["操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁"]
+            text = str(msg or "").lower()
+            keywords = [
+                "操作过快", "稍后重试", "请求过于频繁", "too fast", "频繁",
+                "404 not found", "nginx", "bad gateway", "service unavailable",
+                "502", "503", "504", "timeout", "timed out", "connection reset",
+                "max retries exceeded", "temporarily unavailable", "non-json", "非json",
+                "暂时不可用", "网关异常", "下单接口暂时不可用", "空响应",
+            ]
             return any(k in text for k in keywords)
 
         def should_degrade(msg):
@@ -700,6 +724,7 @@ class ApiClient:
                         fail_msg = resp_data.get("data") or resp_data.get("msg")
                     if not fail_msg:
                         fail_msg = resp.text
+                    fail_msg = normalize_fail_message(fail_msg)
 
                     if attempt < batch_retry_times and is_retryable_fail(fail_msg):
                         sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
@@ -1210,15 +1235,19 @@ class TaskManager:
 
             aligned_now = client.get_aligned_now()
             base_run = aligned_now.replace(hour=hh, minute=mm, second=ss, microsecond=0)
+            # 调度线程触发和服务端时间存在秒级偏差，给一个小宽限避免“刚过点就滚到明天/下周”
+            trigger_grace_seconds = 90
             t_type = task.get('type', 'daily')
             if t_type in ('daily', 'once'):
-                if base_run <= aligned_now:
+                if (aligned_now - base_run).total_seconds() > trigger_grace_seconds:
                     base_run = base_run + timedelta(days=1)
             elif t_type == 'weekly':
                 current_weekday = aligned_now.weekday()  # 周一=0
                 target_weekday = int(task.get('weekly_day', 0))
                 diff = target_weekday - current_weekday
-                if diff < 0 or (diff == 0 and base_run <= aligned_now):
+                if diff < 0:
+                    diff += 7
+                elif diff == 0 and (aligned_now - base_run).total_seconds() > trigger_grace_seconds:
                     diff += 7
                 base_run = base_run + timedelta(days=diff)
 
@@ -1293,9 +1322,12 @@ class TaskManager:
         # 新增：锁定状态下的重试间隔 & 最多等待时间
         locked_retry_interval = CONFIG.get('locked_retry_interval', retry_interval)
         locked_max_seconds = CONFIG.get('locked_max_seconds', 60)
+        open_retry_seconds = CONFIG.get('open_retry_seconds', 20)
 
         # 记录进入「锁定等待模式」的起始时间，用于统计已等待多久
         locked_mode_started_at = None
+        # 记录进入「已开放但无可用结果」状态的起始时间
+        open_mode_started_at = None
 
         attempt = 0
         while True:
@@ -1305,6 +1337,7 @@ class TaskManager:
             aggressive_retry_interval = CONFIG.get('aggressive_retry_interval', aggressive_retry_interval)
             locked_retry_interval = CONFIG.get('locked_retry_interval', locked_retry_interval)
             locked_max_seconds = CONFIG.get('locked_max_seconds', locked_max_seconds)
+            open_retry_seconds = CONFIG.get('open_retry_seconds', open_retry_seconds)
 
             attempt += 1
             log(f"🔄 第 {attempt} 轮无限尝试...喵")
@@ -1317,9 +1350,15 @@ class TaskManager:
                 err_msg = matrix_res["error"]
                 log(f"获取状态失败: {err_msg} 喵")
 
-                # 服务器直接 404 / 非 JSON，说明挂了 —— 死磕模式
-                if "非JSON格式" in err_msg or "404" in err_msg or "无效数据" in err_msg:
-                    log(f"⚠️ 检测到服务器异常，启用高频重试 ({aggressive_retry_interval}s)")
+                # 服务器短时异常（404/5xx/网关/超时/非JSON等）—— 死磕模式
+                err_l = str(err_msg or "").lower()
+                transient_keywords = [
+                    "非json格式", "non-json", "404", "502", "503", "504", "无效数据",
+                    "nginx", "bad gateway", "service unavailable", "timeout", "timed out",
+                    "connection reset", "max retries exceeded", "temporarily unavailable",
+                ]
+                if any(k in err_l for k in transient_keywords):
+                    log(f"⚠️ 检测到服务器短时异常，启用高频重试 ({aggressive_retry_interval}s)")
                     time.sleep(aggressive_retry_interval)
                     continue
 
@@ -1570,11 +1609,17 @@ class TaskManager:
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
-                    last_fail_reason = res.get('msg') or "下单失败"
+                    last_fail_reason = str(res.get('msg') or "下单失败")
+                    last_fail_lower = last_fail_reason.lower()
+                    if "<html" in last_fail_lower and "404" in last_fail_lower:
+                        last_fail_reason = "下单接口暂时不可用(404)"
+                    elif len(last_fail_reason) > 120:
+                        last_fail_reason = last_fail_reason[:120] + "..."
 
             # 5. 根据 locked 状态决定是否继续死磕（使用锁定配置 + 最多刷 N 秒保护）
             if locked_exists:
                 now_ts = time.time()
+                open_mode_started_at = None
 
                 # 第一次发现 locked，开始计时
                 if locked_mode_started_at is None:
@@ -1602,9 +1647,28 @@ class TaskManager:
                 time.sleep(locked_retry_interval)
                 continue
             else:
-                # 一旦不再是 locked（要么 available 被抢完，要么状态变 booked），重置计时并结束
+                # 已开放：短窗口内继续重试，给“释放/回流库存”留机会
                 locked_mode_started_at = None
-                log("🙈 目标场地已经开放但没有可用组合(大概率被别人抢完了)，本次任务结束。")
+                now_ts = time.time()
+                if open_mode_started_at is None:
+                    open_mode_started_at = now_ts
+                elapsed = now_ts - open_mode_started_at
+
+                if elapsed < max(0.0, float(open_retry_seconds)):
+                    if final_items:
+                        log(
+                            f"🙈 场地已开放但本轮提交未成功，继续重试..."
+                            f" (已重试 {int(elapsed)} 秒 / 上限 {open_retry_seconds}s)"
+                        )
+                    else:
+                        log(
+                            f"🙈 场地已开放但当前无可用组合，继续轮询..."
+                            f" (已等待 {int(elapsed)} 秒 / 上限 {open_retry_seconds}s)"
+                        )
+                    time.sleep(retry_interval)
+                    continue
+
+                log("🙈 目标场地已经开放但在重试窗口内仍无可用组合，本次任务结束。")
                 fail_msg = "目标场地已开放但无可用组合，可能已被抢完。"
                 if last_fail_reason:
                     fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
@@ -1856,6 +1920,7 @@ def update_config():
     - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
+    - open_retry_seconds：已开放无组合时继续重试窗口
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
@@ -1924,6 +1989,7 @@ def update_config():
         _update_float_field('refill_window_seconds', 0.0, CONFIG.get('refill_window_seconds', 8.0))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
+        _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
 
         if 'batch_retry_times' in data:
