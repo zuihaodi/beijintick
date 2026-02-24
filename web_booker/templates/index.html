@@ -73,16 +73,6 @@
             font-weight: bold;
         }
 
-        .date-btn.mine-date {
-            border: 1px solid #d97706;
-            box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.15);
-        }
-
-        .date-btn.active.mine-date {
-            background: #0b74de;
-            border-color: #ffb454;
-            box-shadow: 0 0 0 2px rgba(255, 180, 84, 0.35);
-        }
 
         /* 矩阵 */
         .matrix-container {
@@ -1298,13 +1288,24 @@
             }
 
             const meta = data.meta || {};
-            if (Number(meta.mine_slots_count || 0) > 0) {
-                mineDateSet.add(String(date));
-                refreshMineDateBadges();
-            }
+            const collectMineSlots = () => {
+                const slots = [];
+                times.forEach(t => {
+                    places.forEach(p => {
+                        const raw = matrix[p]?.[t];
+                        const rawStr = String(raw ?? '').toLowerCase();
+                        if (rawStr === 'mine' || rawStr === 'self' || rawStr === 'booked_by_me') {
+                            slots.push(`${p}号 ${t}`);
+                        }
+                    });
+                });
+                return slots;
+            };
+            const mineSlots = collectMineSlots();
             let mineSyncHtml = '';
             if (meta.mine_overlay_ok === true) {
-                mineSyncHtml = `<div style="background:#e8f4ff;color:#0b5cad;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #b9dbff;">🔵 <b>我的订单同步正常</b>：已识别 ${Number(meta.mine_slots_count || 0)} 个 mine 格子。</div>`;
+                const mineText = mineSlots.length > 0 ? mineSlots.join('，') : '当前日期未识别到我的已预订场地';
+                mineSyncHtml = `<div style="background:#e8f4ff;color:#0b5cad;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #b9dbff;">🔵 <b>我的订单同步正常</b>：已识别 ${Number(meta.mine_slots_count || 0)} 个 mine 格子。<br>📌 <b>我的已预订：</b>${mineText}</div>`;
             } else if (meta.mine_overlay_ok === false) {
                 const reason = meta.mine_overlay_error || '未知原因';
                 mineSyncHtml = `<div style="background:#f8f9fa;color:#666;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;border:1px solid #ddd;">⚠️ <b>我的订单同步失败</b>：mine 颜色可能不完整（${reason}）。</div>`;
