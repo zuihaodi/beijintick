@@ -1235,15 +1235,19 @@ class TaskManager:
 
             aligned_now = client.get_aligned_now()
             base_run = aligned_now.replace(hour=hh, minute=mm, second=ss, microsecond=0)
+            # 调度线程触发和服务端时间存在秒级偏差，给一个小宽限避免“刚过点就滚到明天/下周”
+            trigger_grace_seconds = 90
             t_type = task.get('type', 'daily')
             if t_type in ('daily', 'once'):
-                if base_run <= aligned_now:
+                if (aligned_now - base_run).total_seconds() > trigger_grace_seconds:
                     base_run = base_run + timedelta(days=1)
             elif t_type == 'weekly':
                 current_weekday = aligned_now.weekday()  # 周一=0
                 target_weekday = int(task.get('weekly_day', 0))
                 diff = target_weekday - current_weekday
-                if diff < 0 or (diff == 0 and base_run <= aligned_now):
+                if diff < 0:
+                    diff += 7
+                elif diff == 0 and (aligned_now - base_run).total_seconds() > trigger_grace_seconds:
                     diff += 7
                 base_run = base_run + timedelta(days=diff)
 
