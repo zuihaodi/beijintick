@@ -44,6 +44,7 @@ python web_booker/app.py
 ## 注意事项
 - 健康检查当前主要验证“查询链路”（能否获取场地状态）；查询正常不等于下单一定成功。
 - 下单失败除了 Token/Cookie 外，还可能受风控、并发抢占、时间窗口、参数配置影响。
+- 抢票参数较多时，建议先用一组“稳妥起点”：`retry_interval=1.0`、`aggressive_retry_interval=1.0`、`batch_retry_times=2`、`batch_retry_interval=0.5`、`locked_retry_interval=0.5~1.0`、`locked_max_seconds=60`、`open_retry_seconds=20`，再根据实际成功率微调。
 - 请确保 `web_booker/config.json` 中 Token 是最新有效值；Cookie 可选。
 - 建议将 `web_booker/config.json` / `web_booker/tasks.json` 视为本地运行数据文件（默认已被 `.gitignore` 忽略）。
 - 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
