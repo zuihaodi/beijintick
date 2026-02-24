@@ -559,6 +559,7 @@ class ApiClient:
                 "404 not found", "nginx", "bad gateway", "service unavailable",
                 "502", "503", "504", "timeout", "timed out", "connection reset",
                 "max retries exceeded", "temporarily unavailable", "non-json", "非json",
+                "暂时不可用", "网关异常", "下单接口暂时不可用", "空响应",
             ]
             return any(k in text for k in keywords)
 
@@ -1345,9 +1346,15 @@ class TaskManager:
                 err_msg = matrix_res["error"]
                 log(f"获取状态失败: {err_msg} 喵")
 
-                # 服务器直接 404 / 非 JSON，说明挂了 —— 死磕模式
-                if "非JSON格式" in err_msg or "404" in err_msg or "无效数据" in err_msg:
-                    log(f"⚠️ 检测到服务器异常，启用高频重试 ({aggressive_retry_interval}s)")
+                # 服务器短时异常（404/5xx/网关/超时/非JSON等）—— 死磕模式
+                err_l = str(err_msg or "").lower()
+                transient_keywords = [
+                    "非json格式", "non-json", "404", "502", "503", "504", "无效数据",
+                    "nginx", "bad gateway", "service unavailable", "timeout", "timed out",
+                    "connection reset", "max retries exceeded", "temporarily unavailable",
+                ]
+                if any(k in err_l for k in transient_keywords):
+                    log(f"⚠️ 检测到服务器短时异常，启用高频重试 ({aggressive_retry_interval}s)")
                     time.sleep(aggressive_retry_interval)
                     continue
 
