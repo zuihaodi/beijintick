@@ -2137,15 +2137,13 @@
                 const calcNextRunTime = (task, now) => calcNextRunForTask(task, now).getTime();
 
                 const sortedTasks = [...tasks].sort((a, b) => {
-                    const aLast = Number(a.last_run_at || 0);
-                    const bLast = Number(b.last_run_at || 0);
-                    if (aLast > 0 || bLast > 0) {
-                        if (bLast !== aLast) return bLast - aLast;
-                    }
-
                     const aNext = calcNextRunTime(a, nowForSort);
                     const bNext = calcNextRunTime(b, nowForSort);
                     if (aNext !== bNext) return aNext - bNext;
+
+                    const aLast = Number(a.last_run_at || 0);
+                    const bLast = Number(b.last_run_at || 0);
+                    if (bLast !== aLast) return bLast - aLast;
 
                     return Number(b.id || 0) - Number(a.id || 0);
                 });
