@@ -1513,30 +1513,8 @@
 
         function isValidSemiAutoSelection(nextSelectedSet) {
             if (nextSelectedSet.size === 0) return true;
-
-            const placeSet = new Set();
-            const timeSet = new Set();
-            nextSelectedSet.forEach(key => {
-                const [p, t] = key.split('|');
-                placeSet.add(String(p));
-                timeSet.add(String(t));
-            });
-
-            if (placeSet.size > 3 || timeSet.size > 3) return false;
-
-            const placeIndices = Array.from(placeSet).map(p => latestPlaces.indexOf(String(p))).filter(i => i >= 0).sort((a, b) => a - b);
-            const timeIndices = Array.from(timeSet).map(t => latestTimes.indexOf(String(t))).filter(i => i >= 0).sort((a, b) => a - b);
-
-            if (placeIndices.length !== placeSet.size || timeIndices.length !== timeSet.size) return false;
-
-            const minPi = placeIndices[0], maxPi = placeIndices[placeIndices.length - 1];
-            const minTi = timeIndices[0], maxTi = timeIndices[timeIndices.length - 1];
-
-            if (maxPi - minPi + 1 > 3 || maxTi - minTi + 1 > 3) return false;
-
-            // 仅限制“可选集合必须在连续场地/连续时间构成的 <=3x3 范围内”；
-            // 允许逐步扩展（例如先选16号19-22，再补17号19-22）。
-
+            // 已取消前端 3x3 连续范围限制：允许离散场地/时间自由组合。
+            // 真实规则以服务端校验为准（例如同一时间最多 3 块）。
             return true;
         }
 
@@ -1545,31 +1523,10 @@
             if (selectedItems.has(key)) {
                 selectedItems.delete(key);
             } else {
-                // 限制校验
-                let timeCount = 0; selectedItems.forEach(k => { if (k.startsWith(place + '|')) timeCount++; });
-                // if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多3小时`);
-
-                let placeCount = 0; selectedItems.forEach(k => { if (k.endsWith('|' + time)) placeCount++; });
-                // if (placeCount >= 3) return alert(`⚠️ 限制：同时段最多3块场地`);
-
-                // 全局限制：总数不超过 3 块 (临时放宽到 9 块以支持 3x3 矩阵?)
-                // 用户说 "最多选 3x3"，意思是 3个场地 x 3个时段 = 9个格子？
-                // 或者是之前的规则：同场地最多3小时，同时段最多3场地。
-                // 如果用户想一次性选很多然后批量下单，我们这里暂时放宽前端限制，
-                // 但要提示用户如果超过限制可能会被系统拒绝。
-                // 为了保险，我们还是保留之前的 3x3 逻辑，但如果用户说“不行”，可能是因为我们之前的限制卡住了他选更多？
-                // 或者是“强制可选”导致状态错乱？
-
-                // 重新审视用户需求："最多选 3x3... 这样下单才有效"
-                // 这意味着必须遵守 3x3 规则。
-
-                if (timeCount >= 3) return alert(`⚠️ 限制：单个场地最多只能连续订 3 个小时！`);
-                if (placeCount >= 3) return alert(`⚠️ 限制：同一个时间段最多只能订 3 块场地！`);
-
                 const nextSet = new Set(selectedItems);
                 nextSet.add(key);
                 if (!isValidSemiAutoSelection(nextSet)) {
-                    return alert(`⚠️ 限制：半自动抢票需满足 3x3 规则（连续场地号 + 连续时间段；可与已被预订格子组合成 3x3）。`);
+                    return alert(`⚠️ 选择不合法，请调整后重试。`);
                 }
 
                 selectedItems.add(key);
