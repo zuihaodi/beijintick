@@ -1897,7 +1897,8 @@ class TaskManager:
                         if deadline and client.get_aligned_now() >= deadline:
                             notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
                             return
-                        log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，继续补齐下一轮")
+                        need_detail = post_need.get('need_by_time') or {}
+                        log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，缺口明细: {need_detail}，继续补齐下一轮")
                         time.sleep(retry_interval)
                         continue
 
