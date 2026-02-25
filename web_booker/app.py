@@ -1469,16 +1469,63 @@ class TaskManager:
             candidate_places = need_res['candidate_places']
             need_by_time = dict(need_res['need_by_time'])
             items = []
+            picked_pairs = set()
 
+            def add_pick(p, t):
+                key = (str(p), str(t))
+                if key in picked_pairs:
+                    return False
+                if int(need_by_time.get(t, 0)) <= 0:
+                    return False
+                if matrix.get(str(p), {}).get(str(t)) != 'available':
+                    return False
+                picked_pairs.add(key)
+                items.append({"place": str(p), "time": str(t)})
+                need_by_time[str(t)] = max(0, int(need_by_time.get(str(t), 0)) - 1)
+                return True
+
+            # continuous 阶段先做“跨时段交集选场”，优先把同一块场在多个时段一起拿下。
+            if stage_type == 'continuous':
+                required_times = [t for t in target_times if int(need_by_time.get(t, 0)) > 0]
+                if required_times:
+                    avail_all = [
+                        str(p)
+                        for p in candidate_places
+                        if all(matrix.get(str(p), {}).get(str(t)) == 'available' for t in required_times)
+                    ]
+                    if avail_all:
+                        nums = sorted({int(p) for p in avail_all if str(p).isdigit()})
+                        best = []
+                        run = []
+                        for n in nums:
+                            if not run or n == run[-1] + 1:
+                                run.append(n)
+                            else:
+                                if len(run) > len(best):
+                                    best = run
+                                run = [n]
+                        if len(run) > len(best):
+                            best = run
+
+                        if best:
+                            ordered = [str(n) for n in best] + [p for p in avail_all if p not in {str(n) for n in best}]
+                        else:
+                            ordered = list(avail_all)
+
+                        court_need = max(int(need_by_time.get(t, 0)) for t in required_times)
+                        for p in ordered[:max(0, court_need)]:
+                            for t in required_times:
+                                add_pick(p, t)
+
+            # 第二步：按时段补齐剩余缺口（continuous/random 都会走这步）
             for t in target_times:
                 need = int(need_by_time.get(t, 0))
                 if need <= 0:
                     continue
-                avail = [p for p in candidate_places if matrix.get(p, {}).get(t) == 'available']
+                avail = [str(p) for p in candidate_places if matrix.get(str(p), {}).get(str(t)) == 'available']
                 if not avail:
                     continue
 
-                picked = []
                 if stage_type == 'continuous':
                     nums = sorted({int(p) for p in avail if str(p).isdigit()})
                     best = []
@@ -1492,14 +1539,15 @@ class TaskManager:
                             run = [n]
                     if len(run) > len(best):
                         best = run
-                    picked = [str(n) for n in best[:need]] if best else avail[:need]
+                    ordered = [str(n) for n in best] + [p for p in avail if p not in {str(n) for n in best}] if best else avail
                 else:
-                    pool = list(avail)
-                    random.shuffle(pool)
-                    picked = pool[:need]
+                    ordered = list(avail)
+                    random.shuffle(ordered)
 
-                for p in picked:
-                    items.append({"place": str(p), "time": t})
+                for p in ordered:
+                    if int(need_by_time.get(t, 0)) <= 0:
+                        break
+                    add_pick(p, t)
 
             return items
 
