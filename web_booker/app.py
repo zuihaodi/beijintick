@@ -952,12 +952,31 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
+                mine_slots = set()
+                orders_query_ok = False
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                    orders_query_ok = True
+                else:
+                    print(
+                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_res.get('error')}"
+                    )
+
                 for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
-                    verify_states.append(f"{p}号{t}={status}")
-                    if status in ("booked", "mine"):
+                    mine_hit = (p, t) in mine_slots
+                    verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
+
+                    # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
+                    if orders_query_ok:
+                        success = mine_hit
+                    else:
+                        success = status in ("booked", "mine")
+
+                    if success:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
@@ -1002,14 +1021,16 @@ class ApiClient:
             msg = "没有生成任何下单项目，请检查配置或场地状态。"
             return {"status": "fail", "msg": msg}
 
-        if verify_ok and success_count == denominator:
+        cross_instance_suspected = verify_ok and api_success_count == 0 and success_count > 0
+
+        if verify_ok and api_success_count > 0 and success_count == denominator:
             return {
                 "status": "success",
                 "msg": "全部下单成功",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
             }
-        elif verify_ok and success_count > 0:
+        elif verify_ok and api_success_count > 0 and success_count > 0:
             return {
                 "status": "partial",
                 "msg": f"部分成功 ({success_count}/{denominator})",
@@ -1017,8 +1038,11 @@ class ApiClient:
                 "failed_items": verify_failed_items,
             }
         else:
+            # 未收到任何提交成功响应，但校验命中 mine，疑似并发实例下单导致的“归因串扰”
+            if cross_instance_suspected:
+                msg = "检测到我的订单已占位，但本进程提交未收到 success，可能由并发实例下单导致；本任务按失败处理。"
             # 验证失败时，宁可报失败也不误报成功
-            if not verify_ok and api_success_count > 0:
+            elif not verify_ok and api_success_count > 0:
                 msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
             elif api_success_count > 0 and verify_success_count == 0:
                 msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
@@ -1357,8 +1381,6 @@ class TaskManager:
                             pairs.add((p, t))
             return pairs
 
-        candidate_pairs = enumerate_candidate_pairs(config)
-
         # === 智能抢票核心逻辑 ===
         retry_interval = CONFIG.get('retry_interval', 0.5)
         aggressive_retry_interval = CONFIG.get('aggressive_retry_interval', 0.3)
@@ -1418,206 +1440,205 @@ class TaskManager:
 
             # 1.2 正常拿到矩阵
             matrix = matrix_res.get("matrix", {})
-            target_times = config.get('target_times', [])
+
+            mode_configs = config.get('modes') if isinstance(config.get('modes'), list) and config.get('modes') else [config]
 
             # 2. 判断当前目标是否还有「锁定未开放」的场次
             locked_exists = False
-            for p, t in candidate_pairs:
-                state = matrix.get(str(p), {}).get(t)
-                if state == "locked":
-                    locked_exists = True
+            for cfg in mode_configs:
+                for p, t in enumerate_candidate_pairs(cfg):
+                    state = matrix.get(str(p), {}).get(t)
+                    if state == "locked":
+                        locked_exists = True
+                        break
+                if locked_exists:
                     break
 
-            # 3. 根据不同模式生成最终下单列表 final_items
+            # 3. 单任务多模式：按顺序尝试，命中一个模式后仅使用该模式结果，不跨模式补齐
             final_items: list[dict] = []
+            selected_mode = None
+            for cfg in mode_configs:
+                mode = cfg.get('mode', 'normal')
+                target_times = cfg.get('target_times', [])
+                mode_items: list[dict] = []
 
-            # --- 模式 A: 场地优先优先级序列 (priority) ---
-            if config.get('mode') == 'priority':
-                sequences = config.get('priority_sequences', [])  # 例如 [["6","7"],["8","9"]]
-                target_count = max(1, min(3, int(config.get('target_count', 2))))
-                allow_partial = config.get('allow_partial', True)
+                # --- 模式 A: 场地优先优先级序列 (priority) ---
+                if mode == 'priority':
+                    sequences = cfg.get('priority_sequences', [])
+                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    allow_partial = cfg.get('allow_partial', True)
 
-                # 3.1 第一轮：优先尝试完整序列
-                for time_slot in target_times:
-                    if len(final_items) >= target_count:
-                        break
-
-                    for seq in sequences:
-                        if len(final_items) >= target_count:
-                            break
-
-                        # 如果这一组长度 > 当前剩余需求，跳过
-                        if len(seq) > (target_count - len(final_items)):
-                            continue
-
-                        all_avail = True
-                        # 这组里的每个场地在该时间都必须 available
-                        for p in seq:
-                            if p not in matrix or matrix[p].get(time_slot) != "available":
-                                all_avail = False
-                                break
-
-                        # 避免重复加入相同 (场地, 时间)
-                        if all_avail:
-                            for p in seq:
-                                for item in final_items:
-                                    if item['place'] == str(p) and item['time'] == time_slot:
-                                        all_avail = False
-                                        break
-
-                        if all_avail:
-                            log(f"   -> 🎯 [优先级-整] 命中完整组合: {seq} @ {time_slot}")
-                            for p in seq:
-                                final_items.append({"place": str(p), "time": time_slot})
-
-                # 3.2 第二轮：散单补齐
-                if allow_partial and len(final_items) < target_count:
-                    log(f"   -> ⚠️ [优先级-散] 完整组合不足，开始散单填充 (目标{target_count}, 已有{len(final_items)})")
                     for time_slot in target_times:
-                        if len(final_items) >= target_count:
+                        if len(mode_items) >= target_count:
                             break
                         for seq in sequences:
-                            if len(final_items) >= target_count:
+                            if len(mode_items) >= target_count:
                                 break
+                            if len(seq) > (target_count - len(mode_items)):
+                                continue
+
+                            all_avail = True
                             for p in seq:
-                                if p in matrix and matrix[p].get(time_slot) == "available":
-                                    is_picked = False
-                                    for item in final_items:
-                                        if item['place'] == str(p) and item['time'] == time_slot:
-                                            is_picked = True
-                                            break
-                                    if not is_picked:
-                                        log(f"   -> 🧩 [优先级-散] 捡漏: {p}号 @ {time_slot}")
-                                        final_items.append({"place": str(p), "time": time_slot})
-                                        if len(final_items) >= target_count:
-                                            break
-
-            # --- 模式 B: 时间优先 (time_priority) ---
-            elif config.get('mode') == 'time_priority':
-                sequences = config.get('priority_time_sequences', []) or [[t] for t in target_times]
-                candidate_places = [str(p) for p in config.get('candidate_places', [])]
-                # 不选场地 == 默认全场参与
-                if not candidate_places:
-                    candidate_places = [str(i) for i in range(1, 16)]
-
-                target_count = max(1, min(3, int(config.get('target_count', 2))))
-                allow_partial = config.get('allow_partial', True)
-
-                # 3.1 优先尝试整段时间序列（比如 14-16 连续两小时）
-                for seq in sequences:
-                    if len(final_items) >= target_count:
-                        break
-
-                    for p in candidate_places:
-                        if len(final_items) >= target_count:
-                            break
-
-                        ok = True
-                        for t in seq:
-                            if p not in matrix or matrix[p].get(t) != "available":
-                                ok = False
-                                break
-                        if not ok:
-                            continue
-
-                        # 避免重复
-                        already = False
-                        for t in seq:
-                            for item in final_items:
-                                if item["place"] == p and item["time"] == t:
-                                    already = True
+                                if p not in matrix or matrix[p].get(time_slot) != "available":
+                                    all_avail = False
                                     break
-                            if already:
+
+                            if all_avail:
+                                for p in seq:
+                                    for item in mode_items:
+                                        if item['place'] == str(p) and item['time'] == time_slot:
+                                            all_avail = False
+                                            break
+
+                            if all_avail:
+                                log(f"   -> 🎯 [优先级-整] 命中完整组合: {seq} @ {time_slot}")
+                                for p in seq:
+                                    mode_items.append({"place": str(p), "time": time_slot})
+
+                    if allow_partial and len(mode_items) < target_count:
+                        log(f"   -> ⚠️ [优先级-散] 完整组合不足，开始散单填充 (目标{target_count}, 已有{len(mode_items)})")
+                        for time_slot in target_times:
+                            if len(mode_items) >= target_count:
                                 break
-                        if already:
-                            continue
+                            for seq in sequences:
+                                if len(mode_items) >= target_count:
+                                    break
+                                for p in seq:
+                                    if p in matrix and matrix[p].get(time_slot) == "available":
+                                        is_picked = False
+                                        for item in mode_items:
+                                            if item['place'] == str(p) and item['time'] == time_slot:
+                                                is_picked = True
+                                                break
+                                        if not is_picked:
+                                            log(f"   -> 🧩 [优先级-散] 捡漏: {p}号 @ {time_slot}")
+                                            mode_items.append({"place": str(p), "time": time_slot})
+                                            if len(mode_items) >= target_count:
+                                                break
 
-                        log(f"   -> 🎯 [时间优先-整] {p}号 命中时间段 {seq}")
-                        for t in seq:
-                            final_items.append({"place": p, "time": t})
-                        if len(final_items) >= target_count:
-                            break
+                # --- 模式 B: 时间优先 (time_priority) ---
+                elif mode == 'time_priority':
+                    sequences = cfg.get('priority_time_sequences', []) or [[t] for t in target_times]
+                    candidate_places = [str(p) for p in cfg.get('candidate_places', [])]
+                    if not candidate_places:
+                        candidate_places = [str(i) for i in range(1, 16)]
 
-                # 3.2 如果还不够，并且允许散单，则按时间逐个捡漏
-                if allow_partial and len(final_items) < target_count:
-                    for t in target_times:
-                        if len(final_items) >= target_count:
+                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    allow_partial = cfg.get('allow_partial', True)
+
+                    for seq in sequences:
+                        if len(mode_items) >= target_count:
                             break
                         for p in candidate_places:
-                            if len(final_items) >= target_count:
+                            if len(mode_items) >= target_count:
                                 break
-                            if p in matrix and matrix[p].get(t) == "available":
-                                already = False
-                                for item in final_items:
+
+                            ok = True
+                            for t in seq:
+                                if p not in matrix or matrix[p].get(t) != "available":
+                                    ok = False
+                                    break
+                            if not ok:
+                                continue
+
+                            already = False
+                            for t in seq:
+                                for item in mode_items:
                                     if item["place"] == p and item["time"] == t:
                                         already = True
                                         break
-                                if not already:
-                                    final_items.append({"place": p, "time": t})
-                                    log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
+                                if already:
+                                    break
+                            if already:
+                                continue
 
-            # --- 模式 C: 普通 / 智能连号 (normal) ---
-            else:
-                if 'candidate_places' not in config:
-                    log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
-                    notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
-                    return
-
-                candidate_places = [str(p) for p in config['candidate_places']]
-                target_courts = max(1, min(3, int(config.get('target_count', 2))))  # 目标是“几块场地”
-                smart_mode = config.get('smart_continuous', False)
-
-                if target_courts <= 0:
-                    log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
-                else:
-                    # 先找出“在所有目标时间段都可用”的候选场地
-                    available_courts: list[int] = []
-                    for p in candidate_places:
-                        p_str = str(p)
-                        ok = True
-                        for t in target_times:
-                            if p_str not in matrix or matrix[p_str].get(t) != "available":
-                                ok = False
+                            log(f"   -> 🎯 [时间优先-整] {p}号 命中时间段 {seq}")
+                            for t in seq:
+                                mode_items.append({"place": p, "time": t})
+                            if len(mode_items) >= target_count:
                                 break
-                        if ok:
-                            available_courts.append(int(p))
 
-                    if not available_courts:
-                        log("⚠️ 当前没有同时满足所有时间段的候选场地。")
+                    if allow_partial and len(mode_items) < target_count:
+                        for t in target_times:
+                            if len(mode_items) >= target_count:
+                                break
+                            for p in candidate_places:
+                                if len(mode_items) >= target_count:
+                                    break
+                                if p in matrix and matrix[p].get(t) == "available":
+                                    already = False
+                                    for item in mode_items:
+                                        if item["place"] == p and item["time"] == t:
+                                            already = True
+                                            break
+                                    if not already:
+                                        mode_items.append({"place": p, "time": t})
+                                        log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
+
+                # --- 模式 C: 普通 / 智能连号 (normal) ---
+                else:
+                    if 'candidate_places' not in cfg:
+                        log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
+                        notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
+                        return
+
+                    candidate_places = [str(p) for p in cfg['candidate_places']]
+                    target_courts = max(1, min(3, int(cfg.get('target_count', 2))))
+                    smart_mode = cfg.get('smart_continuous', False)
+
+                    if target_courts <= 0:
+                        log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
                     else:
-                        available_courts.sort()
-                        need = min(target_courts, len(available_courts))
-
-                        selected_courts: list[int] = []
-
-                        if smart_mode and len(available_courts) > 1:
-                            # 智能连号：优先选择一段连续场地
-                            best_run: list[int] | None = None
-                            best_len = 0
-                            i = 0
-                            while i < len(available_courts):
-                                j = i
-                                while j + 1 < len(available_courts) and \
-                                        available_courts[j + 1] == available_courts[j] + 1:
-                                    j += 1
-                                run = available_courts[i: j + 1]
-                                if len(run) > best_len:
-                                    best_len = len(run)
-                                    best_run = run
-                                i = j + 1
-
-                            if best_run:
-                                selected_courts = best_run[:need]
-
-                        # 普通模式或者智能模式没找到合适连号
-                        if not selected_courts:
-                            selected_courts = available_courts[:need]
-
-                        # 为每块选中的场地添加所有时间段
-                        for p_int in selected_courts:
-                            p_str = str(p_int)
+                        available_courts: list[int] = []
+                        for p in candidate_places:
+                            p_str = str(p)
+                            ok = True
                             for t in target_times:
-                                final_items.append({"place": p_str, "time": t})
+                                if p_str not in matrix or matrix[p_str].get(t) != "available":
+                                    ok = False
+                                    break
+                            if ok:
+                                available_courts.append(int(p))
+
+                        if not available_courts:
+                            log("⚠️ 当前没有同时满足所有时间段的候选场地。")
+                        else:
+                            available_courts.sort()
+                            need = min(target_courts, len(available_courts))
+                            selected_courts: list[int] = []
+
+                            if smart_mode and len(available_courts) > 1:
+                                best_run: list[int] | None = None
+                                best_len = 0
+                                i = 0
+                                while i < len(available_courts):
+                                    j = i
+                                    while j + 1 < len(available_courts) and                                             available_courts[j + 1] == available_courts[j] + 1:
+                                        j += 1
+                                    run = available_courts[i: j + 1]
+                                    if len(run) > best_len:
+                                        best_len = len(run)
+                                        best_run = run
+                                    i = j + 1
+
+                                if best_run:
+                                    selected_courts = best_run[:need]
+
+                            if not selected_courts:
+                                selected_courts = available_courts[:need]
+
+                            for p_int in selected_courts:
+                                p_str = str(p_int)
+                                for t in target_times:
+                                    mode_items.append({"place": p_str, "time": t})
+
+                if mode_items:
+                    final_items = mode_items
+                    selected_mode = mode
+                    break
+
+            if selected_mode and len(mode_configs) > 1:
+                log(f"🎛️ 单任务多模式命中: 当前使用 {selected_mode} 模式提交，不跨模式补齐")
 
             # 4. 提交订单
             if final_items:
