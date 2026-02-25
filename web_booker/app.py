@@ -1574,6 +1574,7 @@ class TaskManager:
         # pipeline 状态
         pipeline_started_at = None
         pipeline_refill_last_at = 0.0
+        pipeline_force_random_after_continuous = False
 
         attempt = 0
         while True:
@@ -1690,6 +1691,9 @@ class TaskManager:
                         active_stage = refill_stage
 
                     stype = str((active_stage or {}).get('type') or '').strip()
+                    if stype == 'continuous' and pipeline_force_random_after_continuous:
+                        log("🧪 [pipeline] 检测到continuous阶段已出现缺口，提前切换到random补齐")
+                        stype = 'random'
                     pipeline_active_stage = stype
                     log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
                     if stype == 'continuous':
@@ -1904,6 +1908,9 @@ class TaskManager:
                     post_need = calc_pipeline_need(selected_cfg, target_date)
                     remaining_slots = sum(int(v) for v in (post_need.get('need_by_time') or {}).values())
                     if remaining_slots > 0:
+                        if pipeline_active_stage == 'continuous' and status in ('success', 'partial'):
+                            pipeline_force_random_after_continuous = True
+                            log("⚡ [pipeline] continuous阶段已提交但仍有缺口，下一轮将直接切到random")
                         deadline = calc_pipeline_deadline(selected_cfg, target_date)
                         if deadline and client.get_aligned_now() >= deadline:
                             notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
