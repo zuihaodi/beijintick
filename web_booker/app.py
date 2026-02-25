@@ -952,12 +952,29 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
+                mine_slots = set()
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                else:
+                    print(
+                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_res.get('error')}"
+                    )
+
                 for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
-                    verify_states.append(f"{p}号{t}={status}")
-                    if status in ("booked", "mine"):
+                    mine_hit = (p, t) in mine_slots
+                    verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
+
+                    # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
+                    if mine_slots:
+                        success = mine_hit
+                    else:
+                        success = status in ("booked", "mine")
+
+                    if success:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
@@ -1002,14 +1019,16 @@ class ApiClient:
             msg = "没有生成任何下单项目，请检查配置或场地状态。"
             return {"status": "fail", "msg": msg}
 
-        if verify_ok and success_count == denominator:
+        cross_instance_suspected = verify_ok and api_success_count == 0 and success_count > 0
+
+        if verify_ok and api_success_count > 0 and success_count == denominator:
             return {
                 "status": "success",
                 "msg": "全部下单成功",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
             }
-        elif verify_ok and success_count > 0:
+        elif verify_ok and api_success_count > 0 and success_count > 0:
             return {
                 "status": "partial",
                 "msg": f"部分成功 ({success_count}/{denominator})",
@@ -1017,8 +1036,11 @@ class ApiClient:
                 "failed_items": verify_failed_items,
             }
         else:
+            # 未收到任何提交成功响应，但校验命中 mine，疑似并发实例下单导致的“归因串扰”
+            if cross_instance_suspected:
+                msg = "检测到我的订单已占位，但本进程提交未收到 success，可能由并发实例下单导致；本任务按失败处理。"
             # 验证失败时，宁可报失败也不误报成功
-            if not verify_ok and api_success_count > 0:
+            elif not verify_ok and api_success_count > 0:
                 msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
             elif api_success_count > 0 and verify_success_count == 0:
                 msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"

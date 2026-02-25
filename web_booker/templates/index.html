@@ -1874,27 +1874,29 @@
 
         async function saveConfig(showTip = true) {
             try {
-                const globalNotificationPhones = document
-                    .getElementById('globalNotificationPhones')
-                    .value.split(/[,，]/)
+                const getValue = (id, fallback = '') => {
+                    const el = document.getElementById(id);
+                    return el ? el.value : fallback;
+                };
+                const globalNotificationPhones = getValue('globalNotificationPhones')
+                    .split(/[,，]/)
                     .map(s => s.trim())
                     .filter(Boolean);
-                const globalPushplusTokens = document
-                    .getElementById('globalPushplusTokens')
-                    .value.split(/[,，]/)
+                const globalPushplusTokens = getValue('globalPushplusTokens')
+                    .split(/[,，]/)
                     .map(s => s.trim())
                     .filter(Boolean);
 
-                const retryInterval = parseFloat(document.getElementById('retryInterval').value);
-                const aggressiveRetryInterval = parseFloat(document.getElementById('aggressiveRetryInterval').value);
-                const submitBatchSize = parseInt(document.getElementById('submitBatchSize').value || '3', 10);
-                const batchRetryTimes = parseInt(document.getElementById('batchRetryTimes').value || '2', 10);
-                const batchRetryInterval = parseFloat(document.getElementById('batchRetryInterval').value);
-                const batchMinInterval = parseFloat(document.getElementById('batchMinInterval').value);
-                const refillWindowSeconds = parseFloat(document.getElementById('refillWindowSeconds').value);
-                const lockedRetryInterval = parseFloat(document.getElementById('lockedRetryInterval').value);
-                const lockedMaxSeconds = parseFloat(document.getElementById('lockedMaxSeconds').value);
-                const openRetrySeconds = parseFloat(document.getElementById('openRetrySeconds').value);
+                const retryInterval = parseFloat(getValue('retryInterval', '1.0'));
+                const aggressiveRetryInterval = parseFloat(getValue('aggressiveRetryInterval', '0.3'));
+                const submitBatchSize = parseInt(getValue('submitBatchSize', '3') || '3', 10);
+                const batchRetryTimes = parseInt(getValue('batchRetryTimes', '2') || '2', 10);
+                const batchRetryInterval = parseFloat(getValue('batchRetryInterval', '0.5'));
+                const batchMinInterval = parseFloat(getValue('batchMinInterval', '0.8'));
+                const refillWindowSeconds = parseFloat(getValue('refillWindowSeconds', '8'));
+                const lockedRetryInterval = parseFloat(getValue('lockedRetryInterval', '1.0'));
+                const lockedMaxSeconds = parseFloat(getValue('lockedMaxSeconds', '60'));
+                const openRetrySeconds = parseFloat(getValue('openRetrySeconds', '20'));
 
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
