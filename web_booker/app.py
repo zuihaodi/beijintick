@@ -1422,6 +1422,20 @@ class TaskManager:
                         return None
             return None
 
+        def build_pipeline_cfg(cfg):
+            pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
+            stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
+            if not stages:
+                stages = [
+                    {"type": "continuous", "enabled": True, "window_seconds": 8},
+                    {"type": "random", "enabled": True, "window_seconds": 12},
+                    {"type": "refill", "enabled": True, "interval_seconds": 15},
+                ]
+            return {
+                "stages": stages,
+                "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
+            }
+
         def calc_pipeline_need(cfg, date_str):
             target_times = [str(t) for t in (cfg.get('target_times') or [])]
             candidate_places = [str(p) for p in (cfg.get('candidate_places') or [])]
@@ -1580,23 +1594,18 @@ class TaskManager:
                         pipeline_started_at = now_ts
 
                     need_res = calc_pipeline_need(cfg, target_date)
-                    if sum(need_res['need_by_time'].values()) == 0 and bool((cfg.get('pipeline') or {}).get('stop_when_reached', True)):
+                    pipe_cfg = build_pipeline_cfg(cfg)
+
+                    if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
                         notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
                         return
 
                     deadline = calc_pipeline_deadline(cfg, target_date)
-                    if deadline and datetime.now() >= deadline:
+                    if deadline and client.get_aligned_now() >= deadline:
                         notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
                         return
 
-                    pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
-                    stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
-                    if not stages:
-                        stages = [
-                            {"type": "continuous", "enabled": True, "window_seconds": 8},
-                            {"type": "random", "enabled": True, "window_seconds": 12},
-                            {"type": "refill", "enabled": True, "interval_seconds": 15},
-                        ]
+                    stages = pipe_cfg['stages']
 
                     elapsed = now_ts - pipeline_started_at
                     active_stage = None
