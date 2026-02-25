@@ -1686,6 +1686,7 @@ class TaskManager:
                         active_stage = refill_stage
 
                     stype = str((active_stage or {}).get('type') or '').strip()
+                    log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
                     if stype == 'continuous':
                         mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                     elif stype == 'random':
@@ -1899,6 +1900,21 @@ class TaskManager:
                             return
                         need_detail = post_need.get('need_by_time') or {}
                         log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，缺口明细: {need_detail}，继续补齐下一轮")
+
+                        if status in ('success', 'partial'):
+                            try:
+                                progress_items = res.get('success_items') or final_items
+                                progress_msg = f"本轮已预订 {len(progress_items)} 个时段，缺口 {remaining_slots}，继续补齐中"
+                                notify_task_result(
+                                    False,
+                                    progress_msg,
+                                    items=progress_items,
+                                    date_str=target_date,
+                                    partial=True,
+                                )
+                            except Exception as e:
+                                log(f"⚠️ [pipeline] 阶段通知构建失败: {e}")
+
                         time.sleep(retry_interval)
                         continue
 
