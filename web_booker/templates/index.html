@@ -820,6 +820,58 @@
                 </select>
             </div>
 
+            <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+                <label style="font-size:13px;color:#333;display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="taskUsePipeline" onchange="togglePipelineConfig();updateTaskSummary()">
+                    启用 Pipeline 模式（continuous → random → refill）
+                </label>
+
+                <div id="pipelineConfigPanel" style="display:none;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;">
+                                <input type="checkbox" id="pipelineStopWhenReached" checked>
+                                达标后立即停止
+                            </label>
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;">截止模式</label>
+                            <select id="pipelineGreedyEndMode" class="form-control">
+                                <option value="absolute">absolute（固定截止时间）</option>
+                                <option value="before_start">before_start（开场前N小时）</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="font-size:12px;">截止时间（absolute）</label>
+                            <input type="datetime-local" id="pipelineGreedyEndTime" class="form-control">
+                        </div>
+                        <div style="flex:1;min-width:160px;">
+                            <label style="font-size:12px;">开场前小时数（before_start）</label>
+                            <input type="number" id="pipelineGreedyEndBeforeHours" class="form-control" value="24" min="1" step="1">
+                        </div>
+                    </div>
+
+                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 窗口(秒)</label>
+                            <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 窗口(秒)</label>
+                            <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled" checked> refill 间隔(秒)</label>
+                            <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 时间选择器 -->
             <div class="form-group">
                 <label id="timeLabelNormal">⌚ 选择时间段 (可多选，系统会尝试凑够总目标数量)</label>
@@ -2192,7 +2244,8 @@
                 : '未知';
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
-            text += `<br>执行策略：每批最多 3 块（稳定模式）`;
+            const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous→random→refill）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -2281,6 +2334,11 @@
                             const seqStr = t.config.priority_sequences.map(s => `[${s.join('+')}]`).join(', ');
                             const tStr = t.config.target_times.join(',');
                             detail = `🎯 目标：${t.config.target_count}块 (优先级)<br>🔥 序列：${seqStr}<br>⌚ 时间：${tStr}`;
+                        } else if (t.config.mode === 'pipeline') {
+                            const pStr = (t.config.candidate_places || []).join(',');
+                            const tStr = (t.config.target_times || []).join(',');
+                            const stages = (((t.config.pipeline || {}).stages) || []).map(st => st && st.type).filter(Boolean).join('→') || 'continuous→random→refill';
+                            detail = `🎯 目标：${t.config.target_count}块 (Pipeline)<br>🧪 阶段：${stages}<br>🏸 候选：${pStr || '-'}号<br>⌚ 时间：${tStr || '-'}`;
                         } else {
                             const pStr = (t.config.candidate_places || []).join(',');
                             const tStr = (t.config.target_times || []).join(',');
@@ -2367,6 +2425,11 @@
             if (priorityLabel) priorityLabel.style.display = 'none';
         }
 
+        function togglePipelineConfig() {
+            const enabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+            const panel = document.getElementById('pipelineConfigPanel');
+            if (panel) panel.style.display = enabled ? 'block' : 'none';
+        }
 
 
         async function createTask() {
@@ -2405,14 +2468,55 @@
                 return;
             }
 
-            // 3. 只保留“普通模式”的 config
-            const config = {
-                mode: 'normal',  // 保留字段名，后端沿用现有逻辑
-                candidate_places: places,
-                smart_continuous: document.getElementById('taskSmartMode').checked,
-                target_times: times,
-                target_count: targetCount
-            };
+            const usePipeline = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+
+            let config;
+            if (usePipeline) {
+                const toInt = (v, d) => {
+                    const n = parseInt(String(v || ''), 10);
+                    return Number.isFinite(n) && n > 0 ? n : d;
+                };
+                const dtRaw = (document.getElementById('pipelineGreedyEndTime') || {}).value || '';
+                const greedyEndTime = dtRaw ? `${dtRaw.replace('T', ' ')}:00` : '';
+                config = {
+                    mode: 'pipeline',
+                    candidate_places: places,
+                    target_times: times,
+                    target_count: targetCount,
+                    pipeline: {
+                        stages: [
+                            {
+                                type: 'continuous',
+                                enabled: !!(document.getElementById('pipelineContinuousEnabled') || {}).checked,
+                                window_seconds: toInt((document.getElementById('pipelineContinuousWindow') || {}).value, 8)
+                            },
+                            {
+                                type: 'random',
+                                enabled: !!(document.getElementById('pipelineRandomEnabled') || {}).checked,
+                                window_seconds: toInt((document.getElementById('pipelineRandomWindow') || {}).value, 12)
+                            },
+                            {
+                                type: 'refill',
+                                enabled: !!(document.getElementById('pipelineRefillEnabled') || {}).checked,
+                                interval_seconds: toInt((document.getElementById('pipelineRefillInterval') || {}).value, 15)
+                            }
+                        ],
+                        stop_when_reached: !!(document.getElementById('pipelineStopWhenReached') || {}).checked,
+                        greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
+                        greedy_end_time: greedyEndTime,
+                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24)
+                    }
+                };
+            } else {
+                // 3. 默认普通模式
+                config = {
+                    mode: 'normal',
+                    candidate_places: places,
+                    smart_continuous: document.getElementById('taskSmartMode').checked,
+                    target_times: times,
+                    target_count: targetCount
+                };
+            }
 
             // 4. 频率和“周几执行”
             let weeklyDay = 0;
@@ -2499,6 +2603,29 @@
             document.getElementById('taskSmartMode').checked = !!(t.config && t.config.smart_continuous);
             document.getElementById('notificationPhones').value = (t.notification_phones || []).join(', ');
             document.getElementById('taskPushplusTokens').value = (t.pushplus_tokens || []).join(', ');
+
+            const usePipeline = !!(t.config && t.config.mode === 'pipeline');
+            const usePipelineEl = document.getElementById('taskUsePipeline');
+            if (usePipelineEl) usePipelineEl.checked = usePipeline;
+            togglePipelineConfig();
+
+            const pipe = (t.config && t.config.pipeline) || {};
+            const stages = Array.isArray(pipe.stages) ? pipe.stages : [];
+            const byType = (tp) => stages.find(st => st && st.type === tp) || {};
+            const c = byType('continuous');
+            const r = byType('random');
+            const f = byType('refill');
+            document.getElementById('pipelineStopWhenReached').checked = pipe.stop_when_reached !== false;
+            document.getElementById('pipelineGreedyEndMode').value = pipe.greedy_end_mode || 'absolute';
+            document.getElementById('pipelineGreedyEndBeforeHours').value = String(pipe.greedy_end_before_hours || 24);
+            const abs = String(pipe.greedy_end_time || '').trim();
+            document.getElementById('pipelineGreedyEndTime').value = abs ? abs.replace(' ', 'T').slice(0, 16) : '';
+            document.getElementById('pipelineContinuousEnabled').checked = c.enabled !== false;
+            document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
+            document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
+            document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
+            document.getElementById('pipelineRefillEnabled').checked = f.enabled !== false;
+            document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
             const places = (t.config && t.config.candidate_places) || [];
