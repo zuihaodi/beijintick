@@ -855,9 +855,13 @@
                     </div>
 
                     <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
+                    <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
+                        <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
+                        continuous 连号优先（建议开启）
+                    </label>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 窗口(秒)</label>
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 阶段窗口(秒)</label>
                             <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
                         </div>
                         <div style="flex:1;min-width:180px;">
@@ -2245,7 +2249,7 @@
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
             const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
-            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous→random→refill）' : '每批最多 3 块（稳定模式）'}`;
+            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random→refill）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -2502,6 +2506,7 @@
                             }
                         ],
                         stop_when_reached: !!(document.getElementById('pipelineStopWhenReached') || {}).checked,
+                        continuous_prefer_adjacent: !!(document.getElementById('pipelineContinuousPreferAdjacent') || {}).checked,
                         greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
                         greedy_end_time: greedyEndTime,
                         greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24)
@@ -2616,6 +2621,7 @@
             const r = byType('random');
             const f = byType('refill');
             document.getElementById('pipelineStopWhenReached').checked = pipe.stop_when_reached !== false;
+            document.getElementById('pipelineContinuousPreferAdjacent').checked = pipe.continuous_prefer_adjacent !== false;
             document.getElementById('pipelineGreedyEndMode').value = pipe.greedy_end_mode || 'absolute';
             document.getElementById('pipelineGreedyEndBeforeHours').value = String(pipe.greedy_end_before_hours || 24);
             const abs = String(pipe.greedy_end_time || '').trim();

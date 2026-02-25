@@ -1434,6 +1434,7 @@ class TaskManager:
             return {
                 "stages": stages,
                 "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
+                "continuous_prefer_adjacent": bool(pipe.get('continuous_prefer_adjacent', True)),
             }
 
         def calc_pipeline_need(cfg, date_str):
@@ -1464,7 +1465,7 @@ class TaskManager:
                 "target_count": target_count,
             }
 
-        def choose_pipeline_items(matrix, need_res, stage_type):
+        def choose_pipeline_items(matrix, need_res, stage_type, prefer_adjacent=True):
             target_times = need_res['target_times']
             candidate_places = need_res['candidate_places']
             need_by_time = dict(need_res['need_by_time'])
@@ -1494,21 +1495,24 @@ class TaskManager:
                         if all(matrix.get(str(p), {}).get(str(t)) == 'available' for t in required_times)
                     ]
                     if avail_all:
-                        nums = sorted({int(p) for p in avail_all if str(p).isdigit()})
-                        best = []
-                        run = []
-                        for n in nums:
-                            if not run or n == run[-1] + 1:
-                                run.append(n)
-                            else:
-                                if len(run) > len(best):
-                                    best = run
-                                run = [n]
-                        if len(run) > len(best):
-                            best = run
+                        if prefer_adjacent:
+                            nums = sorted({int(p) for p in avail_all if str(p).isdigit()})
+                            best = []
+                            run = []
+                            for n in nums:
+                                if not run or n == run[-1] + 1:
+                                    run.append(n)
+                                else:
+                                    if len(run) > len(best):
+                                        best = run
+                                    run = [n]
+                            if len(run) > len(best):
+                                best = run
 
-                        if best:
-                            ordered = [str(n) for n in best] + [p for p in avail_all if p not in {str(n) for n in best}]
+                            if best:
+                                ordered = [str(n) for n in best] + [p for p in avail_all if p not in {str(n) for n in best}]
+                            else:
+                                ordered = list(avail_all)
                         else:
                             ordered = list(avail_all)
 
@@ -1527,19 +1531,22 @@ class TaskManager:
                     continue
 
                 if stage_type == 'continuous':
-                    nums = sorted({int(p) for p in avail if str(p).isdigit()})
-                    best = []
-                    run = []
-                    for n in nums:
-                        if not run or n == run[-1] + 1:
-                            run.append(n)
-                        else:
-                            if len(run) > len(best):
-                                best = run
-                            run = [n]
-                    if len(run) > len(best):
-                        best = run
-                    ordered = [str(n) for n in best] + [p for p in avail if p not in {str(n) for n in best}] if best else avail
+                    if prefer_adjacent:
+                        nums = sorted({int(p) for p in avail if str(p).isdigit()})
+                        best = []
+                        run = []
+                        for n in nums:
+                            if not run or n == run[-1] + 1:
+                                run.append(n)
+                            else:
+                                if len(run) > len(best):
+                                    best = run
+                                run = [n]
+                        if len(run) > len(best):
+                            best = run
+                        ordered = [str(n) for n in best] + [p for p in avail if p not in {str(n) for n in best}] if best else avail
+                    else:
+                        ordered = list(avail)
                 else:
                     ordered = list(avail)
                     random.shuffle(ordered)
@@ -1630,6 +1637,7 @@ class TaskManager:
             # 3. 单任务多模式：按顺序尝试，命中一个模式后仅使用该模式结果，不跨模式补齐
             final_items: list[dict] = []
             selected_mode = None
+            selected_cfg = None
             for cfg in mode_configs:
                 mode = cfg.get('mode', 'normal')
                 target_times = cfg.get('target_times', [])
@@ -1679,13 +1687,13 @@ class TaskManager:
 
                     stype = str((active_stage or {}).get('type') or '').strip()
                     if stype == 'continuous':
-                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous')
+                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                     elif stype == 'random':
-                        mode_items = choose_pipeline_items(matrix, need_res, 'random')
+                        mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                     elif stype == 'refill':
                         interval = float((active_stage or {}).get('interval_seconds', 15) or 15)
                         if (now_ts - pipeline_refill_last_at) >= max(1.0, interval):
-                            mode_items = choose_pipeline_items(matrix, need_res, 'random')
+                            mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                             pipeline_refill_last_at = now_ts
                         else:
                             mode_items = []
@@ -1865,6 +1873,7 @@ class TaskManager:
                 if mode_items:
                     final_items = mode_items
                     selected_mode = mode
+                    selected_cfg = cfg
                     break
 
             if selected_mode and len(mode_configs) > 1:
@@ -1877,6 +1886,21 @@ class TaskManager:
                 log(f"[submit_order调试] 批次响应: {res}")
 
                 status = res.get("status")
+
+                # pipeline 模式下，单次提交 success/partial 不代表任务目标已达成；
+                # 若仍有缺口，应继续进入下一轮（含 refill）补齐。
+                if selected_mode == 'pipeline' and isinstance(selected_cfg, dict):
+                    post_need = calc_pipeline_need(selected_cfg, target_date)
+                    remaining_slots = sum(int(v) for v in (post_need.get('need_by_time') or {}).values())
+                    if remaining_slots > 0:
+                        deadline = calc_pipeline_deadline(selected_cfg, target_date)
+                        if deadline and client.get_aligned_now() >= deadline:
+                            notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                            return
+                        log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，继续补齐下一轮")
+                        time.sleep(retry_interval)
+                        continue
+
                 if status == "success":
                     log(f"✅ 下单完成: 全部成功 ({status})")
                     try:
