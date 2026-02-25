@@ -1640,6 +1640,7 @@ class TaskManager:
             selected_cfg = None
             pipeline_active_stage = None
             pipeline_cfg_for_retry = None
+            pipeline_refill_wait_seconds = 0.0
             for cfg in mode_configs:
                 mode = cfg.get('mode', 'normal')
                 target_times = cfg.get('target_times', [])
@@ -1697,10 +1698,15 @@ class TaskManager:
                         mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                     elif stype == 'refill':
                         interval = float((active_stage or {}).get('interval_seconds', 15) or 15)
-                        if (now_ts - pipeline_refill_last_at) >= max(1.0, interval):
+                        refill_interval = max(1.0, interval)
+                        refill_elapsed = now_ts - pipeline_refill_last_at
+                        if refill_elapsed >= refill_interval:
                             mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
                             pipeline_refill_last_at = now_ts
+                            pipeline_refill_wait_seconds = 0.0
                         else:
+                            pipeline_refill_wait_seconds = max(0.0, refill_interval - refill_elapsed)
+                            log(f"🧪 [pipeline-refill] 未到下次补齐窗口，剩余 {round(pipeline_refill_wait_seconds, 2)}s")
                             mode_items = []
                     else:
                         mode_items = []
@@ -2001,11 +2007,14 @@ class TaskManager:
                     if deadline and client.get_aligned_now() >= deadline:
                         notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
                         return
+                    refill_sleep_s = retry_interval
+                    if not final_items:
+                        refill_sleep_s = max(float(retry_interval), float(pipeline_refill_wait_seconds or 0.0))
                     log(
                         f"🙈 [pipeline-refill] 当前无可用组合，继续轮询补齐..."
-                        f" (已等待 {int(elapsed)} 秒；以截止时间控制结束)"
+                        f" (已等待 {int(elapsed)} 秒；以截止时间控制结束；下次约 {round(refill_sleep_s, 2)}s)"
                     )
-                    time.sleep(retry_interval)
+                    time.sleep(refill_sleep_s)
                     continue
 
                 if elapsed < max(0.0, float(open_retry_seconds)):
