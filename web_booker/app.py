@@ -966,9 +966,11 @@ class ApiClient:
                 verify_states = []
 
                 mine_slots = set()
+                orders_query_ok = False
                 orders_res = self.get_place_orders()
                 if "error" not in orders_res:
                     mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                    orders_query_ok = True
                 else:
                     print(
                         f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_res.get('error')}"
@@ -982,7 +984,7 @@ class ApiClient:
                     verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
 
                     # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
-                    if mine_slots:
+                    if orders_query_ok:
                         success = mine_hit
                     else:
                         success = status in ("booked", "mine")
