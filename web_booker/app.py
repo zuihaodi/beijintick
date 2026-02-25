@@ -1638,6 +1638,8 @@ class TaskManager:
             final_items: list[dict] = []
             selected_mode = None
             selected_cfg = None
+            pipeline_active_stage = None
+            pipeline_cfg_for_retry = None
             for cfg in mode_configs:
                 mode = cfg.get('mode', 'normal')
                 target_times = cfg.get('target_times', [])
@@ -1645,6 +1647,7 @@ class TaskManager:
 
                 # --- 模式 P: pipeline(continuous/random/refill) ---
                 if mode == 'pipeline':
+                    pipeline_cfg_for_retry = cfg
                     now_ts = time.time()
                     if pipeline_started_at is None:
                         pipeline_started_at = now_ts
@@ -1686,6 +1689,7 @@ class TaskManager:
                         active_stage = refill_stage
 
                     stype = str((active_stage or {}).get('type') or '').strip()
+                    pipeline_active_stage = stype
                     log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
                     if stype == 'continuous':
                         mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
@@ -1989,6 +1993,20 @@ class TaskManager:
                 if open_mode_started_at is None:
                     open_mode_started_at = now_ts
                 elapsed = now_ts - open_mode_started_at
+
+                # pipeline 进入 refill 后，不受 open_retry_seconds 提前截断；
+                # 以 pipeline 截止时间为准继续补齐。
+                if pipeline_cfg_for_retry is not None and pipeline_active_stage == 'refill':
+                    deadline = calc_pipeline_deadline(pipeline_cfg_for_retry, target_date)
+                    if deadline and client.get_aligned_now() >= deadline:
+                        notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        return
+                    log(
+                        f"🙈 [pipeline-refill] 当前无可用组合，继续轮询补齐..."
+                        f" (已等待 {int(elapsed)} 秒；以截止时间控制结束)"
+                    )
+                    time.sleep(retry_interval)
+                    continue
 
                 if elapsed < max(0.0, float(open_retry_seconds)):
                     if final_items:
