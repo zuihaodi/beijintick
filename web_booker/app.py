@@ -1371,7 +1371,7 @@ class TaskManager:
             mode = cfg.get('mode', 'normal')
             target_times = cfg.get('target_times', [])
 
-            if mode == 'normal':
+            if mode in ('normal', 'pipeline'):
                 for p in cfg.get('candidate_places', []):
                     for t in target_times:
                         pairs.add((str(p), t))
@@ -1394,6 +1394,101 @@ class TaskManager:
                             pairs.add((p, t))
             return pairs
 
+        def calc_pipeline_deadline(cfg, date_str):
+            pipeline_cfg = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
+            mode = str(pipeline_cfg.get('greedy_end_mode') or '').strip()
+
+            abs_raw = str(pipeline_cfg.get('greedy_end_time') or '').strip()
+            if abs_raw:
+                try:
+                    return datetime.strptime(abs_raw, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+
+            if mode == 'before_start':
+                hours_raw = pipeline_cfg.get('greedy_end_before_hours', 24)
+                try:
+                    hours = float(hours_raw)
+                except Exception:
+                    hours = 24.0
+                times = [str(t).strip() for t in (cfg.get('target_times') or []) if str(t).strip()]
+                if times:
+                    start_time = sorted(times)[0]
+                    fmt = "%Y-%m-%d %H:%M:%S" if len(start_time) == 8 else "%Y-%m-%d %H:%M"
+                    try:
+                        start_dt = datetime.strptime(f"{date_str} {start_time}", fmt)
+                        return start_dt - timedelta(hours=hours)
+                    except Exception:
+                        return None
+            return None
+
+        def calc_pipeline_need(cfg, date_str):
+            target_times = [str(t) for t in (cfg.get('target_times') or [])]
+            candidate_places = [str(p) for p in (cfg.get('candidate_places') or [])]
+            target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+
+            task_scope = {(p, t) for p in candidate_places for t in target_times}
+            mine_slots = set()
+            orders_res = client.get_place_orders()
+            if "error" not in orders_res:
+                mine_slots = client._extract_mine_slots(orders_res.get("data", []), date_str)
+            else:
+                log(f"⚠️ [pipeline] 订单拉取失败，按0占位处理: {orders_res.get('error')}")
+
+            task_mine = mine_slots & task_scope
+            need_by_time = {}
+            for t in target_times:
+                mine_count = sum(1 for p in candidate_places if (p, t) in task_mine)
+                need_by_time[t] = max(0, target_count - mine_count)
+
+            return {
+                "task_scope": task_scope,
+                "task_mine": task_mine,
+                "need_by_time": need_by_time,
+                "target_times": target_times,
+                "candidate_places": candidate_places,
+                "target_count": target_count,
+            }
+
+        def choose_pipeline_items(matrix, need_res, stage_type):
+            target_times = need_res['target_times']
+            candidate_places = need_res['candidate_places']
+            need_by_time = dict(need_res['need_by_time'])
+            items = []
+
+            for t in target_times:
+                need = int(need_by_time.get(t, 0))
+                if need <= 0:
+                    continue
+                avail = [p for p in candidate_places if matrix.get(p, {}).get(t) == 'available']
+                if not avail:
+                    continue
+
+                picked = []
+                if stage_type == 'continuous':
+                    nums = sorted({int(p) for p in avail if str(p).isdigit()})
+                    best = []
+                    run = []
+                    for n in nums:
+                        if not run or n == run[-1] + 1:
+                            run.append(n)
+                        else:
+                            if len(run) > len(best):
+                                best = run
+                            run = [n]
+                    if len(run) > len(best):
+                        best = run
+                    picked = [str(n) for n in best[:need]] if best else avail[:need]
+                else:
+                    pool = list(avail)
+                    random.shuffle(pool)
+                    picked = pool[:need]
+
+                for p in picked:
+                    items.append({"place": str(p), "time": t})
+
+            return items
+
         # === 智能抢票核心逻辑 ===
         retry_interval = CONFIG.get('retry_interval', 0.5)
         aggressive_retry_interval = CONFIG.get('aggressive_retry_interval', 0.3)
@@ -1407,6 +1502,9 @@ class TaskManager:
         locked_mode_started_at = None
         # 记录进入「已开放但无可用结果」状态的起始时间
         open_mode_started_at = None
+        # pipeline 状态
+        pipeline_started_at = None
+        pipeline_refill_last_at = 0.0
 
         attempt = 0
         while True:
@@ -1475,8 +1573,70 @@ class TaskManager:
                 target_times = cfg.get('target_times', [])
                 mode_items: list[dict] = []
 
+                # --- 模式 P: pipeline(continuous/random/refill) ---
+                if mode == 'pipeline':
+                    now_ts = time.time()
+                    if pipeline_started_at is None:
+                        pipeline_started_at = now_ts
+
+                    need_res = calc_pipeline_need(cfg, target_date)
+                    if sum(need_res['need_by_time'].values()) == 0 and bool((cfg.get('pipeline') or {}).get('stop_when_reached', True)):
+                        notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
+                        return
+
+                    deadline = calc_pipeline_deadline(cfg, target_date)
+                    if deadline and datetime.now() >= deadline:
+                        notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        return
+
+                    pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
+                    stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
+                    if not stages:
+                        stages = [
+                            {"type": "continuous", "enabled": True, "window_seconds": 8},
+                            {"type": "random", "enabled": True, "window_seconds": 12},
+                            {"type": "refill", "enabled": True, "interval_seconds": 15},
+                        ]
+
+                    elapsed = now_ts - pipeline_started_at
+                    active_stage = None
+                    consumed = 0.0
+                    refill_stage = None
+                    for st in stages:
+                        if not isinstance(st, dict) or not st.get('enabled', True):
+                            continue
+                        stype = str(st.get('type') or '').strip()
+                        if stype == 'refill':
+                            refill_stage = st
+                            continue
+                        win = float(st.get('window_seconds', 0) or 0)
+                        if win <= 0:
+                            continue
+                        if elapsed < consumed + win:
+                            active_stage = st
+                            break
+                        consumed += win
+
+                    if active_stage is None and refill_stage is not None:
+                        active_stage = refill_stage
+
+                    stype = str((active_stage or {}).get('type') or '').strip()
+                    if stype == 'continuous':
+                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous')
+                    elif stype == 'random':
+                        mode_items = choose_pipeline_items(matrix, need_res, 'random')
+                    elif stype == 'refill':
+                        interval = float((active_stage or {}).get('interval_seconds', 15) or 15)
+                        if (now_ts - pipeline_refill_last_at) >= max(1.0, interval):
+                            mode_items = choose_pipeline_items(matrix, need_res, 'random')
+                            pipeline_refill_last_at = now_ts
+                        else:
+                            mode_items = []
+                    else:
+                        mode_items = []
+
                 # --- 模式 A: 场地优先优先级序列 (priority) ---
-                if mode == 'priority':
+                elif mode == 'priority':
                     sequences = cfg.get('priority_sequences', [])
                     target_count = max(1, min(3, int(cfg.get('target_count', 2))))
                     allow_partial = cfg.get('allow_partial', True)
