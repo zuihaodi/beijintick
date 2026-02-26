@@ -1195,6 +1195,7 @@ class TaskManager:
         self.refill_tasks = []
         self._refill_lock = threading.Lock()
         self._refill_last_run = {}
+        self._refill_notify_last_bucket = {}
         self.load_tasks()
         self.load_refill_tasks()
         
@@ -1223,6 +1224,11 @@ class TaskManager:
         task['last_run_at'] = task.get('last_run_at')
         task['last_result'] = task.get('last_result')
         task['deadline'] = str(task.get('deadline') or '').strip()
+        task['deadline_mode'] = str(task.get('deadline_mode') or 'absolute').strip() or 'absolute'
+        try:
+            task['deadline_before_hours'] = float(task.get('deadline_before_hours') or 2.0)
+        except Exception:
+            task['deadline_before_hours'] = 2.0
         task['exec_history'] = list(task.get('exec_history') or [])[-10:]
         self.refill_tasks.append(task)
         self.save_refill_tasks()
@@ -1261,6 +1267,14 @@ class TaskManager:
                 t['enabled'] = bool(payload.get('enabled'))
             if 'deadline' in payload:
                 t['deadline'] = str(payload.get('deadline') or '').strip()
+            if 'deadline_mode' in payload:
+                mode = str(payload.get('deadline_mode') or '').strip()
+                t['deadline_mode'] = mode if mode in ('absolute', 'before_start') else 'absolute'
+            if 'deadline_before_hours' in payload:
+                try:
+                    t['deadline_before_hours'] = max(0.0, float(payload.get('deadline_before_hours') or 0.0))
+                except Exception:
+                    pass
             self.save_refill_tasks()
             return t
         return None
@@ -1274,6 +1288,39 @@ class TaskManager:
         })
         task['exec_history'] = history[-10:]
 
+
+    def _compute_refill_deadline(self, refill_task):
+        mode = str(refill_task.get('deadline_mode') or 'absolute').strip()
+        if mode == 'before_start':
+            date_str = str(refill_task.get('date') or '').strip()
+            times = sorted([str(t).strip() for t in (refill_task.get('target_times') or []) if str(t).strip()])
+            if not date_str or not times:
+                return None, ''
+            time0 = times[0]
+            try:
+                start_dt = datetime.strptime(f"{date_str} {time0}:00" if len(time0) == 5 else f"{date_str} {time0}", "%Y-%m-%d %H:%M:%S")
+                before_h = max(0.0, float(refill_task.get('deadline_before_hours') or 0.0))
+                deadline_dt = start_dt - timedelta(hours=before_h)
+                return deadline_dt, deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return None, ''
+
+        deadline_raw = str(refill_task.get('deadline') or '').strip()
+        if not deadline_raw:
+            return None, ''
+        try:
+            return datetime.strptime(deadline_raw, "%Y-%m-%d %H:%M:%S"), deadline_raw
+        except Exception:
+            return None, deadline_raw
+
+    def _should_notify_refill_success(self, task_id):
+        bucket = datetime.now().strftime("%Y%m%d%H%M")
+        key = f"{task_id}:{bucket}"
+        if self._refill_notify_last_bucket.get(str(task_id)) == bucket:
+            return False
+        self._refill_notify_last_bucket[str(task_id)] = bucket
+        return True
+
     def _run_refill_task_once(self, refill_task, source='auto'):
         task_id = str(refill_task.get('id') or 'unknown')
         date_str = str(refill_task.get('date') or '').strip()
@@ -1282,16 +1329,11 @@ class TaskManager:
         target_count = max(1, min(MAX_TARGET_COUNT, int(refill_task.get('target_count', 1) or 1)))
         tag = f"[refill#{task_id}|{source}]"
 
-        deadline_raw = str(refill_task.get('deadline') or '').strip()
-        if deadline_raw:
-            try:
-                deadline_dt = datetime.strptime(deadline_raw, "%Y-%m-%d %H:%M:%S")
-            except Exception:
-                deadline_dt = None
-            if deadline_dt and datetime.now() >= deadline_dt:
-                msg = f"已超过截止时间({deadline_raw})，停止执行"
-                log(f"⏹️ {tag} {msg}")
-                return {'status': 'stopped', 'msg': msg}
+        deadline_dt, deadline_text = self._compute_refill_deadline(refill_task)
+        if deadline_dt and datetime.now() >= deadline_dt:
+            msg = f"已超过截止时间({deadline_text})，停止执行"
+            log(f"⏹️ {tag} {msg}")
+            return {'status': 'stopped', 'msg': msg}
 
         log(f"🧩 {tag} 开始执行: date={date_str}, target_count={target_count}, times={target_times}, places={len(candidate_places)}")
         if not date_str or not target_times or not candidate_places:
@@ -1345,8 +1387,11 @@ class TaskManager:
             ok_items = submit_res.get('success_items') or []
             item_text = '、'.join([f"{it.get('place')}号{it.get('time')}" for it in ok_items[:6]])
             msg = f"Refill#{task_id}补订成功({len(ok_items)}项): {date_str} {item_text}"
-            self.send_notification(msg)
-            self.send_wechat_notification(msg)
+            if self._should_notify_refill_success(task_id):
+                self.send_notification(msg)
+                self.send_wechat_notification(msg)
+            else:
+                log(f"🔕 {tag} 本分钟内已通知，跳过重复成功通知")
         return submit_res
 
     def run_refill_scheduler_tick(self):
@@ -1355,18 +1400,13 @@ class TaskManager:
             if not bool(t.get('enabled', True)):
                 continue
             tid = int(t.get('id', 0))
-            deadline_raw = str(t.get('deadline') or '').strip()
-            if deadline_raw:
-                try:
-                    deadline_dt = datetime.strptime(deadline_raw, "%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    deadline_dt = None
-                if deadline_dt and datetime.now() >= deadline_dt:
-                    t['enabled'] = False
-                    t['last_result'] = {'status': 'stopped', 'msg': f'达到截止时间({deadline_raw})，自动停用'}
-                    self.append_refill_history(t, t['last_result'])
-                    self.save_refill_tasks()
-                    continue
+            deadline_dt, deadline_text = self._compute_refill_deadline(t)
+            if deadline_dt and datetime.now() >= deadline_dt:
+                t['enabled'] = False
+                t['last_result'] = {'status': 'stopped', 'msg': f'达到截止时间({deadline_text})，自动停用'}
+                self.append_refill_history(t, t['last_result'])
+                self.save_refill_tasks()
+                continue
             interval = max(1.0, float(t.get('interval_seconds', 10.0) or 10.0))
             last = float(self._refill_last_run.get(tid, 0.0))
             if now - last < interval:
@@ -3034,10 +3074,15 @@ def page_route_fallback(path_like):
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
     refill_id = (request.args.get('refill_id') or '').strip()
-    if not refill_id:
-        return jsonify(LOG_BUFFER)
-    key = f"[refill#{refill_id}|"
-    return jsonify([line for line in LOG_BUFFER if key in line])
+    status_kw = (request.args.get('status_kw') or '').strip().lower()
+
+    logs = list(LOG_BUFFER)
+    if refill_id:
+        key = f"[refill#{refill_id}|"
+        logs = [line for line in logs if key in line]
+    if status_kw:
+        logs = [line for line in logs if status_kw in str(line).lower()]
+    return jsonify(logs)
 
 if __name__ == "__main__":
     validate_templates_on_startup()

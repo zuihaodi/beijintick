@@ -1004,8 +1004,19 @@
                     <input id="refillInterval" class="form-control" type="number" min="1" step="1" value="10">
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
-                    <label>截止时间(可选)</label>
+                    <label>截止模式</label>
+                    <select id="refillDeadlineMode" class="form-control">
+                        <option value="absolute">固定时间</option>
+                        <option value="before_start">开场前N小时</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>截止时间(固定模式)</label>
                     <input id="refillDeadline" class="form-control" type="datetime-local">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>开场前N小时(相对模式)</label>
+                    <input id="refillDeadlineBeforeHours" class="form-control" type="number" min="0" step="0.5" value="2">
                 </div>
             </div>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -1014,6 +1025,34 @@
             </div>
             <div id="refillTaskList" class="refill-list"></div>
         </div>
+
+        <div class="modal-overlay" id="refillEditModal" style="display:none;">
+            <div class="modal" style="max-width:460px;">
+                <div class="modal-header">
+                    <div class="modal-title">✏️ 编辑 Refill</div>
+                    <div class="modal-close" onclick="closeRefillEditModal()">×</div>
+                </div>
+                <input type="hidden" id="refillEditId">
+                <div class="form-group"><label>日期</label><input id="refillEditDate" class="form-control"></div>
+                <div class="form-group"><label>目标数量</label><input id="refillEditTargetCount" type="number" min="1" max="9" class="form-control"></div>
+                <div class="form-group"><label>候选场地</label><input id="refillEditPlaces" class="form-control"></div>
+                <div class="form-group"><label>时间段</label><input id="refillEditTimes" class="form-control"></div>
+                <div class="form-group"><label>轮询间隔(秒)</label><input id="refillEditInterval" type="number" min="1" class="form-control"></div>
+                <div class="form-group"><label>截止模式</label>
+                    <select id="refillEditDeadlineMode" class="form-control">
+                        <option value="absolute">固定时间</option>
+                        <option value="before_start">开场前N小时</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>截止时间(固定模式)</label><input id="refillEditDeadline" type="datetime-local" class="form-control"></div>
+                <div class="form-group"><label>开场前N小时(相对模式)</label><input id="refillEditDeadlineBeforeHours" type="number" min="0" step="0.5" class="form-control" value="2"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn" style="background:#eee;color:#333;" onclick="closeRefillEditModal()">取消</button>
+                    <button class="btn btn-primary" onclick="saveRefillEditModal()">保存</button>
+                </div>
+            </div>
+        </div>
+
         </div>
         {% endif %}
         <!-- Tab 3: 系统设置 -->
@@ -1182,6 +1221,7 @@
                 <label style="font-weight:bold;">📟 运行日志（与后台 /api/logs 同源）</label>
                 <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
                     <input id="refillLogFilterId" class="form-control" style="max-width:180px;" placeholder="按Refill任务ID过滤">
+                    <input id="refillLogStatusKw" class="form-control" style="max-width:140px;" placeholder="状态关键字">
                     <button class="btn" style="padding:6px 10px;background:#5856d6;color:#fff;" onclick="lastLogIndex=0;document.getElementById('logContent').innerHTML='';pollLogs();">应用过滤</button>
                 </div>
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
@@ -1290,7 +1330,12 @@
         async function pollLogs() {
             try {
                 const rid = (document.getElementById('refillLogFilterId') || {}).value || '';
-                const res = await fetch(`/api/logs${rid ? `?refill_id=${encodeURIComponent(rid.trim())}` : ''}`);
+                const skw = (document.getElementById('refillLogStatusKw') || {}).value || '';
+                const params = new URLSearchParams();
+                if (rid.trim()) params.set('refill_id', rid.trim());
+                if (skw.trim()) params.set('status_kw', skw.trim());
+                const qs = params.toString();
+                const res = await fetch(`/api/logs${qs ? `?${qs}` : ''}`);
                 const logs = await res.json();
                 if (logs.length > lastLogIndex) {
                     const newLogs = logs.slice(lastLogIndex);
@@ -2348,7 +2393,7 @@
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
             const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
-            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random→refill）' : '每批最多 3 块（稳定模式）'}`;
+            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -2431,7 +2476,7 @@
                             <div><b>#${t.id || '-'}</b> ｜ <b>${t.date || '-'}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
                             <div>场地: ${places || '-'}</div>
                             <div>时段: ${times || '-'}</div>
-                            <div>截止: ${t.deadline || '不限'}</div>
+                            <div>截止: ${t.deadline_mode === 'before_start' ? `开场前${Number(t.deadline_before_hours || 0)}小时` : (t.deadline || '不限')}</div>
                             <div style="color:#666;">最近执行: ${formatTimeMs(t.last_run_at)}</div>
                             <div style="color:#666;">最近结果: ${refillResultText(t.last_result)}</div>
                             <div style="color:#666;">最近记录: ${Array.isArray(t.exec_history) ? t.exec_history.map(x => `${x.status}@${formatTimeMs(x.ts)}`).slice(-3).join(' ｜ ') : '-'}</div>
@@ -2458,7 +2503,9 @@
             const places = parseCsvNumbers(document.getElementById('refillPlaces')?.value || '');
             const times = parseCsvTimes(document.getElementById('refillTimes')?.value || '');
             const interval = parseFloat(document.getElementById('refillInterval')?.value || '10');
+            const deadlineMode = (document.getElementById('refillDeadlineMode')?.value || 'absolute').trim();
             const deadlineRaw = document.getElementById('refillDeadline')?.value || '';
+            const beforeHours = parseFloat(document.getElementById('refillDeadlineBeforeHours')?.value || '2');
 
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('日期格式需为 YYYY-MM-DD');
             if (!places.length) return alert('请填写候选场地');
@@ -2471,23 +2518,20 @@
                 target_times: times,
                 interval_seconds: Number.isNaN(interval) ? 10 : Math.max(1, interval),
                 enabled: true,
+                deadline_mode: deadlineMode,
                 deadline: normalizeDeadlineForApi(deadlineRaw),
+                deadline_before_hours: Number.isNaN(beforeHours) ? 2 : Math.max(0, beforeHours),
             };
 
             try {
-                const targetUrl = editingRefillId ? `/api/refill-tasks/${editingRefillId}` : '/api/refill-tasks';
-                const method = editingRefillId ? 'PUT' : 'POST';
-                const resp = await fetch(targetUrl, {
-                    method,
+                const resp = await fetch('/api/refill-tasks', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    showToast(editingRefillId ? 'Refill 任务已更新' : 'Refill 任务已创建');
-                    editingRefillId = null;
-                    const btn = document.querySelector("button[onclick='createRefillTask()']");
-                    if (btn) btn.innerText = '➕ 新建 Refill';
+                    showToast('Refill 任务已创建');
                     loadRefillTasks();
                 } else {
                     alert('创建失败: ' + (data.msg || '未知错误'));
@@ -2522,16 +2566,64 @@
             const arr = window.__refillTasksCache || [];
             const t = arr.find(x => String(x.id) === String(id));
             if (!t) return alert('Refill 任务不存在');
-            editingRefillId = String(id);
-            document.getElementById('refillDate').value = t.date || '';
-            document.getElementById('refillTargetCount').value = String(Number(t.target_count || 1));
-            document.getElementById('refillPlaces').value = (t.candidate_places || []).join(',');
-            document.getElementById('refillTimes').value = (t.target_times || []).join(',');
-            document.getElementById('refillInterval').value = String(Number(t.interval_seconds || 10));
-            document.getElementById('refillDeadline').value = deadlineToInput(t.deadline || '');
-            const btn = document.querySelector("button[onclick='createRefillTask()']");
-            if (btn) btn.innerText = '💾 保存 Refill 编辑';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            document.getElementById('refillEditId').value = String(t.id || '');
+            document.getElementById('refillEditDate').value = t.date || '';
+            document.getElementById('refillEditTargetCount').value = String(Number(t.target_count || 1));
+            document.getElementById('refillEditPlaces').value = (t.candidate_places || []).join(',');
+            document.getElementById('refillEditTimes').value = (t.target_times || []).join(',');
+            document.getElementById('refillEditInterval').value = String(Number(t.interval_seconds || 10));
+            document.getElementById('refillEditDeadlineMode').value = String(t.deadline_mode || 'absolute');
+            document.getElementById('refillEditDeadline').value = deadlineToInput(t.deadline || '');
+            document.getElementById('refillEditDeadlineBeforeHours').value = String(Number(t.deadline_before_hours || 2));
+            document.getElementById('refillEditModal').style.display = 'flex';
+        }
+
+        function closeRefillEditModal() {
+            const m = document.getElementById('refillEditModal');
+            if (m) m.style.display = 'none';
+        }
+
+        async function saveRefillEditModal() {
+            const id = (document.getElementById('refillEditId')?.value || '').trim();
+            const date = (document.getElementById('refillEditDate')?.value || '').trim();
+            const targetCount = parseInt(document.getElementById('refillEditTargetCount')?.value || '1', 10);
+            const places = parseCsvNumbers(document.getElementById('refillEditPlaces')?.value || '');
+            const times = parseCsvTimes(document.getElementById('refillEditTimes')?.value || '');
+            const interval = parseFloat(document.getElementById('refillEditInterval')?.value || '10');
+            const mode = (document.getElementById('refillEditDeadlineMode')?.value || 'absolute').trim();
+            const deadline = normalizeDeadlineForApi(document.getElementById('refillEditDeadline')?.value || '');
+            const beforeHours = parseFloat(document.getElementById('refillEditDeadlineBeforeHours')?.value || '2');
+            if (!id) return alert('Refill ID 缺失');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('日期格式需为 YYYY-MM-DD');
+            if (!places.length || !times.length) return alert('候选场地/时间段不能为空');
+            const payload = {
+                date,
+                target_count: Number.isNaN(targetCount) ? 1 : Math.max(1, Math.min(9, targetCount)),
+                candidate_places: places,
+                target_times: times,
+                interval_seconds: Number.isNaN(interval) ? 10 : Math.max(1, interval),
+                deadline_mode: mode,
+                deadline,
+                deadline_before_hours: Number.isNaN(beforeHours) ? 2 : Math.max(0, beforeHours),
+            };
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已更新');
+                    closeRefillEditModal();
+                    loadRefillTasks();
+                } else {
+                    alert('更新失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('更新失败: 网络错误');
+            }
         }
 
         async function copyRefillTask(id) {
