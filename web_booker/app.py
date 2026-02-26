@@ -147,6 +147,8 @@ CONFIG = {
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
+    "verbose_logs": False,  # 是否打印高频调试日志
+    "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -162,6 +164,10 @@ def log(msg):
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
     if len(LOG_BUFFER) > MAX_LOG_SIZE:
         LOG_BUFFER.pop(0)
+
+
+def is_verbose_logs_enabled():
+    return bool(CONFIG.get("verbose_logs", False))
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -198,6 +204,13 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_interval_min'] = saved['health_check_interval_min']
             if 'health_check_start_time' in saved:
                 CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
+            if 'verbose_logs' in saved:
+                CONFIG['verbose_logs'] = bool(saved['verbose_logs'])
+            if 'same_time_precheck_limit' in saved:
+                try:
+                    CONFIG['same_time_precheck_limit'] = int(saved['same_time_precheck_limit'])
+                except Exception:
+                    pass
             if 'auth' in saved:
                 # 覆盖默认的 auth 配置
                 CONFIG['auth'].update(saved['auth'])
@@ -416,7 +429,7 @@ class ApiClient:
             ]
         return result
 
-    def get_matrix(self, date_str):
+    def get_matrix(self, date_str, include_mine_overlay=True):
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
         params = {
             "shopNum": CONFIG["auth"]["shop_num"],
@@ -514,26 +527,31 @@ class ApiClient:
 
                 matrix[p_num] = status_map
             
-            print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
+            if is_verbose_logs_enabled():
+                print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
 
             # 用我的订单覆盖 mine 状态（仅 showStatus=0 且非取消订单）
             mine_overlay_ok = False
             mine_overlay_error = ""
             mine_slots_count = 0
 
-            orders_res = self.get_place_orders()
-            if "error" not in orders_res:
-                mine_overlay_ok = True
-                mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
-                mine_slots_count = len(mine_slots)
-                for p, t in mine_slots:
-                    if p in matrix and t in matrix[p]:
-                        matrix[p][t] = "mine"
-                if mine_slots:
-                    print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+            if include_mine_overlay:
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_overlay_ok = True
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                    mine_slots_count = len(mine_slots)
+                    for p, t in mine_slots:
+                        if p in matrix and t in matrix[p]:
+                            matrix[p][t] = "mine"
+                    if mine_slots and is_verbose_logs_enabled():
+                        print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+                else:
+                    mine_overlay_error = str(orders_res.get('error') or '')
+                    if is_verbose_logs_enabled():
+                        print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
             else:
-                mine_overlay_error = str(orders_res.get('error') or '')
-                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
+                mine_overlay_error = "首轮加速模式：跳过mine覆盖"
 
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
@@ -631,38 +649,43 @@ class ApiClient:
 
         submit_items = list(selected_items or [])
         preblocked_items = []
-        try:
-            verify = self.get_matrix(date_str)
-            if isinstance(verify, dict) and not verify.get("error"):
-                matrix = verify.get("matrix") or {}
-                mine_by_time = {}
-                for row in matrix.values():
-                    if not isinstance(row, dict):
-                        continue
-                    for t, state in row.items():
-                        if state == "mine":
-                            mine_by_time[t] = mine_by_time.get(t, 0) + 1
+        same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
+        if same_time_limit > 0:
+            try:
+                verify = self.get_matrix(date_str)
+                if isinstance(verify, dict) and not verify.get("error"):
+                    matrix = verify.get("matrix") or {}
+                    mine_by_time = {}
+                    for row in matrix.values():
+                        if not isinstance(row, dict):
+                            continue
+                        for t, state in row.items():
+                            if state == "mine":
+                                mine_by_time[t] = mine_by_time.get(t, 0) + 1
 
-                planned_by_time = {}
-                allowed_items = []
-                for it in submit_items:
-                    t = it.get("time")
-                    quota = max(0, 3 - mine_by_time.get(t, 0))
-                    used = planned_by_time.get(t, 0)
-                    if used < quota:
-                        allowed_items.append(it)
-                        planned_by_time[t] = used + 1
-                    else:
-                        preblocked_items.append(it)
+                    planned_by_time = {}
+                    allowed_items = []
+                    for it in submit_items:
+                        t = it.get("time")
+                        quota = max(0, same_time_limit - mine_by_time.get(t, 0))
+                        used = planned_by_time.get(t, 0)
+                        if used < quota:
+                            allowed_items.append(it)
+                            planned_by_time[t] = used + 1
+                        else:
+                            preblocked_items.append(it)
 
-                if preblocked_items:
-                    print(
-                        f"⚠️ [同时段上限预检] 检测到已有mine占位导致同一时段超限，"
-                        f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
-                    )
-                submit_items = allowed_items
-        except Exception as e:
-            print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+                    if preblocked_items:
+                        print(
+                            f"⚠️ [同时段上限预检] 触发上限{same_time_limit}，"
+                            f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
+                        )
+                    submit_items = allowed_items
+            except Exception as e:
+                print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+        else:
+            if is_verbose_logs_enabled():
+                print("⚡ [同时段上限预检] 已关闭（same_time_precheck_limit<=0）")
 
         # 首轮提交：按“本次选择数量”自适应分批
         for i in range(0, len(submit_items), initial_batch_size):
@@ -751,9 +774,10 @@ class ApiClient:
                     except ValueError:
                         resp_data = None
 
-                    print(
-                        f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
-                    )
+                    if is_verbose_logs_enabled():
+                        print(
+                            f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
+                        )
 
                     if resp_data and resp_data.get("msg") == "success":
                         final_result = {"status": "success", "batch": batch}
@@ -952,12 +976,31 @@ class ApiClient:
                 v_matrix = verify["matrix"]
                 verify_states = []
 
+                mine_slots = set()
+                orders_query_ok = False
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                    orders_query_ok = True
+                else:
+                    print(
+                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_res.get('error')}"
+                    )
+
                 for item in submit_items:
                     p = str(item["place"])
                     t = item["time"]
                     status = v_matrix.get(p, {}).get(t, "N/A")
-                    verify_states.append(f"{p}号{t}={status}")
-                    if status in ("booked", "mine"):
+                    mine_hit = (p, t) in mine_slots
+                    verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
+
+                    # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
+                    if orders_query_ok:
+                        success = mine_hit
+                    else:
+                        success = status in ("booked", "mine")
+
+                    if success:
                         verify_success_items.append({"place": p, "time": t})
                     else:
                         verify_failed_items.append({"place": p, "time": t})
@@ -969,7 +1012,8 @@ class ApiClient:
                         for it in preblocked_items
                     ])
 
-                print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
+                if is_verbose_logs_enabled():
+                    print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
                 verify_success_count = len(verify_success_items)
             else:
                 print(
@@ -1002,14 +1046,16 @@ class ApiClient:
             msg = "没有生成任何下单项目，请检查配置或场地状态。"
             return {"status": "fail", "msg": msg}
 
-        if verify_ok and success_count == denominator:
+        cross_instance_suspected = verify_ok and api_success_count == 0 and success_count > 0
+
+        if verify_ok and api_success_count > 0 and success_count == denominator:
             return {
                 "status": "success",
                 "msg": "全部下单成功",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
             }
-        elif verify_ok and success_count > 0:
+        elif verify_ok and api_success_count > 0 and success_count > 0:
             return {
                 "status": "partial",
                 "msg": f"部分成功 ({success_count}/{denominator})",
@@ -1017,8 +1063,11 @@ class ApiClient:
                 "failed_items": verify_failed_items,
             }
         else:
+            # 未收到任何提交成功响应，但校验命中 mine，疑似并发实例下单导致的“归因串扰”
+            if cross_instance_suspected:
+                msg = "检测到我的订单已占位，但本进程提交未收到 success，可能由并发实例下单导致；本任务按失败处理。"
             # 验证失败时，宁可报失败也不误报成功
-            if not verify_ok and api_success_count > 0:
+            elif not verify_ok and api_success_count > 0:
                 msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
             elif api_success_count > 0 and verify_success_count == 0:
                 msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
@@ -1334,7 +1383,7 @@ class TaskManager:
             mode = cfg.get('mode', 'normal')
             target_times = cfg.get('target_times', [])
 
-            if mode == 'normal':
+            if mode in ('normal', 'pipeline'):
                 for p in cfg.get('candidate_places', []):
                     for t in target_times:
                         pairs.add((str(p), t))
@@ -1357,7 +1406,169 @@ class TaskManager:
                             pairs.add((p, t))
             return pairs
 
-        candidate_pairs = enumerate_candidate_pairs(config)
+        def calc_pipeline_deadline(cfg, date_str):
+            pipeline_cfg = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
+            mode = str(pipeline_cfg.get('greedy_end_mode') or '').strip()
+
+            abs_raw = str(pipeline_cfg.get('greedy_end_time') or '').strip()
+            if abs_raw:
+                try:
+                    return datetime.strptime(abs_raw, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+
+            if mode == 'before_start':
+                hours_raw = pipeline_cfg.get('greedy_end_before_hours', 24)
+                try:
+                    hours = float(hours_raw)
+                except Exception:
+                    hours = 24.0
+                times = [str(t).strip() for t in (cfg.get('target_times') or []) if str(t).strip()]
+                if times:
+                    start_time = sorted(times)[0]
+                    fmt = "%Y-%m-%d %H:%M:%S" if len(start_time) == 8 else "%Y-%m-%d %H:%M"
+                    try:
+                        start_dt = datetime.strptime(f"{date_str} {start_time}", fmt)
+                        return start_dt - timedelta(hours=hours)
+                    except Exception:
+                        return None
+            return None
+
+        def build_pipeline_cfg(cfg):
+            pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
+            stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
+            if not stages:
+                stages = [
+                    {"type": "continuous", "enabled": True, "window_seconds": 8},
+                    {"type": "random", "enabled": True, "window_seconds": 12},
+                    {"type": "refill", "enabled": True, "interval_seconds": 15},
+                ]
+            return {
+                "stages": stages,
+                "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
+                "continuous_prefer_adjacent": bool(pipe.get('continuous_prefer_adjacent', True)),
+            }
+
+        def calc_pipeline_need(cfg, date_str):
+            target_times = [str(t) for t in (cfg.get('target_times') or [])]
+            candidate_places = [str(p) for p in (cfg.get('candidate_places') or [])]
+            target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+
+            task_scope = {(p, t) for p in candidate_places for t in target_times}
+            mine_slots = set()
+            orders_res = client.get_place_orders()
+            if "error" not in orders_res:
+                mine_slots = client._extract_mine_slots(orders_res.get("data", []), date_str)
+            else:
+                log(f"⚠️ [pipeline] 订单拉取失败，按0占位处理: {orders_res.get('error')}")
+
+            task_mine = mine_slots & task_scope
+            need_by_time = {}
+            for t in target_times:
+                mine_count = sum(1 for p in candidate_places if (p, t) in task_mine)
+                need_by_time[t] = max(0, target_count - mine_count)
+
+            return {
+                "task_scope": task_scope,
+                "task_mine": task_mine,
+                "need_by_time": need_by_time,
+                "target_times": target_times,
+                "candidate_places": candidate_places,
+                "target_count": target_count,
+            }
+
+        def choose_pipeline_items(matrix, need_res, stage_type, prefer_adjacent=True):
+            target_times = need_res['target_times']
+            candidate_places = need_res['candidate_places']
+            need_by_time = dict(need_res['need_by_time'])
+            items = []
+            picked_pairs = set()
+
+            def add_pick(p, t):
+                key = (str(p), str(t))
+                if key in picked_pairs:
+                    return False
+                if int(need_by_time.get(t, 0)) <= 0:
+                    return False
+                if matrix.get(str(p), {}).get(str(t)) != 'available':
+                    return False
+                picked_pairs.add(key)
+                items.append({"place": str(p), "time": str(t)})
+                need_by_time[str(t)] = max(0, int(need_by_time.get(str(t), 0)) - 1)
+                return True
+
+            # continuous 阶段先做“跨时段交集选场”，优先把同一块场在多个时段一起拿下。
+            if stage_type == 'continuous':
+                required_times = [t for t in target_times if int(need_by_time.get(t, 0)) > 0]
+                if required_times:
+                    avail_all = [
+                        str(p)
+                        for p in candidate_places
+                        if all(matrix.get(str(p), {}).get(str(t)) == 'available' for t in required_times)
+                    ]
+                    if avail_all:
+                        if prefer_adjacent:
+                            nums = sorted({int(p) for p in avail_all if str(p).isdigit()})
+                            best = []
+                            run = []
+                            for n in nums:
+                                if not run or n == run[-1] + 1:
+                                    run.append(n)
+                                else:
+                                    if len(run) > len(best):
+                                        best = run
+                                    run = [n]
+                            if len(run) > len(best):
+                                best = run
+
+                            if best:
+                                ordered = [str(n) for n in best] + [p for p in avail_all if p not in {str(n) for n in best}]
+                            else:
+                                ordered = list(avail_all)
+                        else:
+                            ordered = list(avail_all)
+
+                        court_need = max(int(need_by_time.get(t, 0)) for t in required_times)
+                        for p in ordered[:max(0, court_need)]:
+                            for t in required_times:
+                                add_pick(p, t)
+
+            # 第二步：按时段补齐剩余缺口（continuous/random 都会走这步）
+            for t in target_times:
+                need = int(need_by_time.get(t, 0))
+                if need <= 0:
+                    continue
+                avail = [str(p) for p in candidate_places if matrix.get(str(p), {}).get(str(t)) == 'available']
+                if not avail:
+                    continue
+
+                if stage_type == 'continuous':
+                    if prefer_adjacent:
+                        nums = sorted({int(p) for p in avail if str(p).isdigit()})
+                        best = []
+                        run = []
+                        for n in nums:
+                            if not run or n == run[-1] + 1:
+                                run.append(n)
+                            else:
+                                if len(run) > len(best):
+                                    best = run
+                                run = [n]
+                        if len(run) > len(best):
+                            best = run
+                        ordered = [str(n) for n in best] + [p for p in avail if p not in {str(n) for n in best}] if best else avail
+                    else:
+                        ordered = list(avail)
+                else:
+                    ordered = list(avail)
+                    random.shuffle(ordered)
+
+                for p in ordered:
+                    if int(need_by_time.get(t, 0)) <= 0:
+                        break
+                    add_pick(p, t)
+
+            return items
 
         # === 智能抢票核心逻辑 ===
         retry_interval = CONFIG.get('retry_interval', 0.5)
@@ -1372,6 +1583,10 @@ class TaskManager:
         locked_mode_started_at = None
         # 记录进入「已开放但无可用结果」状态的起始时间
         open_mode_started_at = None
+        # pipeline 状态
+        pipeline_started_at = None
+        pipeline_refill_last_at = 0.0
+        pipeline_force_random_after_continuous = False
 
         attempt = 0
         while True:
@@ -1387,7 +1602,10 @@ class TaskManager:
             log(f"🔄 第 {attempt} 轮无限尝试...喵")
 
             # 1. 获取最新场地状态
-            matrix_res = client.get_matrix(target_date)
+            include_mine_overlay = attempt > 1
+            if not include_mine_overlay:
+                log("⚡ [加速] 首轮跳过mine覆盖，优先抢占可用库存")
+            matrix_res = client.get_matrix(target_date, include_mine_overlay=include_mine_overlay)
 
             # 1.1 错误处理（服务器崩了 / token 失效等）
             if "error" in matrix_res:
@@ -1418,214 +1636,326 @@ class TaskManager:
 
             # 1.2 正常拿到矩阵
             matrix = matrix_res.get("matrix", {})
-            target_times = config.get('target_times', [])
+
+            mode_configs = config.get('modes') if isinstance(config.get('modes'), list) and config.get('modes') else [config]
 
             # 2. 判断当前目标是否还有「锁定未开放」的场次
             locked_exists = False
-            for p, t in candidate_pairs:
-                state = matrix.get(str(p), {}).get(t)
-                if state == "locked":
-                    locked_exists = True
+            for cfg in mode_configs:
+                for p, t in enumerate_candidate_pairs(cfg):
+                    state = matrix.get(str(p), {}).get(t)
+                    if state == "locked":
+                        locked_exists = True
+                        break
+                if locked_exists:
                     break
 
-            # 3. 根据不同模式生成最终下单列表 final_items
+            # 3. 单任务多模式：按顺序尝试，命中一个模式后仅使用该模式结果，不跨模式补齐
             final_items: list[dict] = []
+            selected_mode = None
+            selected_cfg = None
+            pipeline_active_stage = None
+            pipeline_cfg_for_retry = None
+            pipeline_refill_wait_seconds = 0.0
+            for cfg in mode_configs:
+                mode = cfg.get('mode', 'normal')
+                target_times = cfg.get('target_times', [])
+                mode_items: list[dict] = []
 
-            # --- 模式 A: 场地优先优先级序列 (priority) ---
-            if config.get('mode') == 'priority':
-                sequences = config.get('priority_sequences', [])  # 例如 [["6","7"],["8","9"]]
-                target_count = max(1, min(3, int(config.get('target_count', 2))))
-                allow_partial = config.get('allow_partial', True)
+                # --- 模式 P: pipeline(continuous/random/refill) ---
+                if mode == 'pipeline':
+                    pipeline_cfg_for_retry = cfg
+                    now_ts = time.time()
+                    if pipeline_started_at is None:
+                        pipeline_started_at = now_ts
 
-                # 3.1 第一轮：优先尝试完整序列
-                for time_slot in target_times:
-                    if len(final_items) >= target_count:
-                        break
+                    need_res = calc_pipeline_need(cfg, target_date)
+                    pipe_cfg = build_pipeline_cfg(cfg)
 
-                    for seq in sequences:
-                        if len(final_items) >= target_count:
-                            break
+                    if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
+                        notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
+                        return
 
-                        # 如果这一组长度 > 当前剩余需求，跳过
-                        if len(seq) > (target_count - len(final_items)):
+                    deadline = calc_pipeline_deadline(cfg, target_date)
+                    if deadline and client.get_aligned_now() >= deadline:
+                        notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        return
+
+                    stages = pipe_cfg['stages']
+
+                    elapsed = now_ts - pipeline_started_at
+                    active_stage = None
+                    consumed = 0.0
+                    refill_stage = None
+                    for st in stages:
+                        if not isinstance(st, dict) or not st.get('enabled', True):
                             continue
+                        stype = str(st.get('type') or '').strip()
+                        if stype == 'refill':
+                            refill_stage = st
+                            continue
+                        win = float(st.get('window_seconds', 0) or 0)
+                        if win <= 0:
+                            continue
+                        if elapsed < consumed + win:
+                            active_stage = st
+                            break
+                        consumed += win
 
-                        all_avail = True
-                        # 这组里的每个场地在该时间都必须 available
-                        for p in seq:
-                            if p not in matrix or matrix[p].get(time_slot) != "available":
-                                all_avail = False
-                                break
+                    if active_stage is None and refill_stage is not None:
+                        active_stage = refill_stage
 
-                        # 避免重复加入相同 (场地, 时间)
-                        if all_avail:
-                            for p in seq:
-                                for item in final_items:
-                                    if item['place'] == str(p) and item['time'] == time_slot:
-                                        all_avail = False
-                                        break
+                    stype = str((active_stage or {}).get('type') or '').strip()
+                    if stype == 'continuous' and pipeline_force_random_after_continuous:
+                        log("🧪 [pipeline] 检测到continuous阶段已出现缺口，提前切换到random补齐")
+                        stype = 'random'
+                    pipeline_active_stage = stype
+                    log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
+                    if stype == 'continuous':
+                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                    elif stype == 'random':
+                        mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                    elif stype == 'refill':
+                        interval = float((active_stage or {}).get('interval_seconds', 15) or 15)
+                        refill_interval = max(1.0, interval)
+                        refill_elapsed = now_ts - pipeline_refill_last_at
+                        if refill_elapsed >= refill_interval:
+                            mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                            pipeline_refill_last_at = now_ts
+                            pipeline_refill_wait_seconds = 0.0
+                        else:
+                            pipeline_refill_wait_seconds = max(0.0, refill_interval - refill_elapsed)
+                            log(f"🧪 [pipeline-refill] 未到下次补齐窗口，剩余 {round(pipeline_refill_wait_seconds, 2)}s")
+                            mode_items = []
+                    else:
+                        mode_items = []
 
-                        if all_avail:
-                            log(f"   -> 🎯 [优先级-整] 命中完整组合: {seq} @ {time_slot}")
-                            for p in seq:
-                                final_items.append({"place": str(p), "time": time_slot})
+                # --- 模式 A: 场地优先优先级序列 (priority) ---
+                elif mode == 'priority':
+                    sequences = cfg.get('priority_sequences', [])
+                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    allow_partial = cfg.get('allow_partial', True)
 
-                # 3.2 第二轮：散单补齐
-                if allow_partial and len(final_items) < target_count:
-                    log(f"   -> ⚠️ [优先级-散] 完整组合不足，开始散单填充 (目标{target_count}, 已有{len(final_items)})")
                     for time_slot in target_times:
-                        if len(final_items) >= target_count:
+                        if len(mode_items) >= target_count:
                             break
                         for seq in sequences:
-                            if len(final_items) >= target_count:
+                            if len(mode_items) >= target_count:
                                 break
+                            if len(seq) > (target_count - len(mode_items)):
+                                continue
+
+                            all_avail = True
                             for p in seq:
-                                if p in matrix and matrix[p].get(time_slot) == "available":
-                                    is_picked = False
-                                    for item in final_items:
-                                        if item['place'] == str(p) and item['time'] == time_slot:
-                                            is_picked = True
-                                            break
-                                    if not is_picked:
-                                        log(f"   -> 🧩 [优先级-散] 捡漏: {p}号 @ {time_slot}")
-                                        final_items.append({"place": str(p), "time": time_slot})
-                                        if len(final_items) >= target_count:
-                                            break
-
-            # --- 模式 B: 时间优先 (time_priority) ---
-            elif config.get('mode') == 'time_priority':
-                sequences = config.get('priority_time_sequences', []) or [[t] for t in target_times]
-                candidate_places = [str(p) for p in config.get('candidate_places', [])]
-                # 不选场地 == 默认全场参与
-                if not candidate_places:
-                    candidate_places = [str(i) for i in range(1, 16)]
-
-                target_count = max(1, min(3, int(config.get('target_count', 2))))
-                allow_partial = config.get('allow_partial', True)
-
-                # 3.1 优先尝试整段时间序列（比如 14-16 连续两小时）
-                for seq in sequences:
-                    if len(final_items) >= target_count:
-                        break
-
-                    for p in candidate_places:
-                        if len(final_items) >= target_count:
-                            break
-
-                        ok = True
-                        for t in seq:
-                            if p not in matrix or matrix[p].get(t) != "available":
-                                ok = False
-                                break
-                        if not ok:
-                            continue
-
-                        # 避免重复
-                        already = False
-                        for t in seq:
-                            for item in final_items:
-                                if item["place"] == p and item["time"] == t:
-                                    already = True
+                                if p not in matrix or matrix[p].get(time_slot) != "available":
+                                    all_avail = False
                                     break
-                            if already:
+
+                            if all_avail:
+                                for p in seq:
+                                    for item in mode_items:
+                                        if item['place'] == str(p) and item['time'] == time_slot:
+                                            all_avail = False
+                                            break
+
+                            if all_avail:
+                                log(f"   -> 🎯 [优先级-整] 命中完整组合: {seq} @ {time_slot}")
+                                for p in seq:
+                                    mode_items.append({"place": str(p), "time": time_slot})
+
+                    if allow_partial and len(mode_items) < target_count:
+                        log(f"   -> ⚠️ [优先级-散] 完整组合不足，开始散单填充 (目标{target_count}, 已有{len(mode_items)})")
+                        for time_slot in target_times:
+                            if len(mode_items) >= target_count:
                                 break
-                        if already:
-                            continue
+                            for seq in sequences:
+                                if len(mode_items) >= target_count:
+                                    break
+                                for p in seq:
+                                    if p in matrix and matrix[p].get(time_slot) == "available":
+                                        is_picked = False
+                                        for item in mode_items:
+                                            if item['place'] == str(p) and item['time'] == time_slot:
+                                                is_picked = True
+                                                break
+                                        if not is_picked:
+                                            log(f"   -> 🧩 [优先级-散] 捡漏: {p}号 @ {time_slot}")
+                                            mode_items.append({"place": str(p), "time": time_slot})
+                                            if len(mode_items) >= target_count:
+                                                break
 
-                        log(f"   -> 🎯 [时间优先-整] {p}号 命中时间段 {seq}")
-                        for t in seq:
-                            final_items.append({"place": p, "time": t})
-                        if len(final_items) >= target_count:
-                            break
+                # --- 模式 B: 时间优先 (time_priority) ---
+                elif mode == 'time_priority':
+                    sequences = cfg.get('priority_time_sequences', []) or [[t] for t in target_times]
+                    candidate_places = [str(p) for p in cfg.get('candidate_places', [])]
+                    if not candidate_places:
+                        candidate_places = [str(i) for i in range(1, 16)]
 
-                # 3.2 如果还不够，并且允许散单，则按时间逐个捡漏
-                if allow_partial and len(final_items) < target_count:
-                    for t in target_times:
-                        if len(final_items) >= target_count:
+                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    allow_partial = cfg.get('allow_partial', True)
+
+                    for seq in sequences:
+                        if len(mode_items) >= target_count:
                             break
                         for p in candidate_places:
-                            if len(final_items) >= target_count:
+                            if len(mode_items) >= target_count:
                                 break
-                            if p in matrix and matrix[p].get(t) == "available":
-                                already = False
-                                for item in final_items:
+
+                            ok = True
+                            for t in seq:
+                                if p not in matrix or matrix[p].get(t) != "available":
+                                    ok = False
+                                    break
+                            if not ok:
+                                continue
+
+                            already = False
+                            for t in seq:
+                                for item in mode_items:
                                     if item["place"] == p and item["time"] == t:
                                         already = True
                                         break
-                                if not already:
-                                    final_items.append({"place": p, "time": t})
-                                    log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
+                                if already:
+                                    break
+                            if already:
+                                continue
 
-            # --- 模式 C: 普通 / 智能连号 (normal) ---
-            else:
-                if 'candidate_places' not in config:
-                    log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
-                    notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
-                    return
-
-                candidate_places = [str(p) for p in config['candidate_places']]
-                target_courts = max(1, min(3, int(config.get('target_count', 2))))  # 目标是“几块场地”
-                smart_mode = config.get('smart_continuous', False)
-
-                if target_courts <= 0:
-                    log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
-                else:
-                    # 先找出“在所有目标时间段都可用”的候选场地
-                    available_courts: list[int] = []
-                    for p in candidate_places:
-                        p_str = str(p)
-                        ok = True
-                        for t in target_times:
-                            if p_str not in matrix or matrix[p_str].get(t) != "available":
-                                ok = False
+                            log(f"   -> 🎯 [时间优先-整] {p}号 命中时间段 {seq}")
+                            for t in seq:
+                                mode_items.append({"place": p, "time": t})
+                            if len(mode_items) >= target_count:
                                 break
-                        if ok:
-                            available_courts.append(int(p))
 
-                    if not available_courts:
-                        log("⚠️ 当前没有同时满足所有时间段的候选场地。")
+                    if allow_partial and len(mode_items) < target_count:
+                        for t in target_times:
+                            if len(mode_items) >= target_count:
+                                break
+                            for p in candidate_places:
+                                if len(mode_items) >= target_count:
+                                    break
+                                if p in matrix and matrix[p].get(t) == "available":
+                                    already = False
+                                    for item in mode_items:
+                                        if item["place"] == p and item["time"] == t:
+                                            already = True
+                                            break
+                                    if not already:
+                                        mode_items.append({"place": p, "time": t})
+                                        log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
+
+                # --- 模式 C: 普通 / 智能连号 (normal) ---
+                else:
+                    if 'candidate_places' not in cfg:
+                        log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
+                        notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
+                        return
+
+                    candidate_places = [str(p) for p in cfg['candidate_places']]
+                    target_courts = max(1, min(3, int(cfg.get('target_count', 2))))
+                    smart_mode = cfg.get('smart_continuous', False)
+
+                    if target_courts <= 0:
+                        log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
                     else:
-                        available_courts.sort()
-                        need = min(target_courts, len(available_courts))
-
-                        selected_courts: list[int] = []
-
-                        if smart_mode and len(available_courts) > 1:
-                            # 智能连号：优先选择一段连续场地
-                            best_run: list[int] | None = None
-                            best_len = 0
-                            i = 0
-                            while i < len(available_courts):
-                                j = i
-                                while j + 1 < len(available_courts) and \
-                                        available_courts[j + 1] == available_courts[j] + 1:
-                                    j += 1
-                                run = available_courts[i: j + 1]
-                                if len(run) > best_len:
-                                    best_len = len(run)
-                                    best_run = run
-                                i = j + 1
-
-                            if best_run:
-                                selected_courts = best_run[:need]
-
-                        # 普通模式或者智能模式没找到合适连号
-                        if not selected_courts:
-                            selected_courts = available_courts[:need]
-
-                        # 为每块选中的场地添加所有时间段
-                        for p_int in selected_courts:
-                            p_str = str(p_int)
+                        available_courts: list[int] = []
+                        for p in candidate_places:
+                            p_str = str(p)
+                            ok = True
                             for t in target_times:
-                                final_items.append({"place": p_str, "time": t})
+                                if p_str not in matrix or matrix[p_str].get(t) != "available":
+                                    ok = False
+                                    break
+                            if ok:
+                                available_courts.append(int(p))
+
+                        if not available_courts:
+                            log("⚠️ 当前没有同时满足所有时间段的候选场地。")
+                        else:
+                            available_courts.sort()
+                            need = min(target_courts, len(available_courts))
+                            selected_courts: list[int] = []
+
+                            if smart_mode and len(available_courts) > 1:
+                                best_run: list[int] | None = None
+                                best_len = 0
+                                i = 0
+                                while i < len(available_courts):
+                                    j = i
+                                    while j + 1 < len(available_courts) and                                             available_courts[j + 1] == available_courts[j] + 1:
+                                        j += 1
+                                    run = available_courts[i: j + 1]
+                                    if len(run) > best_len:
+                                        best_len = len(run)
+                                        best_run = run
+                                    i = j + 1
+
+                                if best_run:
+                                    selected_courts = best_run[:need]
+
+                            if not selected_courts:
+                                selected_courts = available_courts[:need]
+
+                            for p_int in selected_courts:
+                                p_str = str(p_int)
+                                for t in target_times:
+                                    mode_items.append({"place": p_str, "time": t})
+
+                if mode_items:
+                    final_items = mode_items
+                    selected_mode = mode
+                    selected_cfg = cfg
+                    break
+
+            if selected_mode and len(mode_configs) > 1:
+                log(f"🎛️ 单任务多模式命中: 当前使用 {selected_mode} 模式提交，不跨模式补齐")
 
             # 4. 提交订单
             if final_items:
+                submit_started_at = time.time()
                 log(f"正在提交分批订单: {final_items}")
                 res = client.submit_order(target_date, final_items)
+                submit_spent_s = max(0.0, time.time() - submit_started_at)
+                if selected_mode == 'pipeline' and pipeline_started_at is not None and submit_spent_s > 0:
+                    # 提交/校验耗时不应吞掉 pipeline 阶段窗口，否则会导致 random/refill 阶段被提前跳过
+                    pipeline_started_at += submit_spent_s
+                    log(f"⏱️ [pipeline] 扣除本轮提交流水耗时 {round(submit_spent_s, 2)}s，避免阶段窗口被网络耗时吃掉")
                 log(f"[submit_order调试] 批次响应: {res}")
 
                 status = res.get("status")
+
+                # pipeline 模式下，单次提交 success/partial 不代表任务目标已达成；
+                # 若仍有缺口，应继续进入下一轮（含 refill）补齐。
+                if selected_mode == 'pipeline' and isinstance(selected_cfg, dict):
+                    post_need = calc_pipeline_need(selected_cfg, target_date)
+                    remaining_slots = sum(int(v) for v in (post_need.get('need_by_time') or {}).values())
+                    if remaining_slots > 0:
+                        if pipeline_active_stage == 'continuous' and status in ('success', 'partial'):
+                            pipeline_force_random_after_continuous = True
+                            log("⚡ [pipeline] continuous阶段已提交但仍有缺口，下一轮将直接切到random")
+                        deadline = calc_pipeline_deadline(selected_cfg, target_date)
+                        if deadline and client.get_aligned_now() >= deadline:
+                            notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                            return
+                        need_detail = post_need.get('need_by_time') or {}
+                        log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，缺口明细: {need_detail}，继续补齐下一轮")
+
+                        if status in ('success', 'partial'):
+                            try:
+                                progress_items = res.get('success_items') or final_items
+                                progress_msg = f"本轮已预订 {len(progress_items)} 个时段，缺口 {remaining_slots}，继续补齐中"
+                                notify_task_result(
+                                    False,
+                                    progress_msg,
+                                    items=progress_items,
+                                    date_str=target_date,
+                                    partial=True,
+                                )
+                            except Exception as e:
+                                log(f"⚠️ [pipeline] 阶段通知构建失败: {e}")
+
+                        time.sleep(retry_interval)
+                        continue
+
                 if status == "success":
                     log(f"✅ 下单完成: 全部成功 ({status})")
                     try:
@@ -1697,6 +2027,23 @@ class TaskManager:
                 if open_mode_started_at is None:
                     open_mode_started_at = now_ts
                 elapsed = now_ts - open_mode_started_at
+
+                # pipeline 进入 refill 后，不受 open_retry_seconds 提前截断；
+                # 以 pipeline 截止时间为准继续补齐。
+                if pipeline_cfg_for_retry is not None and pipeline_active_stage == 'refill':
+                    deadline = calc_pipeline_deadline(pipeline_cfg_for_retry, target_date)
+                    if deadline and client.get_aligned_now() >= deadline:
+                        notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        return
+                    refill_sleep_s = retry_interval
+                    if not final_items:
+                        refill_sleep_s = max(float(retry_interval), float(pipeline_refill_wait_seconds or 0.0))
+                    log(
+                        f"🙈 [pipeline-refill] 当前无可用组合，继续轮询补齐..."
+                        f" (已等待 {int(elapsed)} 秒；以截止时间控制结束；下次约 {round(refill_sleep_s, 2)}s)"
+                    )
+                    time.sleep(refill_sleep_s)
+                    continue
 
                 if elapsed < max(0.0, float(open_retry_seconds)):
                     if final_items:
@@ -1977,6 +2324,8 @@ def update_config():
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
+    - verbose_logs: 是否输出高频调试日志
+    - same_time_precheck_limit: 同时段预检上限（<=0 关闭）
     """
     try:
         data = request.json or {}
@@ -2080,6 +2429,28 @@ def update_config():
                 enabled = bool(val)
             CONFIG['health_check_enabled'] = enabled
             saved['health_check_enabled'] = enabled
+
+        # 3.1) 高频调试日志开关
+        if 'verbose_logs' in data:
+            val = data['verbose_logs']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['verbose_logs'] = enabled
+            saved['verbose_logs'] = enabled
+
+        # 3.2) 同时段预检上限（<=0 表示关闭）
+        if 'same_time_precheck_limit' in data:
+            try:
+                val = int(data.get('same_time_precheck_limit'))
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('same_time_precheck_limit', 0))
+            val = max(0, min(9, val))
+            CONFIG['same_time_precheck_limit'] = val
+            saved['same_time_precheck_limit'] = val
 
         # 4) 写回 config.json
         try:
