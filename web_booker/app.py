@@ -169,6 +169,7 @@ CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
 CONFIG_FILE = CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
+MAX_TARGET_COUNT = 9
 
 def log(msg):
     """记录日志到内存缓冲区和控制台"""
@@ -1123,7 +1124,7 @@ class TaskManager:
         cfg = task.get('config') if isinstance(task, dict) else None
         if isinstance(cfg, dict) and 'target_count' in cfg:
             try:
-                cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+                cfg['target_count'] = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
             except Exception:
                 cfg['target_count'] = 2
 
@@ -1139,7 +1140,7 @@ class TaskManager:
                 cfg = task.get('config') if isinstance(task, dict) else None
                 if isinstance(cfg, dict) and 'target_count' in cfg:
                     try:
-                        cfg['target_count'] = max(1, min(3, int(cfg.get('target_count', 2))))
+                        cfg['target_count'] = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
                     except Exception:
                         cfg['target_count'] = 2
 
@@ -1465,7 +1466,7 @@ class TaskManager:
         def calc_pipeline_need(cfg, date_str):
             target_times = [str(t) for t in (cfg.get('target_times') or [])]
             candidate_places = [str(p) for p in (cfg.get('candidate_places') or [])]
-            target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+            target_count = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
 
             task_scope = {(p, t) for p in candidate_places for t in target_times}
             mine_slots = set()
@@ -1746,7 +1747,7 @@ class TaskManager:
                 # --- 模式 A: 场地优先优先级序列 (priority) ---
                 elif mode == 'priority':
                     sequences = cfg.get('priority_sequences', [])
-                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    target_count = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
                     allow_partial = cfg.get('allow_partial', True)
 
                     for time_slot in target_times:
@@ -1804,7 +1805,7 @@ class TaskManager:
                     if not candidate_places:
                         candidate_places = [str(i) for i in range(1, 16)]
 
-                    target_count = max(1, min(3, int(cfg.get('target_count', 2))))
+                    target_count = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
                     allow_partial = cfg.get('allow_partial', True)
 
                     for seq in sequences:
@@ -1864,7 +1865,7 @@ class TaskManager:
                         return
 
                     candidate_places = [str(p) for p in cfg['candidate_places']]
-                    target_courts = max(1, min(3, int(cfg.get('target_count', 2))))
+                    target_courts = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
                     smart_mode = cfg.get('smart_continuous', False)
 
                     if target_courts <= 0:
