@@ -924,7 +924,7 @@
                             <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)</label>
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)（实验，不建议；推荐独立Refill）</label>
                             <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
                         </div>
                     </div>
@@ -2862,6 +2862,7 @@
             try {
                 const res = await fetch(`/api/tasks/${id}/run`, { method: 'POST' });
                 const data = await res.json();
+                if (res.status === 409) { alert(data.msg || '任务正在执行中'); return; }
                 if (data.status === 'success') alert('任务已触发！请查看控制台日志');
                 else alert('触发失败: ' + data.msg);
             } catch (e) { alert('网络错误'); }
@@ -2970,7 +2971,8 @@
                         continuous_prefer_adjacent: !!(document.getElementById('pipelineContinuousPreferAdjacent') || {}).checked,
                         greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
                         greedy_end_time: greedyEndTime,
-                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24)
+                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24),
+                        no_progress_switch_rounds: 2
                     }
                 };
             } else {
@@ -3091,7 +3093,7 @@
             document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
             document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
             document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
-            document.getElementById('pipelineRefillEnabled').checked = f.enabled !== false;
+            document.getElementById('pipelineRefillEnabled').checked = false;
             document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));

@@ -1215,8 +1215,40 @@ class TaskManager:
         self._refill_lock = threading.Lock()
         self._refill_last_run = {}
         self._refill_notify_last_bucket = {}
+        self._task_run_lock = threading.Lock()
+        self._running_task_ids = set()
         self.load_tasks()
         self.load_refill_tasks()
+
+    def _try_mark_task_running(self, task_id):
+        tid = str(task_id)
+        with self._task_run_lock:
+            if tid in self._running_task_ids:
+                return False
+            self._running_task_ids.add(tid)
+            return True
+
+    def _unmark_task_running(self, task_id):
+        tid = str(task_id)
+        with self._task_run_lock:
+            self._running_task_ids.discard(tid)
+
+    def is_task_running(self, task_id):
+        tid = str(task_id)
+        with self._task_run_lock:
+            return tid in self._running_task_ids
+
+    def execute_task_with_lock(self, task):
+        task_id = task.get('id')
+        if task_id is not None and not self._try_mark_task_running(task_id):
+            log(f"⏭️ [任务锁] 任务{task_id}仍在执行，跳过本次触发")
+            return False
+        try:
+            self.execute_task(task)
+            return True
+        finally:
+            if task_id is not None:
+                self._unmark_task_running(task_id)
         
 
     def load_refill_tasks(self):
@@ -1790,12 +1822,13 @@ class TaskManager:
                 stages = [
                     {"type": "continuous", "enabled": True, "window_seconds": 8},
                     {"type": "random", "enabled": True, "window_seconds": 12},
-                    {"type": "refill", "enabled": True, "interval_seconds": 15},
+                    {"type": "refill", "enabled": False, "interval_seconds": 15},
                 ]
             return {
                 "stages": stages,
                 "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
                 "continuous_prefer_adjacent": bool(pipe.get('continuous_prefer_adjacent', True)),
+                "no_progress_switch_rounds": max(1, int(pipe.get('no_progress_switch_rounds', 2) or 2)),
             }
 
         def calc_pipeline_need(cfg, date_str):
@@ -1951,6 +1984,8 @@ class TaskManager:
         pipeline_started_at = None
         pipeline_refill_last_at = 0.0
         pipeline_force_random_after_continuous = False
+        pipeline_no_progress_rounds = 0
+        pipeline_need_before_submit = None
         pair_fail_cache = {}
         pair_fail_cache_ttl_s = 120.0
         pair_fail_cache_max = 300
@@ -2061,6 +2096,7 @@ class TaskManager:
 
                     need_res = calc_pipeline_need(cfg, target_date)
                     pipe_cfg = build_pipeline_cfg(cfg)
+                    current_need_total = sum(int(v) for v in (need_res.get('need_by_time') or {}).values())
 
                     if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
                         notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
@@ -2096,6 +2132,9 @@ class TaskManager:
                         active_stage = refill_stage
 
                     stype = str((active_stage or {}).get('type') or '').strip()
+                    if stype == 'continuous' and pipeline_no_progress_rounds >= int(pipe_cfg.get('no_progress_switch_rounds', 2)):
+                        log(f"🧪 [pipeline] 连续{pipeline_no_progress_rounds}轮缺口未改善，提前切换到random")
+                        stype = 'random'
                     if stype == 'continuous' and pipeline_force_random_after_continuous:
                         log("🧪 [pipeline] 检测到continuous阶段已出现缺口，提前切换到random补齐")
                         stype = 'random'
@@ -2119,6 +2158,9 @@ class TaskManager:
                             mode_items = []
                     else:
                         mode_items = []
+
+                    if stype in ('continuous', 'random', 'refill'):
+                        pipeline_need_before_submit = current_need_total
 
                 # --- 模式 A: 场地优先优先级序列 (priority) ---
                 elif mode == 'priority':
@@ -2327,6 +2369,11 @@ class TaskManager:
                             notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
                             return
                         need_detail = post_need.get('need_by_time') or {}
+                        before_need = int(pipeline_need_before_submit if pipeline_need_before_submit is not None else remaining_slots)
+                        if remaining_slots < before_need:
+                            pipeline_no_progress_rounds = 0
+                        else:
+                            pipeline_no_progress_rounds += 1
                         log(f"🔁 [pipeline] 本轮提交后仍缺 {remaining_slots} 个时段，缺口明细: {need_detail}，继续补齐下一轮")
 
                         if status in ('success', 'partial'):
@@ -2477,7 +2524,7 @@ class TaskManager:
         def make_job(t, is_once=False):
             def _job():
                 print(f"⏰ [调度器] 触发任务 ID: {t['id']}")
-                self.execute_task(t)
+                self.execute_task_with_lock(t)
                 if is_once:
                     print(f"✅ 单次任务 {t['id']} 执行完成，自动从任务列表中删除")
                     # 不再 refresh_schedule，避免在调度循环里频繁清空重建
@@ -2964,8 +3011,10 @@ def run_task_now(task_id):
     # Find task
     task = next((t for t in task_manager.tasks if str(t['id']) == str(task_id)), None)
     if task:
+        if task_manager.is_task_running(task_id):
+            return jsonify({"status": "error", "msg": "任务仍在执行中，本次触发已跳过"}), 409
         # Run in a separate thread to avoid blocking the response
-        threading.Thread(target=task_manager.execute_task, args=(task,)).start()
+        threading.Thread(target=task_manager.execute_task_with_lock, args=(task,)).start()
         return jsonify({"status": "success", "msg": "Task started"})
     return jsonify({"status": "error", "msg": "Task not found"}), 404
 
