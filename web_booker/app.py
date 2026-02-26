@@ -160,6 +160,7 @@ CONFIG = {
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
+    "verbose_logs": False,  # 是否打印高频调试日志
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -175,6 +176,10 @@ def log(msg):
     LOG_BUFFER.append(f"[{timestamp}] {msg}")
     if len(LOG_BUFFER) > MAX_LOG_SIZE:
         LOG_BUFFER.pop(0)
+
+
+def is_verbose_logs_enabled():
+    return bool(CONFIG.get("verbose_logs", False))
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -211,6 +216,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_interval_min'] = saved['health_check_interval_min']
             if 'health_check_start_time' in saved:
                 CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
+            if 'verbose_logs' in saved:
+                CONFIG['verbose_logs'] = bool(saved['verbose_logs'])
             if 'auth' in saved:
                 # 覆盖默认的 auth 配置
                 CONFIG['auth'].update(saved['auth'])
@@ -429,7 +436,7 @@ class ApiClient:
             ]
         return result
 
-    def get_matrix(self, date_str):
+    def get_matrix(self, date_str, include_mine_overlay=True):
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
         params = {
             "shopNum": CONFIG["auth"]["shop_num"],
@@ -527,26 +534,31 @@ class ApiClient:
 
                 matrix[p_num] = status_map
             
-            print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
+            if is_verbose_logs_enabled():
+                print(f"🔍 [状态调试] 前5个样本状态: {debug_states}")
 
             # 用我的订单覆盖 mine 状态（仅 showStatus=0 且非取消订单）
             mine_overlay_ok = False
             mine_overlay_error = ""
             mine_slots_count = 0
 
-            orders_res = self.get_place_orders()
-            if "error" not in orders_res:
-                mine_overlay_ok = True
-                mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
-                mine_slots_count = len(mine_slots)
-                for p, t in mine_slots:
-                    if p in matrix and t in matrix[p]:
-                        matrix[p][t] = "mine"
-                if mine_slots:
-                    print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+            if include_mine_overlay:
+                orders_res = self.get_place_orders()
+                if "error" not in orders_res:
+                    mine_overlay_ok = True
+                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                    mine_slots_count = len(mine_slots)
+                    for p, t in mine_slots:
+                        if p in matrix and t in matrix[p]:
+                            matrix[p][t] = "mine"
+                    if mine_slots and is_verbose_logs_enabled():
+                        print(f"🔵 [mine覆盖] 日期{date_str} 共标记 {len(mine_slots)} 个mine格子")
+                else:
+                    mine_overlay_error = str(orders_res.get('error') or '')
+                    if is_verbose_logs_enabled():
+                        print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
             else:
-                mine_overlay_error = str(orders_res.get('error') or '')
-                print(f"⚠️ [mine覆盖] 订单查询失败，跳过mine状态: {mine_overlay_error}")
+                mine_overlay_error = "首轮加速模式：跳过mine覆盖"
 
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
@@ -764,9 +776,10 @@ class ApiClient:
                     except ValueError:
                         resp_data = None
 
-                    print(
-                        f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
-                    )
+                    if is_verbose_logs_enabled():
+                        print(
+                            f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
+                        )
 
                     if resp_data and resp_data.get("msg") == "success":
                         final_result = {"status": "success", "batch": batch}
@@ -1001,7 +1014,8 @@ class ApiClient:
                         for it in preblocked_items
                     ])
 
-                print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
+                if is_verbose_logs_enabled():
+                    print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
                 verify_success_count = len(verify_success_items)
             else:
                 print(
@@ -1590,7 +1604,10 @@ class TaskManager:
             log(f"🔄 第 {attempt} 轮无限尝试...喵")
 
             # 1. 获取最新场地状态
-            matrix_res = client.get_matrix(target_date)
+            include_mine_overlay = attempt > 1
+            if not include_mine_overlay:
+                log("⚡ [加速] 首轮跳过mine覆盖，优先抢占可用库存")
+            matrix_res = client.get_matrix(target_date, include_mine_overlay=include_mine_overlay)
 
             # 1.1 错误处理（服务器崩了 / token 失效等）
             if "error" in matrix_res:
@@ -2303,6 +2320,7 @@ def update_config():
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
+    - verbose_logs: 是否输出高频调试日志
     """
     try:
         data = request.json or {}
@@ -2406,6 +2424,18 @@ def update_config():
                 enabled = bool(val)
             CONFIG['health_check_enabled'] = enabled
             saved['health_check_enabled'] = enabled
+
+        # 3.1) 高频调试日志开关
+        if 'verbose_logs' in data:
+            val = data['verbose_logs']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['verbose_logs'] = enabled
+            saved['verbose_logs'] = enabled
 
         # 4) 写回 config.json
         try:
