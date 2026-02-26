@@ -51,6 +51,7 @@ python web_booker/app.py
 
 - 新增状态采样接口 `GET /api/state-sampler`：按秒聚合场地 `state` 计数并给出 `recommended_locked_states` 建议（仅统计数量，不记录个人敏感数据）。
 - 新增独立补订任务接口：`/api/refill-tasks`（GET/POST/DELETE）与 `/api/refill-tasks/<id>/run`（POST）。补订任务会落盘到 `web_booker/refill_tasks.json`，服务重启后仍可继续。
+- 任务中心已增加「🧩 独立 Refill 补订」前端入口，可直接创建/运行/删除补订任务（兼容手机端布局）。
 - 新增 `biz_fail_cooldown_seconds`：pipeline 中业务失败组合冷却秒数，短时间内优先避开业务失败组合、优先重放网络失败组合。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
 
