@@ -155,6 +155,7 @@ CONFIG = {
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
+    "locked_state_values": [2, 3, 5, 6],  # 接口 state 落在这些值时视为“锁定/暂不可下单”
     "open_retry_seconds": 20,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
@@ -210,6 +211,15 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['locked_retry_interval'] = saved['locked_retry_interval']
             if 'locked_max_seconds' in saved:
                 CONFIG['locked_max_seconds'] = saved['locked_max_seconds']
+            if 'locked_state_values' in saved and isinstance(saved['locked_state_values'], list):
+                parsed_locked_states = []
+                for v in saved['locked_state_values']:
+                    try:
+                        parsed_locked_states.append(int(v))
+                    except Exception:
+                        continue
+                if parsed_locked_states:
+                    CONFIG['locked_state_values'] = parsed_locked_states
             if 'open_retry_seconds' in saved:
                 CONFIG['open_retry_seconds'] = saved['open_retry_seconds']
             if 'health_check_enabled' in saved:
@@ -497,6 +507,15 @@ class ApiClient:
             # 添加调试日志，打印前几个数据的状态值，以便分析“全红”原因
             debug_states = []
 
+            locked_state_values = set()
+            for raw_state in CONFIG.get('locked_state_values', [2, 3, 5, 6]):
+                try:
+                    locked_state_values.add(int(raw_state))
+                except Exception:
+                    continue
+            if not locked_state_values:
+                locked_state_values = {6}
+
             for place in raw_list:
                 p_name = place['projectName']['shortname'] 
                 p_num = p_name.replace('ymq', '').replace('mdb', '')
@@ -528,12 +547,16 @@ class ApiClient:
                     # 或者更精确点：1(可用) 和 6(未开放) 都算 available。
                     # 暂时把 6 也加进去。
 
-                    state_int = int(s)
+                    try:
+                        state_int = int(s)
+                    except Exception:
+                        state_int = -999
+
                     if state_int == 1:
                         # 真正可以下单
                         status_map[t] = "available"
-                    elif state_int == 6:
-                        # 锁定未开放（当前日期 + 6 天那一列）
+                    elif state_int in locked_state_values:
+                        # 锁定/暂不可下单：继续走 locked 轮询，不提前放弃
                         status_map[t] = "locked"
                     else:
                         # 已被别人订了 / 不可用
