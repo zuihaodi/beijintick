@@ -21,6 +21,19 @@ import os
 import hashlib
 import re
 import random
+import builtins
+
+
+def timestamped_print(*args, **kwargs):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if args:
+        args = (f"[{ts}] {args[0]}",) + args[1:]
+    else:
+        args = (f"[{ts}]",)
+    return builtins.print(*args, **kwargs)
+
+
+print = timestamped_print
 
 HEALTH_CHECK_NEXT_RUN = None
 
