@@ -981,7 +981,7 @@
 
         <div class="refill-panel">
             <div style="font-weight:600;color:#0b5cad;margin-bottom:8px;">🧩 独立 Refill 补订（重启后保留）</div>
-            <div style="font-size:12px;color:#666;margin-bottom:8px;">适用于主任务结束后持续补齐目标组合；建议用于 12 点抢票后的兜底补订。</div>
+            <div style="font-size:12px;color:#666;margin-bottom:8px;">适用于主任务结束后持续补齐目标组合；“立即执行1轮”仅触发一次，不会改变自动轮询开关。</div>
             <div class="refill-grid">
                 <div class="form-group" style="margin-bottom:0;">
                     <label>日期 (YYYY-MM-DD)</label>
@@ -2376,6 +2376,16 @@
             return `${st}: ${result.msg || ''}`;
         }
 
+        function formatTimeMs(ts) {
+            const n = Number(ts || 0);
+            if (!n) return '未执行';
+            try {
+                return new Date(n).toLocaleString('zh-CN', { hour12: false });
+            } catch (e) {
+                return '未执行';
+            }
+        }
+
         async function loadRefillTasks() {
             const list = document.getElementById('refillTaskList');
             if (!list) return;
@@ -2395,13 +2405,14 @@
                     const enabled = t.enabled !== false;
                     const html = `<div class="refill-item">
                         <div class="refill-item-main">
-                            <div><b>${t.date || '-'}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
+                            <div><b>#${t.id || '-'}</b> ｜ <b>${t.date || '-'}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
                             <div>场地: ${places || '-'}</div>
                             <div>时段: ${times || '-'}</div>
+                            <div style="color:#666;">最近执行: ${formatTimeMs(t.last_run_at)}</div>
                             <div style="color:#666;">最近结果: ${refillResultText(t.last_result)}</div>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                            <button class="btn-mini" style="background:#34c759;" onclick="runRefillTask('${t.id}')">运行一次</button>
+                            <button class="btn-mini" style="background:#34c759;" onclick="runRefillTask('${t.id}')">立即执行1轮</button>
                             <button class="btn-mini" style="background:#ff3b30;" onclick="deleteRefillTask('${t.id}')">删除</button>
                         </div>
                     </div>`;
@@ -2457,8 +2468,10 @@
                 const resp = await fetch(`/api/refill-tasks/${id}/run`, { method: 'POST' });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    showToast('Refill 已触发');
+                    showToast('Refill 已触发1轮');
                     setTimeout(loadRefillTasks, 800);
+                    setTimeout(loadRefillTasks, 2500);
+                    setTimeout(loadRefillTasks, 6000);
                 } else {
                     alert('触发失败: ' + (data.msg || '未知错误'));
                 }

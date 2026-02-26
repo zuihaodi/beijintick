@@ -1232,13 +1232,19 @@ class TaskManager:
         self._refill_last_run.pop(tid, None)
         self.save_refill_tasks()
 
-    def _run_refill_task_once(self, refill_task):
+    def _run_refill_task_once(self, refill_task, source='auto'):
+        task_id = str(refill_task.get('id') or 'unknown')
         date_str = str(refill_task.get('date') or '').strip()
         target_times = [str(t).strip() for t in (refill_task.get('target_times') or []) if str(t).strip()]
         candidate_places = [str(p).strip() for p in (refill_task.get('candidate_places') or []) if str(p).strip()]
         target_count = max(1, min(MAX_TARGET_COUNT, int(refill_task.get('target_count', 1) or 1)))
+        tag = f"[refill#{task_id}|{source}]"
+
+        log(f"🧩 {tag} 开始执行: date={date_str}, target_count={target_count}, times={target_times}, places={len(candidate_places)}")
         if not date_str or not target_times or not candidate_places:
-            return {'status': 'fail', 'msg': 'refill任务缺少 date/target_times/candidate_places'}
+            msg = 'refill任务缺少 date/target_times/candidate_places'
+            log(f"❌ {tag} {msg}")
+            return {'status': 'fail', 'msg': msg}
 
         need_res = {'need_by_time': {}}
         orders_res = client.get_place_orders()
@@ -1251,11 +1257,15 @@ class TaskManager:
             need_res['need_by_time'][t] = max(0, target_count - mine_cnt)
 
         if sum(need_res['need_by_time'].values()) <= 0:
-            return {'status': 'success', 'msg': 'refill目标已满足', 'success_items': []}
+            msg = 'refill目标已满足'
+            log(f"✅ {tag} {msg}")
+            return {'status': 'success', 'msg': msg, 'success_items': []}
 
         matrix_res = client.get_matrix(date_str)
         if 'error' in matrix_res:
-            return {'status': 'error', 'msg': f"获取矩阵失败: {matrix_res.get('error')}"}
+            msg = f"获取矩阵失败: {matrix_res.get('error')}"
+            log(f"❌ {tag} {msg}")
+            return {'status': 'error', 'msg': msg}
         matrix = matrix_res.get('matrix') or {}
 
         picks = []
@@ -1271,9 +1281,14 @@ class TaskManager:
                     remain -= 1
 
         if not picks:
-            return {'status': 'fail', 'msg': '当前无可补订组合'}
+            msg = f"当前无可补订组合，缺口: {need_res['need_by_time']}"
+            log(f"🙈 {tag} {msg}")
+            return {'status': 'fail', 'msg': msg}
 
-        return client.submit_order(date_str, picks)
+        log(f"📦 {tag} 本轮提交: {picks}")
+        submit_res = client.submit_order(date_str, picks)
+        log(f"🧾 {tag} 本轮结果: {submit_res.get('status')} - {submit_res.get('msg')}")
+        return submit_res
 
     def run_refill_scheduler_tick(self):
         now = time.time()
@@ -1286,8 +1301,10 @@ class TaskManager:
             if now - last < interval:
                 continue
             self._refill_last_run[tid] = now
+            t['last_result'] = {'status': 'running', 'msg': '自动轮询执行中'}
+            self.save_refill_tasks()
             try:
-                res = self._run_refill_task_once(t)
+                res = self._run_refill_task_once(t, source='auto')
             except Exception as e:
                 res = {'status': 'error', 'msg': str(e)}
             t['last_run_at'] = int(time.time() * 1000)
@@ -2843,17 +2860,23 @@ def run_refill_task_now(task_id):
     task = next((t for t in task_manager.refill_tasks if str(t.get('id')) == str(task_id)), None)
     if not task:
         return jsonify({'status': 'error', 'msg': 'Refill task not found'}), 404
+
+    task['last_result'] = {'status': 'running', 'msg': '手动执行中(1轮)'}
+    task_manager.save_refill_tasks()
+
     def _run():
         try:
-            res = task_manager._run_refill_task_once(task)
+            res = task_manager._run_refill_task_once(task, source='manual')
             task['last_run_at'] = int(time.time() * 1000)
             task['last_result'] = res
             task_manager.save_refill_tasks()
         except Exception as e:
+            task['last_run_at'] = int(time.time() * 1000)
             task['last_result'] = {'status': 'error', 'msg': str(e)}
             task_manager.save_refill_tasks()
+
     threading.Thread(target=_run, daemon=True).start()
-    return jsonify({'status': 'success', 'msg': 'Refill task started'})
+    return jsonify({'status': 'success', 'msg': 'Refill task one-shot started'})
 
 @app.route('/api/config/check-token', methods=['POST'])
 def check_token_api():
