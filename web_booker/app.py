@@ -1913,8 +1913,14 @@ class TaskManager:
 
             # 4. 提交订单
             if final_items:
+                submit_started_at = time.time()
                 log(f"正在提交分批订单: {final_items}")
                 res = client.submit_order(target_date, final_items)
+                submit_spent_s = max(0.0, time.time() - submit_started_at)
+                if selected_mode == 'pipeline' and pipeline_started_at is not None and submit_spent_s > 0:
+                    # 提交/校验耗时不应吞掉 pipeline 阶段窗口，否则会导致 random/refill 阶段被提前跳过
+                    pipeline_started_at += submit_spent_s
+                    log(f"⏱️ [pipeline] 扣除本轮提交流水耗时 {round(submit_spent_s, 2)}s，避免阶段窗口被网络耗时吃掉")
                 log(f"[submit_order调试] 批次响应: {res}")
 
                 status = res.get("status")
