@@ -161,6 +161,7 @@ CONFIG = {
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
     "verbose_logs": False,  # 是否打印高频调试日志
+    "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -218,6 +219,11 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
             if 'verbose_logs' in saved:
                 CONFIG['verbose_logs'] = bool(saved['verbose_logs'])
+            if 'same_time_precheck_limit' in saved:
+                try:
+                    CONFIG['same_time_precheck_limit'] = int(saved['same_time_precheck_limit'])
+                except Exception:
+                    pass
             if 'auth' in saved:
                 # 覆盖默认的 auth 配置
                 CONFIG['auth'].update(saved['auth'])
@@ -656,38 +662,43 @@ class ApiClient:
 
         submit_items = list(selected_items or [])
         preblocked_items = []
-        try:
-            verify = self.get_matrix(date_str)
-            if isinstance(verify, dict) and not verify.get("error"):
-                matrix = verify.get("matrix") or {}
-                mine_by_time = {}
-                for row in matrix.values():
-                    if not isinstance(row, dict):
-                        continue
-                    for t, state in row.items():
-                        if state == "mine":
-                            mine_by_time[t] = mine_by_time.get(t, 0) + 1
+        same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
+        if same_time_limit > 0:
+            try:
+                verify = self.get_matrix(date_str)
+                if isinstance(verify, dict) and not verify.get("error"):
+                    matrix = verify.get("matrix") or {}
+                    mine_by_time = {}
+                    for row in matrix.values():
+                        if not isinstance(row, dict):
+                            continue
+                        for t, state in row.items():
+                            if state == "mine":
+                                mine_by_time[t] = mine_by_time.get(t, 0) + 1
 
-                planned_by_time = {}
-                allowed_items = []
-                for it in submit_items:
-                    t = it.get("time")
-                    quota = max(0, 3 - mine_by_time.get(t, 0))
-                    used = planned_by_time.get(t, 0)
-                    if used < quota:
-                        allowed_items.append(it)
-                        planned_by_time[t] = used + 1
-                    else:
-                        preblocked_items.append(it)
+                    planned_by_time = {}
+                    allowed_items = []
+                    for it in submit_items:
+                        t = it.get("time")
+                        quota = max(0, same_time_limit - mine_by_time.get(t, 0))
+                        used = planned_by_time.get(t, 0)
+                        if used < quota:
+                            allowed_items.append(it)
+                            planned_by_time[t] = used + 1
+                        else:
+                            preblocked_items.append(it)
 
-                if preblocked_items:
-                    print(
-                        f"⚠️ [同时段上限预检] 检测到已有mine占位导致同一时段超限，"
-                        f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
-                    )
-                submit_items = allowed_items
-        except Exception as e:
-            print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+                    if preblocked_items:
+                        print(
+                            f"⚠️ [同时段上限预检] 触发上限{same_time_limit}，"
+                            f"本轮跳过 {len(preblocked_items)} 项: {preblocked_items}"
+                        )
+                    submit_items = allowed_items
+            except Exception as e:
+                print(f"⚠️ [同时段上限预检] 预检异常，按原始选择提交: {e}")
+        else:
+            if is_verbose_logs_enabled():
+                print("⚡ [同时段上限预检] 已关闭（same_time_precheck_limit<=0）")
 
         # 首轮提交：按“本次选择数量”自适应分批
         for i in range(0, len(submit_items), initial_batch_size):
@@ -2327,6 +2338,7 @@ def update_config():
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
     - verbose_logs: 是否输出高频调试日志
+    - same_time_precheck_limit: 同时段预检上限（<=0 关闭）
     """
     try:
         data = request.json or {}
@@ -2442,6 +2454,16 @@ def update_config():
                 enabled = bool(val)
             CONFIG['verbose_logs'] = enabled
             saved['verbose_logs'] = enabled
+
+        # 3.2) 同时段预检上限（<=0 表示关闭）
+        if 'same_time_precheck_limit' in data:
+            try:
+                val = int(data.get('same_time_precheck_limit'))
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('same_time_precheck_limit', 0))
+            val = max(0, min(9, val))
+            CONFIG['same_time_precheck_limit'] = val
+            saved['same_time_precheck_limit'] = val
 
         # 4) 写回 config.json
         try:
