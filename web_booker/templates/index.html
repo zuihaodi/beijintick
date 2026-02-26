@@ -538,6 +538,53 @@
             margin-top: 4px;
         }
 
+        .refill-panel {
+            margin-top: 14px;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .refill-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .refill-list {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .refill-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px;
+            background: #fafafa;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .refill-item-main {
+            font-size: 12px;
+            color: #333;
+            line-height: 1.45;
+        }
+
+        .btn-mini {
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 4px 8px;
+            cursor: pointer;
+            color: #fff;
+        }
+
         .btn-del {
             color: #ff3b30;
             background: none;
@@ -670,6 +717,14 @@
             .task-actions {
                 width: 100%;
                 justify-content: flex-start;
+            }
+
+            .refill-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .refill-item {
+                flex-direction: column;
             }
         }
 
@@ -869,7 +924,7 @@
                             <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled" checked> refill 间隔(秒)</label>
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)</label>
                             <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
                         </div>
                     </div>
@@ -921,6 +976,43 @@
 
         <div style="font-size:12px;color:#666;margin-top:8px;">
             “⚡ 立即运行”按钮用于<strong>立刻执行一次该任务</strong>，不必等待计划时间到点。
+        </div>
+
+
+        <div class="refill-panel">
+            <div style="font-weight:600;color:#0b5cad;margin-bottom:8px;">🧩 独立 Refill 补订（重启后保留）</div>
+            <div style="font-size:12px;color:#666;margin-bottom:8px;">适用于主任务结束后持续补齐目标组合；“立即执行1轮”仅触发一次，不会改变自动轮询开关。</div>
+            <div class="refill-grid">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>日期 (YYYY-MM-DD)</label>
+                    <input id="refillDate" class="form-control" placeholder="例如 2026-03-05">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>目标数量/时段</label>
+                    <input id="refillTargetCount" class="form-control" type="number" min="1" max="9" value="1">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>候选场地 (逗号分隔)</label>
+                    <input id="refillPlaces" class="form-control" placeholder="例如 2,3,6,12">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>时间段 (逗号分隔)</label>
+                    <input id="refillTimes" class="form-control" placeholder="例如 20:00,21:00">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>轮询间隔(秒)</label>
+                    <input id="refillInterval" class="form-control" type="number" min="1" step="1" value="10">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>截止时间(可选)</label>
+                    <input id="refillDeadline" class="form-control" type="datetime-local">
+                </div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" style="padding:8px 12px;" onclick="createRefillTask()">➕ 新建 Refill</button>
+                <button class="btn" style="padding:8px 12px;background:#5856d6;color:#fff;" onclick="loadRefillTasks()">🔄 刷新</button>
+            </div>
+            <div id="refillTaskList" class="refill-list"></div>
         </div>
         </div>
         {% endif %}
@@ -1088,6 +1180,10 @@
         <div class="form-group" style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <label style="font-weight:bold;">📟 运行日志（与后台 /api/logs 同源）</label>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                    <input id="refillLogFilterId" class="form-control" style="max-width:180px;" placeholder="按Refill任务ID过滤">
+                    <button class="btn" style="padding:6px 10px;background:#5856d6;color:#fff;" onclick="lastLogIndex=0;document.getElementById('logContent').innerHTML='';pollLogs();">应用过滤</button>
+                </div>
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
             </div>
             <div id="logConsole" style="
@@ -1155,6 +1251,7 @@
         let lastLogIndex = 0; // 记录日志位置
         let editingTaskId = null;
         const PAGE_MODE = '{{ page_mode }}';
+        let editingRefillId = null;
 
         function showToast(msg, isError = false) {
             const toast = document.getElementById('saveToast');
@@ -1192,7 +1289,8 @@
 
         async function pollLogs() {
             try {
-                const res = await fetch('/api/logs');
+                const rid = (document.getElementById('refillLogFilterId') || {}).value || '';
+                const res = await fetch(`/api/logs${rid ? `?refill_id=${encodeURIComponent(rid.trim())}` : ''}`);
                 const logs = await res.json();
                 if (logs.length > lastLogIndex) {
                     const newLogs = logs.slice(lastLogIndex);
@@ -1249,6 +1347,7 @@
         if (document.getElementById('placeSelector')) initPlaceSelector();
         if (document.getElementById('timeSelector')) initTimeSelector();
         if (document.getElementById('taskList')) loadTasks();
+        if (document.getElementById('refillTaskList')) loadRefillTasks();
         loadConfig();
         if (document.getElementById('taskSummary')) updateTaskSummary();
         if (document.getElementById('taskType')) onTaskTypeChange();
@@ -2261,6 +2360,245 @@
 
         function closeTaskManager() {
             document.getElementById('taskModal').style.display = 'none';
+        }
+
+
+
+        function parseCsvNumbers(raw) {
+            return String(raw || '')
+                .split(/[，,]/)
+                .map(s => s.trim())
+                .filter(Boolean)
+                .map(v => String(parseInt(v, 10)))
+                .filter(v => v !== 'NaN');
+        }
+
+        function parseCsvTimes(raw) {
+            return String(raw || '')
+                .split(/[，,]/)
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
+        function normalizeDeadlineForApi(raw) {
+            const v = String(raw || '').trim();
+            if (!v) return '';
+            const base = v.replace('T', ' ');
+            return base.length === 16 ? `${base}:00` : base;
+        }
+
+        function deadlineToInput(deadlineRaw) {
+            const s = String(deadlineRaw || '').trim();
+            if (!s) return '';
+            return s.replace(' ', 'T').slice(0, 16);
+        }
+
+        function refillResultText(result) {
+            if (!result) return '尚未执行';
+            const st = result.status || 'unknown';
+            return `${st}: ${result.msg || ''}`;
+        }
+
+        function formatTimeMs(ts) {
+            const n = Number(ts || 0);
+            if (!n) return '未执行';
+            try {
+                return new Date(n).toLocaleString('zh-CN', { hour12: false });
+            } catch (e) {
+                return '未执行';
+            }
+        }
+
+        async function loadRefillTasks() {
+            const list = document.getElementById('refillTaskList');
+            if (!list) return;
+            list.innerHTML = '<div style="color:#999;font-size:12px;">加载中...</div>';
+            try {
+                const res = await fetch('/api/refill-tasks');
+                const tasks = await res.json();
+                window.__refillTasksCache = Array.isArray(tasks) ? tasks : [];
+                if (!Array.isArray(tasks) || tasks.length === 0) {
+                    list.innerHTML = '<div style="color:#999;font-size:12px;">暂无 Refill 任务</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                tasks.slice().sort((a, b) => Number(b.id || 0) - Number(a.id || 0)).forEach(t => {
+                    const places = (t.candidate_places || []).join(',');
+                    const times = (t.target_times || []).join(',');
+                    const enabled = t.enabled !== false;
+                    const html = `<div class="refill-item">
+                        <div class="refill-item-main">
+                            <div><b>#${t.id || '-'}</b> ｜ <b>${t.date || '-'}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
+                            <div>场地: ${places || '-'}</div>
+                            <div>时段: ${times || '-'}</div>
+                            <div>截止: ${t.deadline || '不限'}</div>
+                            <div style="color:#666;">最近执行: ${formatTimeMs(t.last_run_at)}</div>
+                            <div style="color:#666;">最近结果: ${refillResultText(t.last_result)}</div>
+                            <div style="color:#666;">最近记录: ${Array.isArray(t.exec_history) ? t.exec_history.map(x => `${x.status}@${formatTimeMs(x.ts)}`).slice(-3).join(' ｜ ') : '-'}</div>
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="btn-mini" style="background:#34c759;" onclick="runRefillTask('${t.id}')">立即执行1轮</button>
+                            <button class="btn-mini" style="background:#5856d6;" onclick="copyRefillTask('${t.id}')">复制</button>
+                            <button class="btn-mini" style="background:#0ea5e9;" onclick="startEditRefillTask('${t.id}')">编辑</button>
+                            <button class="btn-mini" style="background:${enabled ? '#f59e0b' : '#10b981'};" onclick="toggleRefillTask('${t.id}', ${enabled ? 'false' : 'true'})">${enabled ? '停用' : '启用'}</button>
+                            <button class="btn-mini" style="background:#ff3b30;" onclick="deleteRefillTask('${t.id}')">删除</button>
+                        </div>
+                    </div>`;
+                    list.insertAdjacentHTML('beforeend', html);
+                });
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '<div style="color:#ff3b30;font-size:12px;">加载失败</div>';
+            }
+        }
+
+        async function createRefillTask() {
+            const date = (document.getElementById('refillDate')?.value || '').trim();
+            const targetCount = parseInt(document.getElementById('refillTargetCount')?.value || '1', 10);
+            const places = parseCsvNumbers(document.getElementById('refillPlaces')?.value || '');
+            const times = parseCsvTimes(document.getElementById('refillTimes')?.value || '');
+            const interval = parseFloat(document.getElementById('refillInterval')?.value || '10');
+            const deadlineRaw = document.getElementById('refillDeadline')?.value || '';
+
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('日期格式需为 YYYY-MM-DD');
+            if (!places.length) return alert('请填写候选场地');
+            if (!times.length) return alert('请填写时间段');
+
+            const payload = {
+                date,
+                target_count: Number.isNaN(targetCount) ? 1 : Math.max(1, Math.min(9, targetCount)),
+                candidate_places: places,
+                target_times: times,
+                interval_seconds: Number.isNaN(interval) ? 10 : Math.max(1, interval),
+                enabled: true,
+                deadline: normalizeDeadlineForApi(deadlineRaw),
+            };
+
+            try {
+                const targetUrl = editingRefillId ? `/api/refill-tasks/${editingRefillId}` : '/api/refill-tasks';
+                const method = editingRefillId ? 'PUT' : 'POST';
+                const resp = await fetch(targetUrl, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(editingRefillId ? 'Refill 任务已更新' : 'Refill 任务已创建');
+                    editingRefillId = null;
+                    const btn = document.querySelector("button[onclick='createRefillTask()']");
+                    if (btn) btn.innerText = '➕ 新建 Refill';
+                    loadRefillTasks();
+                } else {
+                    alert('创建失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('创建失败: 网络错误');
+            }
+        }
+
+        async function toggleRefillTask(id, enabled) {
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !!enabled })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(enabled ? 'Refill 已启用' : 'Refill 已停用');
+                    loadRefillTasks();
+                } else {
+                    alert('更新失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('更新失败: 网络错误');
+            }
+        }
+
+        function startEditRefillTask(id) {
+            const arr = window.__refillTasksCache || [];
+            const t = arr.find(x => String(x.id) === String(id));
+            if (!t) return alert('Refill 任务不存在');
+            editingRefillId = String(id);
+            document.getElementById('refillDate').value = t.date || '';
+            document.getElementById('refillTargetCount').value = String(Number(t.target_count || 1));
+            document.getElementById('refillPlaces').value = (t.candidate_places || []).join(',');
+            document.getElementById('refillTimes').value = (t.target_times || []).join(',');
+            document.getElementById('refillInterval').value = String(Number(t.interval_seconds || 10));
+            document.getElementById('refillDeadline').value = deadlineToInput(t.deadline || '');
+            const btn = document.querySelector("button[onclick='createRefillTask()']");
+            if (btn) btn.innerText = '💾 保存 Refill 编辑';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function copyRefillTask(id) {
+            const arr = window.__refillTasksCache || [];
+            const t = arr.find(x => String(x.id) === String(id));
+            if (!t) return alert('Refill 任务不存在');
+            const payload = {
+                date: t.date,
+                target_count: t.target_count,
+                candidate_places: t.candidate_places || [],
+                target_times: t.target_times || [],
+                interval_seconds: t.interval_seconds,
+                enabled: t.enabled !== false,
+                deadline: t.deadline || '',
+            };
+            try {
+                const resp = await fetch('/api/refill-tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已复制');
+                    loadRefillTasks();
+                } else {
+                    alert('复制失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('复制失败: 网络错误');
+            }
+        }
+
+        async function runRefillTask(id) {
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}/run`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已触发1轮');
+                    setTimeout(loadRefillTasks, 800);
+                    setTimeout(loadRefillTasks, 2500);
+                    setTimeout(loadRefillTasks, 6000);
+                } else {
+                    alert('触发失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('触发失败: 网络错误');
+            }
+        }
+
+        async function deleteRefillTask(id) {
+            if (!confirm('确定删除该 Refill 任务？')) return;
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已删除');
+                    loadRefillTasks();
+                } else {
+                    alert('删除失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('删除失败: 网络错误');
+            }
         }
 
         async function loadTasks() {
