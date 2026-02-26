@@ -1222,6 +1222,13 @@
                 <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
                     <input id="refillLogFilterId" class="form-control" style="max-width:180px;" placeholder="按Refill任务ID过滤">
                     <input id="refillLogStatusKw" class="form-control" style="max-width:140px;" placeholder="状态关键字">
+                    <select id="refillLogWindowMin" class="form-control" style="max-width:130px;">
+                        <option value="0">全部时间</option>
+                        <option value="5">最近5分钟</option>
+                        <option value="15">最近15分钟</option>
+                        <option value="30">最近30分钟</option>
+                        <option value="60">最近60分钟</option>
+                    </select>
                     <button class="btn" style="padding:6px 10px;background:#5856d6;color:#fff;" onclick="lastLogIndex=0;document.getElementById('logContent').innerHTML='';pollLogs();">应用过滤</button>
                 </div>
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
@@ -1331,9 +1338,11 @@
             try {
                 const rid = (document.getElementById('refillLogFilterId') || {}).value || '';
                 const skw = (document.getElementById('refillLogStatusKw') || {}).value || '';
+                const wmin = (document.getElementById('refillLogWindowMin') || {}).value || '0';
                 const params = new URLSearchParams();
                 if (rid.trim()) params.set('refill_id', rid.trim());
                 if (skw.trim()) params.set('status_kw', skw.trim());
+                if (String(wmin).trim() && String(wmin) !== '0') params.set('window_min', String(wmin));
                 const qs = params.toString();
                 const res = await fetch(`/api/logs${qs ? `?${qs}` : ''}`);
                 const logs = await res.json();
@@ -2393,7 +2402,7 @@
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
             const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
-            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random）' : '每批最多 3 块（稳定模式）'}`;
+            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random；推荐配合独立Refill）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -2454,6 +2463,27 @@
             }
         }
 
+        function refillSortKey(t) {
+            const date = String(t?.date || '9999-12-31');
+            const times = Array.isArray(t?.target_times) ? t.target_times.slice() : [];
+            times.sort();
+            const t0 = times.length ? times[0] : '99:99';
+            return `${date} ${t0}`;
+        }
+
+        function refillHistorySummary(hist) {
+            const arr = Array.isArray(hist) ? hist : [];
+            const stat = { success: 0, partial: 0, fail: 0, stopped: 0, running: 0, error: 0 };
+            arr.forEach(x => {
+                const s = String((x || {}).status || '').toLowerCase();
+                if (s in stat) stat[s] += 1;
+            });
+            const ok = stat.success + stat.partial;
+            const total = arr.length || 0;
+            const rate = total ? Math.round((ok / total) * 100) : 0;
+            return `近${total}次 成功${stat.success}+部分${stat.partial} / 失败${stat.fail}+异常${stat.error}+停止${stat.stopped}，成功率${rate}%`;
+        }
+
         async function loadRefillTasks() {
             const list = document.getElementById('refillTaskList');
             if (!list) return;
@@ -2467,7 +2497,7 @@
                     return;
                 }
                 list.innerHTML = '';
-                tasks.slice().sort((a, b) => Number(b.id || 0) - Number(a.id || 0)).forEach(t => {
+                tasks.slice().sort((a, b) => refillSortKey(a).localeCompare(refillSortKey(b))).forEach(t => {
                     const places = (t.candidate_places || []).join(',');
                     const times = (t.target_times || []).join(',');
                     const enabled = t.enabled !== false;
@@ -2480,6 +2510,7 @@
                             <div style="color:#666;">最近执行: ${formatTimeMs(t.last_run_at)}</div>
                             <div style="color:#666;">最近结果: ${refillResultText(t.last_result)}</div>
                             <div style="color:#666;">最近记录: ${Array.isArray(t.exec_history) ? t.exec_history.map(x => `${x.status}@${formatTimeMs(x.ts)}`).slice(-3).join(' ｜ ') : '-'}</div>
+                            <div style="color:#0b5cad;">${refillHistorySummary(t.exec_history)}</div>
                         </div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="btn-mini" style="background:#34c759;" onclick="runRefillTask('${t.id}')">立即执行1轮</button>

@@ -322,6 +322,9 @@ class ApiClient:
         self.token = CONFIG["auth"]["token"]
         self.session = requests.Session()
         self.server_time_offset_seconds = 0.0
+        self._matrix_cache = {}
+        self._matrix_cache_window_s = 0.12
+        self._matrix_cache_lock = threading.Lock()
 
     def _update_server_time_offset(self, resp, started_at, ended_at):
         date_header = (resp.headers or {}).get("Date") if resp is not None else None
@@ -516,6 +519,16 @@ class ApiClient:
         return result
 
     def get_matrix(self, date_str, include_mine_overlay=True):
+        cache_key = (str(date_str or ''), bool(include_mine_overlay))
+        now_ts = time.time()
+        with self._matrix_cache_lock:
+            cache_hit = self._matrix_cache.get(cache_key)
+        if cache_hit and (now_ts - float(cache_hit.get('ts', 0.0))) <= float(self._matrix_cache_window_s):
+            try:
+                return json.loads(json.dumps(cache_hit.get('data')))
+            except Exception:
+                return cache_hit.get('data')
+
         url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
         params = {
             "shopNum": CONFIG["auth"]["shop_num"],
@@ -657,7 +670,7 @@ class ApiClient:
             sorted_places = sorted(matrix.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             sorted_times = sorted(list(all_times))
 
-            return {
+            result = {
                 "places": sorted_places,
                 "times": sorted_times,
                 "matrix": matrix,
@@ -667,6 +680,12 @@ class ApiClient:
                     "mine_overlay_error": mine_overlay_error,
                 }
             }
+            with self._matrix_cache_lock:
+                self._matrix_cache[cache_key] = {'ts': time.time(), 'data': result}
+                if len(self._matrix_cache) > 8:
+                    oldest = min(self._matrix_cache.keys(), key=lambda k: self._matrix_cache[k].get('ts', 0.0))
+                    self._matrix_cache.pop(oldest, None)
+            return result
             
         except Exception as e:
             return {"error": str(e)}
@@ -1933,6 +1952,20 @@ class TaskManager:
         pipeline_refill_last_at = 0.0
         pipeline_force_random_after_continuous = False
         pair_fail_cache = {}
+        pair_fail_cache_ttl_s = 120.0
+        pair_fail_cache_max = 300
+
+        def compact_pair_fail_cache(now_ts=None):
+            ts = float(now_ts or time.time())
+            for k in list(pair_fail_cache.keys()):
+                item = pair_fail_cache.get(k) or {}
+                if (ts - float(item.get('ts', 0.0))) > pair_fail_cache_ttl_s:
+                    pair_fail_cache.pop(k, None)
+            if len(pair_fail_cache) > pair_fail_cache_max:
+                extra = len(pair_fail_cache) - pair_fail_cache_max
+                old_keys = sorted(pair_fail_cache.keys(), key=lambda k: float((pair_fail_cache.get(k) or {}).get('ts', 0.0)))[:extra]
+                for k in old_keys:
+                    pair_fail_cache.pop(k, None)
 
         def classify_fail_type(msg):
             text = str(msg or "").lower()
@@ -1955,6 +1988,7 @@ class TaskManager:
             open_retry_seconds = CONFIG.get('open_retry_seconds', open_retry_seconds)
 
             attempt += 1
+            compact_pair_fail_cache()
             log(f"🔄 第 {attempt} 轮无限尝试...喵")
 
             # 1. 获取最新场地状态
@@ -3075,8 +3109,30 @@ def page_route_fallback(path_like):
 def get_logs():
     refill_id = (request.args.get('refill_id') or '').strip()
     status_kw = (request.args.get('status_kw') or '').strip().lower()
+    try:
+        window_min = max(0, int(float(request.args.get('window_min', 0) or 0)))
+    except Exception:
+        window_min = 0
 
     logs = list(LOG_BUFFER)
+    if window_min > 0:
+        now_dt = datetime.now()
+        cutoff = now_dt - timedelta(minutes=window_min)
+        filtered = []
+        for line in logs:
+            try:
+                if len(line) >= 10 and line[0] == '[' and line[9] == ']':
+                    t = datetime.strptime(line[1:9], '%H:%M:%S')
+                    cur = now_dt.replace(hour=t.hour, minute=t.minute, second=t.second, microsecond=0)
+                    if cur > now_dt:
+                        cur = cur - timedelta(days=1)
+                    if cur >= cutoff:
+                        filtered.append(line)
+                else:
+                    filtered.append(line)
+            except Exception:
+                filtered.append(line)
+        logs = filtered
     if refill_id:
         key = f"[refill#{refill_id}|"
         logs = [line for line in logs if key in line]

@@ -57,7 +57,8 @@ python web_booker/app.py
 - Refill 任务支持：编辑弹层、复制、启用/停用、截止时间（到点自动停用）、最近 10 次执行记录（环形保留）。
 - 截止时间支持两种模式：固定时间（absolute）与开场前N小时（before_start）。
 - Refill 每次补订成功（success/partial 且存在成功项）会发送通知（短信/PushPlus，按已有配置），并做同任务同分钟节流避免短信风暴。
-- `/api/logs` 支持按 `refill_id` 与 `status_kw` 过滤（示例：`/api/logs?refill_id=1772...&status_kw=success`）。
+- `/api/logs` 支持按 `refill_id`、`status_kw` 与 `window_min` 组合过滤（示例：`/api/logs?refill_id=1772...&status_kw=success&window_min=15`）。
+- `window_min` 过滤已兼容跨天边界（如 00:03 查询最近15分钟可包含前一日 23:5x 日志）。
 - 建议将“持续补齐”主要交给独立 Refill 任务；Pipeline 内 refill 默认可不启用，以降低双路径并发干扰。
 - 新增 `biz_fail_cooldown_seconds`：pipeline 中业务失败组合冷却秒数，短时间内优先避开业务失败组合、优先重放网络失败组合。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
