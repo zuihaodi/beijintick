@@ -877,7 +877,7 @@
 
             <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
                 <label style="font-size:13px;color:#333;display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="taskUsePipeline" onchange="togglePipelineConfig();updateTaskSummary()">
+                    <input type="checkbox" id="taskUsePipeline" checked onchange="togglePipelineConfig();updateTaskSummary()">
                     启用 Pipeline 模式（continuous → random → refill）
                 </label>
 
@@ -1048,7 +1048,8 @@
                 <div class="form-group"><label>开场前N小时(相对模式)</label><input id="refillEditDeadlineBeforeHours" type="number" min="0" step="0.5" class="form-control" value="2"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button class="btn" style="background:#eee;color:#333;" onclick="closeRefillEditModal()">取消</button>
-                    <button class="btn btn-primary" onclick="saveRefillEditModal()">保存</button>
+                    <button class="btn" style="background:#34c759;color:#fff;" onclick="saveRefillEditModal(true)">保存并启动</button>
+                    <button class="btn btn-primary" onclick="saveRefillEditModal(false)">保存</button>
                 </div>
             </div>
         </div>
@@ -2463,6 +2464,19 @@
             }
         }
 
+        function formatDateWithWeekday(dateStr) {
+            const s = String(dateStr || '').trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '-';
+            try {
+                const dt = new Date(`${s}T00:00:00`);
+                if (Number.isNaN(dt.getTime())) return s;
+                const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                return `${s}（${names[dt.getDay()]}）`;
+            } catch (e) {
+                return s;
+            }
+        }
+
         function refillSortKey(t) {
             const date = String(t?.date || '9999-12-31');
             const times = Array.isArray(t?.target_times) ? t.target_times.slice() : [];
@@ -2503,7 +2517,7 @@
                     const enabled = t.enabled !== false;
                     const html = `<div class="refill-item">
                         <div class="refill-item-main">
-                            <div><b>#${t.id || '-'}</b> ｜ <b>${t.date || '-'}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
+                            <div><b>#${t.id || '-'}</b> ｜ <b>${formatDateWithWeekday(t.date || '-')}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
                             <div>场地: ${places || '-'}</div>
                             <div>时段: ${times || '-'}</div>
                             <div>截止: ${t.deadline_mode === 'before_start' ? `开场前${Number(t.deadline_before_hours || 0)}小时` : (t.deadline || '不限')}</div>
@@ -2614,7 +2628,7 @@
             if (m) m.style.display = 'none';
         }
 
-        async function saveRefillEditModal() {
+        async function saveRefillEditModal(startAfterSave = false) {
             const id = (document.getElementById('refillEditId')?.value || '').trim();
             const date = (document.getElementById('refillEditDate')?.value || '').trim();
             const targetCount = parseInt(document.getElementById('refillEditTargetCount')?.value || '1', 10);
@@ -2637,6 +2651,7 @@
                 deadline,
                 deadline_before_hours: Number.isNaN(beforeHours) ? 2 : Math.max(0, beforeHours),
             };
+            if (startAfterSave) payload.enabled = true;
             try {
                 const resp = await fetch(`/api/refill-tasks/${id}`, {
                     method: 'PUT',
@@ -2645,7 +2660,7 @@
                 });
                 const data = await resp.json();
                 if (data.status === 'success') {
-                    showToast('Refill 已更新');
+                    showToast(startAfterSave ? 'Refill 已更新并启动' : 'Refill 已更新');
                     closeRefillEditModal();
                     loadRefillTasks();
                 } else {
