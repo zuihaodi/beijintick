@@ -61,9 +61,10 @@ python web_booker/app.py
 - Refill 每次补订成功（success/partial 且存在成功项）会发送通知（短信/PushPlus，按已有配置），并做同任务同分钟节流避免短信风暴。
 - `/api/logs` 支持按 `refill_id`、`status_kw` 与 `window_min` 组合过滤（示例：`/api/logs?refill_id=1772...&status_kw=success&window_min=15`）。
 - `window_min` 过滤已兼容跨天边界（如 00:03 查询最近15分钟可包含前一日 23:5x 日志）。
-- 建议将“持续补齐”主要交给独立 Refill 任务；Pipeline 默认作为推荐模式（仍保留普通模式兜底），其中 pipeline 内 refill 仅保留实验开关，默认不建议启用，以降低双路径并发干扰。
+- 建议将“持续补齐”主要交给独立 Refill 任务；任务模式默认选中 Pipeline（推荐），同时保留普通稳定模式与智能连号作为兜底；其中 pipeline 内 refill 仅保留实验开关，默认不建议启用，以降低双路径并发干扰。
 - 主任务增加“任务锁”：同一任务执行中再次触发会自动跳过并记录日志，避免重复并发抢占。
 - Pipeline 新增轻量事件切换：连续多轮缺口未改善时可提前从 continuous 切换到 random。
+- “达标后立即停止”建议开启：达到目标数量后立即结束，减少无效并发。
 - 新增 `biz_fail_cooldown_seconds`：pipeline 中业务失败组合冷却秒数，短时间内优先避开业务失败组合、优先重放网络失败组合。
 - 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
 

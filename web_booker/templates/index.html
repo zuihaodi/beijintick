@@ -856,7 +856,7 @@
                         <div class="tag-selector" id="placeSelector">
                             <!-- JS 生成 1-17号 -->
                         </div>
-                        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
+                        <div id="modeNormalSmartWrap" style="margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
                             <label style="font-size:12px;color:#666;">
                                 <input type="checkbox" id="taskSmartMode" checked>
                                 <b>智能连号优先</b> (自动找 6+7, 8+9...)
@@ -866,20 +866,18 @@
                 </div>
             </div>
 
-            <div class="form-group">
-                <label>🎯 总目标数量 (需要抢到多少块场地)</label>
-                <select id="taskTargetCount" class="form-control">
-                    <option value="1">1</option>
-                    <option value="2" selected>2</option>
-                    <option value="3">3</option>
-                </select>
-            </div>
-
             <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
-                <label style="font-size:13px;color:#333;display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="taskUsePipeline" checked onchange="togglePipelineConfig();updateTaskSummary()">
-                    启用 Pipeline 模式（continuous → random → refill）
-                </label>
+                <label style="font-size:13px;color:#333;">🧭 任务模式</label>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;">
+                    <label style="font-size:13px;color:#333;display:inline-flex;align-items:center;gap:6px;">
+                        <input type="radio" name="taskMode" id="taskModePipeline" value="pipeline" checked onchange="toggleTaskModePanels();updateTaskSummary()">
+                        Pipeline（推荐，continuous → random → refill）
+                    </label>
+                    <label style="font-size:13px;color:#333;display:inline-flex;align-items:center;gap:6px;">
+                        <input type="radio" name="taskMode" id="taskModeNormal" value="normal" onchange="toggleTaskModePanels();updateTaskSummary()">
+                        普通稳定模式（兼容兜底）
+                    </label>
+                </div>
 
                 <div id="pipelineConfigPanel" style="display:none;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
                     <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -888,6 +886,7 @@
                                 <input type="checkbox" id="pipelineStopWhenReached" checked>
                                 达标后立即停止
                             </label>
+                            <div style="font-size:12px;color:#666;margin-top:4px;">建议保持开启：达到目标数量后立即收敛，减少无效并发。</div>
                         </div>
                         <div style="flex:1;min-width:180px;">
                             <label style="font-size:12px;">截止模式</label>
@@ -965,6 +964,15 @@
             <div style="margin-top:15px;padding-top:10px;border-top:1px dashed #ddd;font-size:13px;color:#007aff;font-weight:bold;margin-bottom:10px;"
                 id="taskSummary">
                 请配置任务...
+            </div>
+
+            <div class="form-group">
+                <label>🎯 总目标数量 (需要抢到多少块场地)</label>
+                <select id="taskTargetCount" class="form-control">
+                    <option value="1">1</option>
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                </select>
             </div>
 
             <button class="btn btn-primary" id="saveTaskBtn" style="width:100%" onclick="createTask()">✅ 保存计划</button>
@@ -1406,6 +1414,7 @@
         loadConfig();
         if (document.getElementById('taskSummary')) updateTaskSummary();
         if (document.getElementById('taskType')) onTaskTypeChange();
+        if (document.getElementById('pipelineConfigPanel')) toggleTaskModePanels();
 
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
@@ -2402,7 +2411,7 @@
                 : '未知';
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
-            const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+            const pipelineEnabled = getTaskMode() === 'pipeline';
             text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random；推荐配合独立Refill）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
@@ -2906,10 +2915,16 @@
             if (priorityLabel) priorityLabel.style.display = 'none';
         }
 
-        function togglePipelineConfig() {
-            const enabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+        function getTaskMode() {
+            const p = document.getElementById('taskModePipeline');
+            return (p && p.checked) ? 'pipeline' : 'normal';
+        }
+
+        function toggleTaskModePanels() {
             const panel = document.getElementById('pipelineConfigPanel');
-            if (panel) panel.style.display = enabled ? 'block' : 'none';
+            if (panel) panel.style.display = getTaskMode() === 'pipeline' ? 'block' : 'none';
+            const smartWrap = document.getElementById('modeNormalSmartWrap');
+            if (smartWrap) smartWrap.style.display = getTaskMode() === 'normal' ? 'block' : 'none';
         }
 
 
@@ -2949,7 +2964,7 @@
                 return;
             }
 
-            const usePipeline = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+            const usePipeline = getTaskMode() === 'pipeline';
 
             let config;
             if (usePipeline) {
@@ -3088,9 +3103,11 @@
             document.getElementById('taskPushplusTokens').value = (t.pushplus_tokens || []).join(', ');
 
             const usePipeline = !!(t.config && t.config.mode === 'pipeline');
-            const usePipelineEl = document.getElementById('taskUsePipeline');
-            if (usePipelineEl) usePipelineEl.checked = usePipeline;
-            togglePipelineConfig();
+            const modePipeline = document.getElementById('taskModePipeline');
+            const modeNormal = document.getElementById('taskModeNormal');
+            if (modePipeline) modePipeline.checked = usePipeline;
+            if (modeNormal) modeNormal.checked = !usePipeline;
+            toggleTaskModePanels();
 
             const pipe = (t.config && t.config.pipeline) || {};
             const stages = Array.isArray(pipe.stages) ? pipe.stages : [];
