@@ -37,6 +37,60 @@ print = timestamped_print
 
 HEALTH_CHECK_NEXT_RUN = None
 
+
+class StateSampler:
+    """按秒聚合 state 分布（仅计数）并给出 locked 推荐。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._bucket = {}
+        self._max_buckets = 300
+
+    def ingest(self, raw_list):
+        now_sec = int(time.time())
+        counts = {}
+        for place in raw_list or []:
+            for slot in place.get('projectInfo', []) or []:
+                try:
+                    key = int(slot.get('state'))
+                except Exception:
+                    key = -999
+                counts[key] = counts.get(key, 0) + 1
+        with self._lock:
+            self._bucket[now_sec] = counts
+            stale_before = now_sec - self._max_buckets
+            for ts in list(self._bucket.keys()):
+                if ts < stale_before:
+                    self._bucket.pop(ts, None)
+
+    def snapshot(self):
+        with self._lock:
+            data = dict(self._bucket)
+        merged = {}
+        for v in data.values():
+            for s, c in v.items():
+                merged[s] = merged.get(s, 0) + int(c)
+
+        available_count = merged.get(1, 0)
+        locked_recommend = []
+        for state, cnt in sorted(merged.items(), key=lambda x: (-x[1], x[0])):
+            if state in (1, 4, -999):
+                continue
+            if cnt <= 0:
+                continue
+            if cnt >= max(5, int(available_count * 0.05)):
+                locked_recommend.append(state)
+
+        return {
+            'seconds': len(data),
+            'states': merged,
+            'recommended_locked_states': locked_recommend,
+        }
+
+
+STATE_SAMPLER = StateSampler()
+
+
 def normalize_time_str(value):
     if not value:
         return None
@@ -163,7 +217,9 @@ CONFIG = {
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
     "verbose_logs": False,  # 是否打印高频调试日志
     "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
+    "biz_fail_cooldown_seconds": 15.0,  # pipeline 中业务失败组合冷却时间
 }
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_TEMPLATE_FILE = os.path.join(BASE_DIR, "config.json")
@@ -171,6 +227,7 @@ CONFIG_FILE = CONFIG_TEMPLATE_FILE
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 MAX_TARGET_COUNT = 9
+REFILL_TASKS_FILE = os.path.join(BASE_DIR, "refill_tasks.json")
 
 def log(msg):
     """记录日志到内存缓冲区和控制台"""
@@ -233,6 +290,11 @@ if os.path.exists(CONFIG_FILE):
             if 'same_time_precheck_limit' in saved:
                 try:
                     CONFIG['same_time_precheck_limit'] = int(saved['same_time_precheck_limit'])
+                except Exception:
+                    pass
+            if 'biz_fail_cooldown_seconds' in saved:
+                try:
+                    CONFIG['biz_fail_cooldown_seconds'] = max(1.0, float(saved['biz_fail_cooldown_seconds']))
                 except Exception:
                     pass
             if 'auth' in saved:
@@ -500,6 +562,8 @@ class ApiClient:
                     raw_list = raw_list['placeArray']
                 else:
                     return {"error": "无法找到场地列表"}
+
+            STATE_SAMPLER.ingest(raw_list)
 
             matrix = {}
             all_times = set()
@@ -1128,8 +1192,108 @@ client = ApiClient()
 class TaskManager:
     def __init__(self):
         self.tasks = []
+        self.refill_tasks = []
+        self._refill_lock = threading.Lock()
+        self._refill_last_run = {}
         self.load_tasks()
+        self.load_refill_tasks()
         
+
+    def load_refill_tasks(self):
+        if os.path.exists(REFILL_TASKS_FILE):
+            try:
+                with open(REFILL_TASKS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.refill_tasks = data if isinstance(data, list) else []
+            except Exception:
+                self.refill_tasks = []
+
+    def save_refill_tasks(self):
+        with self._refill_lock:
+            with open(REFILL_TASKS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.refill_tasks, f, ensure_ascii=False, indent=2)
+
+    def add_refill_task(self, task):
+        now_ms = int(time.time() * 1000)
+        task = dict(task or {})
+        task['id'] = now_ms
+        task['enabled'] = bool(task.get('enabled', True))
+        task['interval_seconds'] = max(1.0, float(task.get('interval_seconds', 10.0) or 10.0))
+        task['target_count'] = max(1, min(MAX_TARGET_COUNT, int(task.get('target_count', 1) or 1)))
+        task['last_run_at'] = task.get('last_run_at')
+        task['last_result'] = task.get('last_result')
+        self.refill_tasks.append(task)
+        self.save_refill_tasks()
+        return task
+
+    def delete_refill_task(self, task_id):
+        tid = int(task_id)
+        self.refill_tasks = [t for t in self.refill_tasks if int(t.get('id', -1)) != tid]
+        self._refill_last_run.pop(tid, None)
+        self.save_refill_tasks()
+
+    def _run_refill_task_once(self, refill_task):
+        date_str = str(refill_task.get('date') or '').strip()
+        target_times = [str(t).strip() for t in (refill_task.get('target_times') or []) if str(t).strip()]
+        candidate_places = [str(p).strip() for p in (refill_task.get('candidate_places') or []) if str(p).strip()]
+        target_count = max(1, min(MAX_TARGET_COUNT, int(refill_task.get('target_count', 1) or 1)))
+        if not date_str or not target_times or not candidate_places:
+            return {'status': 'fail', 'msg': 'refill任务缺少 date/target_times/candidate_places'}
+
+        need_res = {'need_by_time': {}}
+        orders_res = client.get_place_orders()
+        mine_slots = set()
+        if 'error' not in orders_res:
+            mine_slots = client._extract_mine_slots(orders_res.get('data', []), date_str)
+
+        for t in target_times:
+            mine_cnt = sum(1 for p in candidate_places if (p, t) in mine_slots)
+            need_res['need_by_time'][t] = max(0, target_count - mine_cnt)
+
+        if sum(need_res['need_by_time'].values()) <= 0:
+            return {'status': 'success', 'msg': 'refill目标已满足', 'success_items': []}
+
+        matrix_res = client.get_matrix(date_str)
+        if 'error' in matrix_res:
+            return {'status': 'error', 'msg': f"获取矩阵失败: {matrix_res.get('error')}"}
+        matrix = matrix_res.get('matrix') or {}
+
+        picks = []
+        for t in target_times:
+            remain = int(need_res['need_by_time'].get(t, 0))
+            if remain <= 0:
+                continue
+            for p in candidate_places:
+                if remain <= 0:
+                    break
+                if matrix.get(p, {}).get(t) == 'available':
+                    picks.append({'place': p, 'time': t})
+                    remain -= 1
+
+        if not picks:
+            return {'status': 'fail', 'msg': '当前无可补订组合'}
+
+        return client.submit_order(date_str, picks)
+
+    def run_refill_scheduler_tick(self):
+        now = time.time()
+        for t in list(self.refill_tasks):
+            if not bool(t.get('enabled', True)):
+                continue
+            tid = int(t.get('id', 0))
+            interval = max(1.0, float(t.get('interval_seconds', 10.0) or 10.0))
+            last = float(self._refill_last_run.get(tid, 0.0))
+            if now - last < interval:
+                continue
+            self._refill_last_run[tid] = now
+            try:
+                res = self._run_refill_task_once(t)
+            except Exception as e:
+                res = {'status': 'error', 'msg': str(e)}
+            t['last_run_at'] = int(time.time() * 1000)
+            t['last_result'] = res
+            self.save_refill_tasks()
+
     def load_tasks(self):
         if os.path.exists(TASKS_FILE):
             try:
@@ -1514,7 +1678,7 @@ class TaskManager:
                 "target_count": target_count,
             }
 
-        def choose_pipeline_items(matrix, need_res, stage_type, prefer_adjacent=True):
+        def choose_pipeline_items(matrix, need_res, stage_type, prefer_adjacent=True, pair_fail_cache=None, biz_fail_cooldown_seconds=15.0):
             target_times = need_res['target_times']
             candidate_places = need_res['candidate_places']
             need_by_time = dict(need_res['need_by_time'])
@@ -1529,6 +1693,11 @@ class TaskManager:
                     return False
                 if matrix.get(str(p), {}).get(str(t)) != 'available':
                     return False
+                if isinstance(pair_fail_cache, dict):
+                    fail_meta = pair_fail_cache.get(key)
+                    if fail_meta and fail_meta.get('type') == 'biz':
+                        if (time.time() - float(fail_meta.get('ts', 0.0))) < float(biz_fail_cooldown_seconds):
+                            return False
                 picked_pairs.add(key)
                 items.append({"place": str(p), "time": str(t)})
                 need_by_time[str(t)] = max(0, int(need_by_time.get(str(t), 0)) - 1)
@@ -1600,6 +1769,16 @@ class TaskManager:
                     ordered = list(avail)
                     random.shuffle(ordered)
 
+                if stage_type != 'continuous' and isinstance(pair_fail_cache, dict):
+                    def _pair_score(px):
+                        meta = pair_fail_cache.get((str(px), str(t))) or {}
+                        if meta.get('type') == 'network':
+                            return (0, -float(meta.get('ts', 0.0)))
+                        if meta.get('type') == 'biz':
+                            return (2, float(meta.get('ts', 0.0)))
+                        return (1, 0.0)
+                    ordered = sorted(ordered, key=_pair_score)
+
                 for p in ordered:
                     if int(need_by_time.get(t, 0)) <= 0:
                         break
@@ -1624,6 +1803,17 @@ class TaskManager:
         pipeline_started_at = None
         pipeline_refill_last_at = 0.0
         pipeline_force_random_after_continuous = False
+        pair_fail_cache = {}
+
+        def classify_fail_type(msg):
+            text = str(msg or "").lower()
+            network_keys = [
+                "timeout", "timed out", "connection", "non-json", "404", "502", "503", "504",
+                "nginx", "bad gateway", "service unavailable", "temporarily unavailable",
+            ]
+            if any(k in text for k in network_keys):
+                return "network"
+            return "biz"
 
         attempt = 0
         while True:
@@ -1749,15 +1939,15 @@ class TaskManager:
                     pipeline_active_stage = stype
                     log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
                     if stype == 'continuous':
-                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                        mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True), pair_fail_cache=pair_fail_cache, biz_fail_cooldown_seconds=CONFIG.get('biz_fail_cooldown_seconds', 15.0))
                     elif stype == 'random':
-                        mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                        mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True), pair_fail_cache=pair_fail_cache, biz_fail_cooldown_seconds=CONFIG.get('biz_fail_cooldown_seconds', 15.0))
                     elif stype == 'refill':
                         interval = float((active_stage or {}).get('interval_seconds', 15) or 15)
                         refill_interval = max(1.0, interval)
                         refill_elapsed = now_ts - pipeline_refill_last_at
                         if refill_elapsed >= refill_interval:
-                            mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True))
+                            mode_items = choose_pipeline_items(matrix, need_res, 'random', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True), pair_fail_cache=pair_fail_cache, biz_fail_cooldown_seconds=CONFIG.get('biz_fail_cooldown_seconds', 15.0))
                             pipeline_refill_last_at = now_ts
                             pipeline_refill_wait_seconds = 0.0
                         else:
@@ -1995,6 +2185,8 @@ class TaskManager:
 
                 if status == "success":
                     log(f"✅ 下单完成: 全部成功 ({status})")
+                    for it in (res.get('success_items') or final_items or []):
+                        pair_fail_cache.pop((str(it.get('place')), str(it.get('time'))), None)
                     try:
                         notify_task_result(
                             True,
@@ -2007,6 +2199,11 @@ class TaskManager:
                     return
                 elif status == "partial":
                     log(f"⚠️ 下单完成: 部分成功 ({status})")
+                    for it in (res.get('success_items') or []):
+                        pair_fail_cache.pop((str(it.get('place')), str(it.get('time'))), None)
+                    fail_type = classify_fail_type(res.get('msg'))
+                    for it in (res.get('failed_items') or []):
+                        pair_fail_cache[(str(it.get('place')), str(it.get('time')))] = {'type': fail_type, 'ts': time.time()}
                     try:
                         notify_task_result(
                             False,
@@ -2021,6 +2218,10 @@ class TaskManager:
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
                     last_fail_reason = str(res.get('msg') or "下单失败")
+                    fail_type = classify_fail_type(last_fail_reason)
+                    for it in (res.get('failed_items') or final_items or []):
+                        k = (str(it.get('place')), str(it.get('time')))
+                        pair_fail_cache[k] = {'type': fail_type, 'ts': time.time()}
                     last_fail_lower = last_fail_reason.lower()
                     if "<html" in last_fail_lower and "404" in last_fail_lower:
                         last_fail_reason = "下单接口暂时不可用(404)"
@@ -2230,6 +2431,7 @@ def run_scheduler():
     while True:
         try:
             schedule.run_pending()
+            task_manager.run_refill_scheduler_tick()
         except Exception as e:
             print(f"⚠️ 调度执行出错: {e}")
             print(traceback.format_exc())
@@ -2363,6 +2565,7 @@ def update_config():
     - health_check_start_time: 健康检查起始时间（HH:MM）
     - verbose_logs: 是否输出高频调试日志
     - same_time_precheck_limit: 同时段预检上限（<=0 关闭）
+    - biz_fail_cooldown_seconds: pipeline 业务失败冷却秒数
     """
     try:
         data = request.json or {}
@@ -2430,6 +2633,7 @@ def update_config():
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
+        _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
 
         if 'batch_retry_times' in data:
             try:
@@ -2601,6 +2805,55 @@ def run_task_now(task_id):
         threading.Thread(target=task_manager.execute_task, args=(task,)).start()
         return jsonify({"status": "success", "msg": "Task started"})
     return jsonify({"status": "error", "msg": "Task not found"}), 404
+
+
+
+@app.route('/api/state-sampler', methods=['GET'])
+def api_state_sampler():
+    snap = STATE_SAMPLER.snapshot()
+    return jsonify({
+        'status': 'success',
+        'seconds': snap.get('seconds', 0),
+        'states': snap.get('states', {}),
+        'recommended_locked_states': snap.get('recommended_locked_states', []),
+        'current_locked_state_values': CONFIG.get('locked_state_values', []),
+    })
+
+
+@app.route('/api/refill-tasks', methods=['GET'])
+def get_refill_tasks():
+    return jsonify(task_manager.refill_tasks)
+
+
+@app.route('/api/refill-tasks', methods=['POST'])
+def add_refill_task_api():
+    data = request.json or {}
+    task = task_manager.add_refill_task(data)
+    return jsonify({'status': 'success', 'task': task})
+
+
+@app.route('/api/refill-tasks/<task_id>', methods=['DELETE'])
+def del_refill_task_api(task_id):
+    task_manager.delete_refill_task(task_id)
+    return jsonify({'status': 'success'})
+
+
+@app.route('/api/refill-tasks/<task_id>/run', methods=['POST'])
+def run_refill_task_now(task_id):
+    task = next((t for t in task_manager.refill_tasks if str(t.get('id')) == str(task_id)), None)
+    if not task:
+        return jsonify({'status': 'error', 'msg': 'Refill task not found'}), 404
+    def _run():
+        try:
+            res = task_manager._run_refill_task_once(task)
+            task['last_run_at'] = int(time.time() * 1000)
+            task['last_result'] = res
+            task_manager.save_refill_tasks()
+        except Exception as e:
+            task['last_result'] = {'status': 'error', 'msg': str(e)}
+            task_manager.save_refill_tasks()
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'status': 'success', 'msg': 'Refill task started'})
 
 @app.route('/api/config/check-token', methods=['POST'])
 def check_token_api():
