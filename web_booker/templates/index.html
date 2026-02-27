@@ -538,6 +538,53 @@
             margin-top: 4px;
         }
 
+        .refill-panel {
+            margin-top: 14px;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .refill-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .refill-list {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .refill-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px;
+            background: #fafafa;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .refill-item-main {
+            font-size: 12px;
+            color: #333;
+            line-height: 1.45;
+        }
+
+        .btn-mini {
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 4px 8px;
+            cursor: pointer;
+            color: #fff;
+        }
+
         .btn-del {
             color: #ff3b30;
             background: none;
@@ -671,6 +718,14 @@
                 width: 100%;
                 justify-content: flex-start;
             }
+
+            .refill-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .refill-item {
+                flex-direction: column;
+            }
         }
 
         .toast-msg {
@@ -790,10 +845,7 @@
                 <!-- 场地选择区域 -->
                 <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
                     <label style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-                        <span>🏸 场地选择模式</span>
-                        <select id="placeMode" style="padding:4px;font-size:12px;" onchange="togglePlaceMode()">
-                            <option value="normal">🎯 普通多选</option>
-                        </select>
+                        <span>🏸 场地选择（候选池）</span>
                     </label>
 
                     <!-- 模式A: 普通选场 -->
@@ -801,76 +853,11 @@
                         <div class="tag-selector" id="placeSelector">
                             <!-- JS 生成 1-17号 -->
                         </div>
-                        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
+                        <div id="modeNormalSmartWrap" style="margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
                             <label style="font-size:12px;color:#666;">
                                 <input type="checkbox" id="taskSmartMode" checked>
                                 <b>智能连号优先</b> (自动找 6+7, 8+9...)
                             </label>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>🎯 总目标数量 (需要抢到多少块场地)</label>
-                <select id="taskTargetCount" class="form-control">
-                    <option value="1">1</option>
-                    <option value="2" selected>2</option>
-                    <option value="3">3</option>
-                </select>
-            </div>
-
-            <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
-                <label style="font-size:13px;color:#333;display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="taskUsePipeline" onchange="togglePipelineConfig();updateTaskSummary()">
-                    启用 Pipeline 模式（continuous → random → refill）
-                </label>
-
-                <div id="pipelineConfigPanel" style="display:none;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">
-                                <input type="checkbox" id="pipelineStopWhenReached" checked>
-                                达标后立即停止
-                            </label>
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">截止模式</label>
-                            <select id="pipelineGreedyEndMode" class="form-control">
-                                <option value="absolute">absolute（固定截止时间）</option>
-                                <option value="before_start">before_start（开场前N小时）</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
-                        <div style="flex:1;min-width:200px;">
-                            <label style="font-size:12px;">截止时间（absolute）</label>
-                            <input type="datetime-local" id="pipelineGreedyEndTime" class="form-control">
-                        </div>
-                        <div style="flex:1;min-width:160px;">
-                            <label style="font-size:12px;">开场前小时数（before_start）</label>
-                            <input type="number" id="pipelineGreedyEndBeforeHours" class="form-control" value="24" min="1" step="1">
-                        </div>
-                    </div>
-
-                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
-                    <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
-                        <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
-                        continuous 连号优先（建议开启）
-                    </label>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 阶段窗口(秒)</label>
-                            <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 窗口(秒)</label>
-                            <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled" checked> refill 间隔(秒)</label>
-                            <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
                         </div>
                     </div>
                 </div>
@@ -907,9 +894,82 @@
                 </div>
             </div>
 
+            <div class="form-group" style="border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+                <label style="font-size:13px;color:#333;">🧭 任务模式</label>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;">
+                    <label style="font-size:13px;color:#333;display:inline-flex;align-items:center;gap:6px;">
+                        <input type="radio" name="taskMode" id="taskModePipeline" value="pipeline" checked onchange="toggleTaskModePanels();updateTaskSummary()">
+                        Pipeline（推荐，continuous → random → refill）
+                    </label>
+                    <label style="font-size:13px;color:#333;display:inline-flex;align-items:center;gap:6px;">
+                        <input type="radio" name="taskMode" id="taskModeNormal" value="normal" onchange="toggleTaskModePanels();updateTaskSummary()">
+                        普通稳定模式（兼容兜底）
+                    </label>
+                </div>
+
+                <div id="pipelineConfigPanel" style="display:block;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;">
+                                <input type="checkbox" id="pipelineStopWhenReached" checked>
+                                达标后立即停止
+                            </label>
+                            <div style="font-size:12px;color:#666;margin-top:4px;">建议保持开启：达到目标数量后立即收敛，减少无效并发。</div>
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;">截止模式</label>
+                            <select id="pipelineGreedyEndMode" class="form-control">
+                                <option value="absolute">absolute（固定截止时间）</option>
+                                <option value="before_start">before_start（开场前N小时）</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="font-size:12px;">截止时间（absolute）</label>
+                            <input type="datetime-local" id="pipelineGreedyEndTime" class="form-control">
+                        </div>
+                        <div style="flex:1;min-width:160px;">
+                            <label style="font-size:12px;">开场前小时数（before_start）</label>
+                            <input type="number" id="pipelineGreedyEndBeforeHours" class="form-control" value="24" min="1" step="1">
+                        </div>
+                    </div>
+
+                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
+                    <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
+                        <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
+                        continuous 连号优先（建议开启）
+                    </label>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 阶段窗口(秒)</label>
+                            <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 窗口(秒)</label>
+                            <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)（实验，不建议；推荐独立Refill）</label>
+                            <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div style="margin-top:15px;padding-top:10px;border-top:1px dashed #ddd;font-size:13px;color:#007aff;font-weight:bold;margin-bottom:10px;"
                 id="taskSummary">
                 请配置任务...
+            </div>
+
+            <div class="form-group">
+                <label>🎯 总目标数量 (需要抢到多少块场地)</label>
+                <select id="taskTargetCount" class="form-control">
+                    <option value="1">1</option>
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                </select>
             </div>
 
             <button class="btn btn-primary" id="saveTaskBtn" style="width:100%" onclick="createTask()">✅ 保存计划</button>
@@ -922,6 +982,83 @@
         <div style="font-size:12px;color:#666;margin-top:8px;">
             “⚡ 立即运行”按钮用于<strong>立刻执行一次该任务</strong>，不必等待计划时间到点。
         </div>
+
+
+        <div class="refill-panel">
+            <div style="font-weight:600;color:#0b5cad;margin-bottom:8px;">🧩 独立 Refill 补订（重启后保留）</div>
+            <div style="font-size:12px;color:#666;margin-bottom:8px;">适用于主任务结束后持续补齐目标组合；“立即执行1轮”仅触发一次，不会改变自动轮询开关。</div>
+            <div class="refill-grid">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>日期 (YYYY-MM-DD)</label>
+                    <input id="refillDate" class="form-control" placeholder="例如 2026-03-05">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>目标数量/时段</label>
+                    <input id="refillTargetCount" class="form-control" type="number" min="1" max="9" value="1">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>候选场地 (逗号分隔)</label>
+                    <input id="refillPlaces" class="form-control" placeholder="例如 2,3,6,12">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>时间段 (逗号分隔)</label>
+                    <input id="refillTimes" class="form-control" placeholder="例如 20:00,21:00">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>轮询间隔(秒)</label>
+                    <input id="refillInterval" class="form-control" type="number" min="1" step="1" value="10">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>截止模式</label>
+                    <select id="refillDeadlineMode" class="form-control">
+                        <option value="absolute">固定时间</option>
+                        <option value="before_start">开场前N小时</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>截止时间(固定模式)</label>
+                    <input id="refillDeadline" class="form-control" type="datetime-local">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>开场前N小时(相对模式)</label>
+                    <input id="refillDeadlineBeforeHours" class="form-control" type="number" min="0" step="0.5" value="2">
+                </div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" style="padding:8px 12px;" onclick="createRefillTask()">➕ 新建 Refill</button>
+                <button class="btn" style="padding:8px 12px;background:#5856d6;color:#fff;" onclick="loadRefillTasks()">🔄 刷新</button>
+            </div>
+            <div id="refillTaskList" class="refill-list"></div>
+        </div>
+
+        <div class="modal-overlay" id="refillEditModal" style="display:none;">
+            <div class="modal" style="max-width:460px;">
+                <div class="modal-header">
+                    <div class="modal-title">✏️ 编辑 Refill</div>
+                    <div class="modal-close" onclick="closeRefillEditModal()">×</div>
+                </div>
+                <input type="hidden" id="refillEditId">
+                <div class="form-group"><label>日期</label><input id="refillEditDate" class="form-control"></div>
+                <div class="form-group"><label>目标数量</label><input id="refillEditTargetCount" type="number" min="1" max="9" class="form-control"></div>
+                <div class="form-group"><label>候选场地</label><input id="refillEditPlaces" class="form-control"></div>
+                <div class="form-group"><label>时间段</label><input id="refillEditTimes" class="form-control"></div>
+                <div class="form-group"><label>轮询间隔(秒)</label><input id="refillEditInterval" type="number" min="1" class="form-control"></div>
+                <div class="form-group"><label>截止模式</label>
+                    <select id="refillEditDeadlineMode" class="form-control">
+                        <option value="absolute">固定时间</option>
+                        <option value="before_start">开场前N小时</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>截止时间(固定模式)</label><input id="refillEditDeadline" type="datetime-local" class="form-control"></div>
+                <div class="form-group"><label>开场前N小时(相对模式)</label><input id="refillEditDeadlineBeforeHours" type="number" min="0" step="0.5" class="form-control" value="2"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn" style="background:#eee;color:#333;" onclick="closeRefillEditModal()">取消</button>
+                    <button class="btn" style="background:#34c759;color:#fff;" onclick="saveRefillEditModal(true)">保存并启动</button>
+                    <button class="btn btn-primary" onclick="saveRefillEditModal(false)">保存</button>
+                </div>
+            </div>
+        </div>
+
         </div>
         {% endif %}
         <!-- Tab 3: 系统设置 -->
@@ -1001,6 +1138,12 @@
                    step="1"
                    min="0"
                    placeholder="例如 20">
+          </div>
+          <div style="flex:1;min-width:260px;display:flex;align-items:flex-end;">
+            <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <input type="checkbox" id="stopOnNoneStageWithoutRefill" checked>
+              阶段结束无Refill时立即停止（stop_on_none_stage_without_refill）
+            </label>
           </div>
         </div>
 
@@ -1088,6 +1231,18 @@
         <div class="form-group" style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <label style="font-weight:bold;">📟 运行日志（与后台 /api/logs 同源）</label>
+                <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                    <input id="refillLogFilterId" class="form-control" style="max-width:180px;" placeholder="按Refill任务ID过滤">
+                    <input id="refillLogStatusKw" class="form-control" style="max-width:140px;" placeholder="状态关键字">
+                    <select id="refillLogWindowMin" class="form-control" style="max-width:130px;">
+                        <option value="0">全部时间</option>
+                        <option value="5">最近5分钟</option>
+                        <option value="15">最近15分钟</option>
+                        <option value="30">最近30分钟</option>
+                        <option value="60">最近60分钟</option>
+                    </select>
+                    <button class="btn" style="padding:6px 10px;background:#5856d6;color:#fff;" onclick="lastLogIndex=0;document.getElementById('logContent').innerHTML='';pollLogs();">应用过滤</button>
+                </div>
                 <button class="btn" style="padding:6px 12px;font-size:12px;background:#333;color:#fff;" onclick="toggleLogConsole()">切换显示</button>
             </div>
             <div id="logConsole" style="
@@ -1192,7 +1347,15 @@
 
         async function pollLogs() {
             try {
-                const res = await fetch('/api/logs');
+                const rid = (document.getElementById('refillLogFilterId') || {}).value || '';
+                const skw = (document.getElementById('refillLogStatusKw') || {}).value || '';
+                const wmin = (document.getElementById('refillLogWindowMin') || {}).value || '0';
+                const params = new URLSearchParams();
+                if (rid.trim()) params.set('refill_id', rid.trim());
+                if (skw.trim()) params.set('status_kw', skw.trim());
+                if (String(wmin).trim() && String(wmin) !== '0') params.set('window_min', String(wmin));
+                const qs = params.toString();
+                const res = await fetch(`/api/logs${qs ? `?${qs}` : ''}`);
                 const logs = await res.json();
                 if (logs.length > lastLogIndex) {
                     const newLogs = logs.slice(lastLogIndex);
@@ -1249,9 +1412,11 @@
         if (document.getElementById('placeSelector')) initPlaceSelector();
         if (document.getElementById('timeSelector')) initTimeSelector();
         if (document.getElementById('taskList')) loadTasks();
+        if (document.getElementById('refillTaskList')) loadRefillTasks();
         loadConfig();
         if (document.getElementById('taskSummary')) updateTaskSummary();
         if (document.getElementById('taskType')) onTaskTypeChange();
+        if (document.getElementById('pipelineConfigPanel')) toggleTaskModePanels();
 
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
@@ -1814,6 +1979,10 @@
                             document.getElementById('openRetrySeconds').value =
                                 config.open_retry_seconds;
                         }
+                        if (config.stop_on_none_stage_without_refill != null) {
+                            const chk = document.getElementById('stopOnNoneStageWithoutRefill');
+                            if (chk) chk.checked = !!config.stop_on_none_stage_without_refill;
+                        }
 
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
@@ -1930,6 +2099,11 @@
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
                     open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
                 };
+
+                const stopOnNoneEl = document.getElementById('stopOnNoneStageWithoutRefill');
+                if (stopOnNoneEl) {
+                    body.stop_on_none_stage_without_refill = !!stopOnNoneEl.checked;
+                }
 
                 // 健康检查字段
                 if (healthEnabledEl) {
@@ -2248,8 +2422,8 @@
                 : '未知';
 
             text += `<br>健康检查：${healthCheckEnabled ? '启用' : '未启用'}，开始时间：${healthCheckStartTime}，间隔：${healthCheckInterval} 分钟，预计下次：${nextCheckText}`;
-            const pipelineEnabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
-            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random→refill）' : '每批最多 3 块（稳定模式）'}`;
+            const pipelineEnabled = getTaskMode() === 'pipeline';
+            text += `<br>执行策略：${pipelineEnabled ? 'Pipeline（continuous连号优先→random；推荐配合独立Refill）' : '每批最多 3 块（稳定模式）'}`;
 
             // 更新任务摘要
             const summaryEl = document.getElementById('taskSummary');
@@ -2261,6 +2435,328 @@
 
         function closeTaskManager() {
             document.getElementById('taskModal').style.display = 'none';
+        }
+
+
+
+        function parseCsvNumbers(raw) {
+            return String(raw || '')
+                .split(/[，,]/)
+                .map(s => s.trim())
+                .filter(Boolean)
+                .map(v => String(parseInt(v, 10)))
+                .filter(v => v !== 'NaN');
+        }
+
+        function parseCsvTimes(raw) {
+            return String(raw || '')
+                .split(/[，,]/)
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
+        function normalizeDeadlineForApi(raw) {
+            const v = String(raw || '').trim();
+            if (!v) return '';
+            const base = v.replace('T', ' ');
+            return base.length === 16 ? `${base}:00` : base;
+        }
+
+        function deadlineToInput(deadlineRaw) {
+            const s = String(deadlineRaw || '').trim();
+            if (!s) return '';
+            return s.replace(' ', 'T').slice(0, 16);
+        }
+
+        function refillResultText(result) {
+            if (!result) return '尚未执行';
+            const st = result.status || 'unknown';
+            return `${st}: ${result.msg || ''}`;
+        }
+
+        function formatTimeMs(ts) {
+            const n = Number(ts || 0);
+            if (!n) return '未执行';
+            try {
+                return new Date(n).toLocaleString('zh-CN', { hour12: false });
+            } catch (e) {
+                return '未执行';
+            }
+        }
+
+        function formatDateWithWeekday(dateStr) {
+            const s = String(dateStr || '').trim();
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s || '-';
+            try {
+                const dt = new Date(`${s}T00:00:00`);
+                if (Number.isNaN(dt.getTime())) return s;
+                const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                return `${s}（${names[dt.getDay()]}）`;
+            } catch (e) {
+                return s;
+            }
+        }
+
+        function refillSortKey(t) {
+            const date = String(t?.date || '9999-12-31');
+            const times = Array.isArray(t?.target_times) ? t.target_times.slice() : [];
+            times.sort();
+            const t0 = times.length ? times[0] : '99:99';
+            return `${date} ${t0}`;
+        }
+
+        function refillHistorySummary(hist) {
+            const arr = Array.isArray(hist) ? hist : [];
+            const stat = { success: 0, partial: 0, fail: 0, stopped: 0, running: 0, error: 0 };
+            arr.forEach(x => {
+                const s = String((x || {}).status || '').toLowerCase();
+                if (s in stat) stat[s] += 1;
+            });
+            const ok = stat.success + stat.partial;
+            const total = arr.length || 0;
+            const rate = total ? Math.round((ok / total) * 100) : 0;
+            return `近${total}次 成功${stat.success}+部分${stat.partial} / 失败${stat.fail}+异常${stat.error}+停止${stat.stopped}，成功率${rate}%`;
+        }
+
+        async function loadRefillTasks() {
+            const list = document.getElementById('refillTaskList');
+            if (!list) return;
+            list.innerHTML = '<div style="color:#999;font-size:12px;">加载中...</div>';
+            try {
+                const res = await fetch('/api/refill-tasks');
+                const tasks = await res.json();
+                window.__refillTasksCache = Array.isArray(tasks) ? tasks : [];
+                if (!Array.isArray(tasks) || tasks.length === 0) {
+                    list.innerHTML = '<div style="color:#999;font-size:12px;">暂无 Refill 任务</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                tasks.slice().sort((a, b) => refillSortKey(a).localeCompare(refillSortKey(b))).forEach(t => {
+                    const places = (t.candidate_places || []).join(',');
+                    const times = (t.target_times || []).join(',');
+                    const enabled = t.enabled !== false;
+                    const html = `<div class="refill-item">
+                        <div class="refill-item-main">
+                            <div><b>#${t.id || '-'}</b> ｜ <b>${formatDateWithWeekday(t.date || '-')}</b> ｜ 目标${Number(t.target_count || 1)}块/时段 ｜ 间隔${Number(t.interval_seconds || 10)}s ｜ ${enabled ? '启用' : '停用'}</div>
+                            <div>场地: ${places || '-'}</div>
+                            <div>时段: ${times || '-'}</div>
+                            <div>截止: ${t.deadline_mode === 'before_start' ? `开场前${Number(t.deadline_before_hours || 0)}小时` : (t.deadline || '不限')}</div>
+                            <div style="color:#666;">最近执行: ${formatTimeMs(t.last_run_at)}</div>
+                            <div style="color:#666;">最近结果: ${refillResultText(t.last_result)}</div>
+                            <div style="color:#666;">最近记录: ${Array.isArray(t.exec_history) ? t.exec_history.map(x => `${x.status}@${formatTimeMs(x.ts)}`).slice(-3).join(' ｜ ') : '-'}</div>
+                            <div style="color:#0b5cad;">${refillHistorySummary(t.exec_history)}</div>
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="btn-mini" style="background:#34c759;" onclick="runRefillTask('${t.id}')">立即执行1轮</button>
+                            <button class="btn-mini" style="background:#5856d6;" onclick="copyRefillTask('${t.id}')">复制</button>
+                            <button class="btn-mini" style="background:#0ea5e9;" onclick="startEditRefillTask('${t.id}')">编辑</button>
+                            <button class="btn-mini" style="background:${enabled ? '#f59e0b' : '#10b981'};" onclick="toggleRefillTask('${t.id}', ${enabled ? 'false' : 'true'})">${enabled ? '停用' : '启用'}</button>
+                            <button class="btn-mini" style="background:#ff3b30;" onclick="deleteRefillTask('${t.id}')">删除</button>
+                        </div>
+                    </div>`;
+                    list.insertAdjacentHTML('beforeend', html);
+                });
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '<div style="color:#ff3b30;font-size:12px;">加载失败</div>';
+            }
+        }
+
+        async function createRefillTask() {
+            const date = (document.getElementById('refillDate')?.value || '').trim();
+            const targetCount = parseInt(document.getElementById('refillTargetCount')?.value || '1', 10);
+            const places = parseCsvNumbers(document.getElementById('refillPlaces')?.value || '');
+            const times = parseCsvTimes(document.getElementById('refillTimes')?.value || '');
+            const interval = parseFloat(document.getElementById('refillInterval')?.value || '10');
+            const deadlineMode = (document.getElementById('refillDeadlineMode')?.value || 'absolute').trim();
+            const deadlineRaw = document.getElementById('refillDeadline')?.value || '';
+            const beforeHours = parseFloat(document.getElementById('refillDeadlineBeforeHours')?.value || '2');
+
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('日期格式需为 YYYY-MM-DD');
+            if (!places.length) return alert('请填写候选场地');
+            if (!times.length) return alert('请填写时间段');
+
+            const payload = {
+                date,
+                target_count: Number.isNaN(targetCount) ? 1 : Math.max(1, Math.min(9, targetCount)),
+                candidate_places: places,
+                target_times: times,
+                interval_seconds: Number.isNaN(interval) ? 10 : Math.max(1, interval),
+                enabled: true,
+                deadline_mode: deadlineMode,
+                deadline: normalizeDeadlineForApi(deadlineRaw),
+                deadline_before_hours: Number.isNaN(beforeHours) ? 2 : Math.max(0, beforeHours),
+            };
+
+            try {
+                const resp = await fetch('/api/refill-tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 任务已创建');
+                    loadRefillTasks();
+                } else {
+                    alert('创建失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('创建失败: 网络错误');
+            }
+        }
+
+        async function toggleRefillTask(id, enabled) {
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !!enabled })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(enabled ? 'Refill 已启用' : 'Refill 已停用');
+                    loadRefillTasks();
+                } else {
+                    alert('更新失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('更新失败: 网络错误');
+            }
+        }
+
+        function startEditRefillTask(id) {
+            const arr = window.__refillTasksCache || [];
+            const t = arr.find(x => String(x.id) === String(id));
+            if (!t) return alert('Refill 任务不存在');
+            document.getElementById('refillEditId').value = String(t.id || '');
+            document.getElementById('refillEditDate').value = t.date || '';
+            document.getElementById('refillEditTargetCount').value = String(Number(t.target_count || 1));
+            document.getElementById('refillEditPlaces').value = (t.candidate_places || []).join(',');
+            document.getElementById('refillEditTimes').value = (t.target_times || []).join(',');
+            document.getElementById('refillEditInterval').value = String(Number(t.interval_seconds || 10));
+            document.getElementById('refillEditDeadlineMode').value = String(t.deadline_mode || 'absolute');
+            document.getElementById('refillEditDeadline').value = deadlineToInput(t.deadline || '');
+            document.getElementById('refillEditDeadlineBeforeHours').value = String(Number(t.deadline_before_hours || 2));
+            document.getElementById('refillEditModal').style.display = 'flex';
+        }
+
+        function closeRefillEditModal() {
+            const m = document.getElementById('refillEditModal');
+            if (m) m.style.display = 'none';
+        }
+
+        async function saveRefillEditModal(startAfterSave = false) {
+            const id = (document.getElementById('refillEditId')?.value || '').trim();
+            const date = (document.getElementById('refillEditDate')?.value || '').trim();
+            const targetCount = parseInt(document.getElementById('refillEditTargetCount')?.value || '1', 10);
+            const places = parseCsvNumbers(document.getElementById('refillEditPlaces')?.value || '');
+            const times = parseCsvTimes(document.getElementById('refillEditTimes')?.value || '');
+            const interval = parseFloat(document.getElementById('refillEditInterval')?.value || '10');
+            const mode = (document.getElementById('refillEditDeadlineMode')?.value || 'absolute').trim();
+            const deadline = normalizeDeadlineForApi(document.getElementById('refillEditDeadline')?.value || '');
+            const beforeHours = parseFloat(document.getElementById('refillEditDeadlineBeforeHours')?.value || '2');
+            if (!id) return alert('Refill ID 缺失');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('日期格式需为 YYYY-MM-DD');
+            if (!places.length || !times.length) return alert('候选场地/时间段不能为空');
+            const payload = {
+                date,
+                target_count: Number.isNaN(targetCount) ? 1 : Math.max(1, Math.min(9, targetCount)),
+                candidate_places: places,
+                target_times: times,
+                interval_seconds: Number.isNaN(interval) ? 10 : Math.max(1, interval),
+                deadline_mode: mode,
+                deadline,
+                deadline_before_hours: Number.isNaN(beforeHours) ? 2 : Math.max(0, beforeHours),
+            };
+            if (startAfterSave) payload.enabled = true;
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(startAfterSave ? 'Refill 已更新并启动' : 'Refill 已更新');
+                    closeRefillEditModal();
+                    loadRefillTasks();
+                } else {
+                    alert('更新失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('更新失败: 网络错误');
+            }
+        }
+
+        async function copyRefillTask(id) {
+            const arr = window.__refillTasksCache || [];
+            const t = arr.find(x => String(x.id) === String(id));
+            if (!t) return alert('Refill 任务不存在');
+            const payload = {
+                date: t.date,
+                target_count: t.target_count,
+                candidate_places: t.candidate_places || [],
+                target_times: t.target_times || [],
+                interval_seconds: t.interval_seconds,
+                enabled: t.enabled !== false,
+                deadline: t.deadline || '',
+            };
+            try {
+                const resp = await fetch('/api/refill-tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已复制');
+                    loadRefillTasks();
+                } else {
+                    alert('复制失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('复制失败: 网络错误');
+            }
+        }
+
+        async function runRefillTask(id) {
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}/run`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已触发1轮');
+                    setTimeout(loadRefillTasks, 800);
+                    setTimeout(loadRefillTasks, 2500);
+                    setTimeout(loadRefillTasks, 6000);
+                } else {
+                    alert('触发失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('触发失败: 网络错误');
+            }
+        }
+
+        async function deleteRefillTask(id) {
+            if (!confirm('确定删除该 Refill 任务？')) return;
+            try {
+                const resp = await fetch(`/api/refill-tasks/${id}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Refill 已删除');
+                    loadRefillTasks();
+                } else {
+                    alert('删除失败: ' + (data.msg || '未知错误'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('删除失败: 网络错误');
+            }
         }
 
         async function loadTasks() {
@@ -2341,7 +2837,9 @@
                         } else if (t.config.mode === 'pipeline') {
                             const pStr = (t.config.candidate_places || []).join(',');
                             const tStr = (t.config.target_times || []).join(',');
-                            const stages = (((t.config.pipeline || {}).stages) || []).map(st => st && st.type).filter(Boolean).join('→') || 'continuous→random→refill';
+                            const allStages = (((t.config.pipeline || {}).stages) || []).filter(st => st && st.type);
+                            const enabledStages = allStages.filter(st => st.enabled !== false).map(st => st.type);
+                            const stages = enabledStages.join('→') || (allStages.length ? '（未启用）' : 'continuous→random');
                             detail = `🎯 目标：${t.config.target_count}块 (Pipeline)<br>🧪 阶段：${stages}<br>🏸 候选：${pStr || '-'}号<br>⌚ 时间：${tStr || '-'}`;
                         } else {
                             const pStr = (t.config.candidate_places || []).join(',');
@@ -2401,6 +2899,7 @@
             try {
                 const res = await fetch(`/api/tasks/${id}/run`, { method: 'POST' });
                 const data = await res.json();
+                if (res.status === 409) { alert(data.msg || '任务正在执行中'); return; }
                 if (data.status === 'success') alert('任务已触发！请查看控制台日志');
                 else alert('触发失败: ' + data.msg);
             } catch (e) { alert('网络错误'); }
@@ -2429,10 +2928,16 @@
             if (priorityLabel) priorityLabel.style.display = 'none';
         }
 
-        function togglePipelineConfig() {
-            const enabled = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+        function getTaskMode() {
+            const p = document.getElementById('taskModePipeline');
+            return (p && p.checked) ? 'pipeline' : 'normal';
+        }
+
+        function toggleTaskModePanels() {
             const panel = document.getElementById('pipelineConfigPanel');
-            if (panel) panel.style.display = enabled ? 'block' : 'none';
+            if (panel) panel.style.display = getTaskMode() === 'pipeline' ? 'block' : 'none';
+            const smartWrap = document.getElementById('modeNormalSmartWrap');
+            if (smartWrap) smartWrap.style.display = getTaskMode() === 'normal' ? 'block' : 'none';
         }
 
 
@@ -2472,7 +2977,7 @@
                 return;
             }
 
-            const usePipeline = !!(document.getElementById('taskUsePipeline') && document.getElementById('taskUsePipeline').checked);
+            const usePipeline = getTaskMode() === 'pipeline';
 
             let config;
             if (usePipeline) {
@@ -2509,7 +3014,8 @@
                         continuous_prefer_adjacent: !!(document.getElementById('pipelineContinuousPreferAdjacent') || {}).checked,
                         greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
                         greedy_end_time: greedyEndTime,
-                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24)
+                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24),
+                        no_progress_switch_rounds: 2
                     }
                 };
             } else {
@@ -2555,7 +3061,10 @@
             };
 
             try {
-                await saveConfig(false);  // 仍然保存全局配置（速度 & 全局手机号）
+                // 仅在系统设置页存在全局配置控件时才保存全局配置，避免任务页误覆盖系统参数
+                if (document.getElementById('globalNotificationPhones')) {
+                    await saveConfig(false);
+                }
                 const isEditing = editingTaskId !== null;
                 const resp = await fetch(isEditing ? `/api/tasks/${editingTaskId}` : '/api/tasks', {
                     method: isEditing ? 'PUT' : 'POST',
@@ -2610,9 +3119,11 @@
             document.getElementById('taskPushplusTokens').value = (t.pushplus_tokens || []).join(', ');
 
             const usePipeline = !!(t.config && t.config.mode === 'pipeline');
-            const usePipelineEl = document.getElementById('taskUsePipeline');
-            if (usePipelineEl) usePipelineEl.checked = usePipeline;
-            togglePipelineConfig();
+            const modePipeline = document.getElementById('taskModePipeline');
+            const modeNormal = document.getElementById('taskModeNormal');
+            if (modePipeline) modePipeline.checked = usePipeline;
+            if (modeNormal) modeNormal.checked = !usePipeline;
+            toggleTaskModePanels();
 
             const pipe = (t.config && t.config.pipeline) || {};
             const stages = Array.isArray(pipe.stages) ? pipe.stages : [];
@@ -2630,7 +3141,7 @@
             document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
             document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
             document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
-            document.getElementById('pipelineRefillEnabled').checked = f.enabled !== false;
+            document.getElementById('pipelineRefillEnabled').checked = !!f.enabled;
             document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
