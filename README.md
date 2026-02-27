@@ -62,6 +62,8 @@ python web_booker/app.py
 - Refill 到达截止时间自动停用时也会发送通知，避免任务静默停止。
 - `/api/logs` 支持按 `refill_id`、`status_kw` 与 `window_min` 组合过滤（示例：`/api/logs?refill_id=1772...&status_kw=success&window_min=15`）。
 - `window_min` 过滤已兼容跨天边界（如 00:03 查询最近15分钟可包含前一日 23:5x 日志）。
+- 运行复盘接口 `/api/run-metrics` 默认仅统计“锁定→解锁”样本（`unlock_only=1`），聚焦真正抢票窗口；仅在排查时再切换全样本。
+- `/api/run-metrics` 的 `recommendation` 为“建议值，不自动写回配置”，并附带 `confidence/sample_size/min_sample_size` 便于判断建议可信度。
 - 建议将“持续补齐”主要交给独立 Refill 任务；任务模式默认选中 Pipeline（推荐），同时保留普通稳定模式与智能连号作为兜底；其中 pipeline 内 refill 仅保留实验开关，默认不建议启用，以降低双路径并发干扰。
 - 主任务增加“任务锁”：同一任务执行中再次触发会自动跳过并记录日志，避免重复并发抢占。
 - Pipeline 新增轻量事件切换：连续多轮缺口未改善时可提前从 continuous 切换到 random。

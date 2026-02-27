@@ -3410,6 +3410,7 @@ def get_run_metrics():
     summary = {
         'total_runs': len(records),
         'unlock_only': unlock_only,
+        'focus_scope': 'locked_to_unlocked_only' if unlock_only else 'all_runs',
         'success_within_60_rate': round(len(success_within_60) / len(records), 4) if records else None,
         'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
         'first_success_p95_ms': int(_percentile(first_success_samples, 0.95)) if first_success_samples else None,
@@ -3423,8 +3424,11 @@ def get_run_metrics():
     rate = summary.get('success_within_60_rate')
     first_p95 = summary.get('first_success_p95_ms')
     submit_p95_med = summary.get('submit_p95_p50_ms')
+    min_sample_size = 12
+    confidence = 'low'
     if records:
-        if rate is not None and first_p95 is not None and submit_p95_med is not None:
+        if len(records) >= min_sample_size and rate is not None and first_p95 is not None and submit_p95_med is not None:
+            confidence = 'high'
             if rate >= 0.6 and first_p95 <= 12000 and submit_p95_med <= 2500:
                 recommendation = {'profile': 'stable', 'reason': '命中率高且时延稳定，建议稳健档降低风控风险'}
             elif rate < 0.35 or first_p95 > 25000 or submit_p95_med > 4500:
@@ -3432,7 +3436,10 @@ def get_run_metrics():
             else:
                 recommendation = {'profile': 'balanced', 'reason': '命中率与时延居中，建议平衡档持续观察'}
         else:
-            recommendation = {'profile': 'balanced', 'reason': '样本尚不完整，先保持平衡档'}
+            recommendation = {'profile': 'balanced', 'reason': f'样本不足（{len(records)}/{min_sample_size}），先保持平衡档并继续采样'}
+    recommendation['confidence'] = confidence
+    recommendation['sample_size'] = len(records)
+    recommendation['min_sample_size'] = min_sample_size
     return jsonify({'summary': summary, 'recommendation': recommendation, 'records': records})
 
 if __name__ == "__main__":
