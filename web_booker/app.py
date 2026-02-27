@@ -211,6 +211,7 @@ CONFIG = {
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
     "locked_state_values": [2, 3, 5, 6],  # 接口 state 落在这些值时视为“锁定/暂不可下单”
     "open_retry_seconds": 20,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
+    "matrix_timeout_seconds": 3.0,  # 高峰查询超时(秒)，建议短超时+高频重试
     "stop_on_none_stage_without_refill": True,  # pipeline 阶段结束且无 refill 时是否立即结束
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
@@ -280,6 +281,11 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['locked_state_values'] = parsed_locked_states
             if 'open_retry_seconds' in saved:
                 CONFIG['open_retry_seconds'] = saved['open_retry_seconds']
+            if 'matrix_timeout_seconds' in saved:
+                try:
+                    CONFIG['matrix_timeout_seconds'] = max(0.5, float(saved['matrix_timeout_seconds']))
+                except Exception:
+                    pass
             if 'stop_on_none_stage_without_refill' in saved:
                 CONFIG['stop_on_none_stage_without_refill'] = bool(saved['stop_on_none_stage_without_refill'])
             if 'health_check_enabled' in saved:
@@ -540,11 +546,10 @@ class ApiClient:
             "token": self.token
         }
         try:
-            # 抢票高峰期服务器响应慢，适当缩短超时以便快速重试，或者延长等待？
-            # 考虑到 "Read timed out" (10s)，说明服务器卡死了。
-            # 策略：保持 10s 超时，但在上层增加重试次数。
+            # 抢票高峰期采用短超时，避免单次请求卡住吞掉黄金窗口；配合上层高频重试。
             started_at = time.time()
-            resp = self.session.get(url, headers=self.headers, params=params, timeout=10, verify=False)
+            matrix_timeout = max(0.5, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0))
+            resp = self.session.get(url, headers=self.headers, params=params, timeout=matrix_timeout, verify=False)
             ended_at = time.time()
             self._update_server_time_offset(resp, started_at, ended_at)
 
@@ -1843,6 +1848,7 @@ class TaskManager:
             }
 
         def calc_pipeline_need(cfg, date_str):
+            nonlocal pipeline_last_known_mine_slots
             target_times = [str(t) for t in (cfg.get('target_times') or [])]
             candidate_places = [str(p) for p in (cfg.get('candidate_places') or [])]
             target_count = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
@@ -1852,8 +1858,13 @@ class TaskManager:
             orders_res = client.get_place_orders()
             if "error" not in orders_res:
                 mine_slots = client._extract_mine_slots(orders_res.get("data", []), date_str)
+                pipeline_last_known_mine_slots = set(mine_slots)
             else:
-                log(f"⚠️ [pipeline] 订单拉取失败，按0占位处理: {orders_res.get('error')}")
+                if isinstance(pipeline_last_known_mine_slots, set) and pipeline_last_known_mine_slots:
+                    mine_slots = set(pipeline_last_known_mine_slots)
+                    log(f"⚠️ [pipeline] 订单拉取失败，使用最近一次成功订单快照: {orders_res.get('error')}")
+                else:
+                    log(f"⚠️ [pipeline] 订单拉取失败，按0占位处理: {orders_res.get('error')}")
 
             task_mine = mine_slots & task_scope
             need_by_time = {}
@@ -1998,6 +2009,7 @@ class TaskManager:
         pipeline_no_progress_rounds = 0
         pipeline_need_before_submit = None
         pipeline_none_stage_without_refill = False
+        pipeline_last_known_mine_slots = None
         pair_fail_cache = {}
         pair_fail_cache_ttl_s = 120.0
         pair_fail_cache_max = 300
@@ -2790,6 +2802,7 @@ def update_config():
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
     - open_retry_seconds：已开放无组合时继续重试窗口
+    - matrix_timeout_seconds：查询矩阵超时(秒)，建议高峰期使用短超时
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
@@ -2863,6 +2876,7 @@ def update_config():
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
+        _update_float_field('matrix_timeout_seconds', 0.5, CONFIG.get('matrix_timeout_seconds', 3.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
 
