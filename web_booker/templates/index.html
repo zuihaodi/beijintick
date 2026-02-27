@@ -1139,6 +1139,12 @@
                    min="0"
                    placeholder="例如 20">
           </div>
+          <div style="flex:1;min-width:260px;display:flex;align-items:flex-end;">
+            <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <input type="checkbox" id="stopOnNoneStageWithoutRefill" checked>
+              阶段结束无Refill时立即停止（stop_on_none_stage_without_refill）
+            </label>
+          </div>
         </div>
 
 
@@ -1974,6 +1980,10 @@
                             document.getElementById('openRetrySeconds').value =
                                 config.open_retry_seconds;
                         }
+                        if (config.stop_on_none_stage_without_refill != null) {
+                            const chk = document.getElementById('stopOnNoneStageWithoutRefill');
+                            if (chk) chk.checked = !!config.stop_on_none_stage_without_refill;
+                        }
 
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
@@ -2089,6 +2099,7 @@
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
                     open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
+                    stop_on_none_stage_without_refill: !!((document.getElementById('stopOnNoneStageWithoutRefill') || {}).checked),
                 };
 
                 // 健康检查字段
@@ -2823,7 +2834,9 @@
                         } else if (t.config.mode === 'pipeline') {
                             const pStr = (t.config.candidate_places || []).join(',');
                             const tStr = (t.config.target_times || []).join(',');
-                            const stages = (((t.config.pipeline || {}).stages) || []).map(st => st && st.type).filter(Boolean).join('→') || 'continuous→random→refill';
+                            const allStages = (((t.config.pipeline || {}).stages) || []).filter(st => st && st.type);
+                            const enabledStages = allStages.filter(st => st.enabled !== false).map(st => st.type);
+                            const stages = enabledStages.join('→') || (allStages.length ? '（未启用）' : 'continuous→random');
                             detail = `🎯 目标：${t.config.target_count}块 (Pipeline)<br>🧪 阶段：${stages}<br>🏸 候选：${pStr || '-'}号<br>⌚ 时间：${tStr || '-'}`;
                         } else {
                             const pStr = (t.config.candidate_places || []).join(',');
@@ -3122,7 +3135,7 @@
             document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
             document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
             document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
-            document.getElementById('pipelineRefillEnabled').checked = false;
+            document.getElementById('pipelineRefillEnabled').checked = !!f.enabled;
             document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
