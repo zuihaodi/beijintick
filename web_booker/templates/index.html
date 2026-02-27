@@ -1365,6 +1365,7 @@
         let lastLogIndex = 0; // 记录日志位置
         let editingTaskId = null;
         const PAGE_MODE = '{{ page_mode }}';
+        let editingRefillId = null;
 
         function showToast(msg, isError = false) {
             const toast = document.getElementById('saveToast');
@@ -2164,6 +2165,7 @@
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
                     open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
+                    stop_on_none_stage_without_refill: !!((document.getElementById('stopOnNoneStageWithoutRefill') || {}).checked),
                 };
 
                 const stopOnNoneEl = document.getElementById('stopOnNoneStageWithoutRefill');
