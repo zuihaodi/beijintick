@@ -25,6 +25,9 @@
   "open_retry_seconds": 30.0,
   "order_query_timeout_seconds": 2.5,
   "order_query_max_pages": 2,
+  "post_submit_orders_join_timeout_seconds": 1.2,
+  "post_submit_verify_orders_on_matrix_partial_only": true,
+  "post_submit_orders_sync_fallback": false,
   "stop_on_none_stage_without_refill": false,
   "sms": {
     "user": "<sms-user>",

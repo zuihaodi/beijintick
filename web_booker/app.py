@@ -211,6 +211,9 @@ CONFIG = {
     "batch_min_interval": 0.8,
     "order_query_timeout_seconds": 2.5,
     "order_query_max_pages": 2,
+    "post_submit_orders_join_timeout_seconds": 1.2,
+    "post_submit_verify_orders_on_matrix_partial_only": True,
+    "post_submit_orders_sync_fallback": False,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
@@ -325,6 +328,15 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['order_query_max_pages'] = max(1, min(10, int(saved['order_query_max_pages'])))
                 except Exception:
                     pass
+            if 'post_submit_orders_join_timeout_seconds' in saved:
+                try:
+                    CONFIG['post_submit_orders_join_timeout_seconds'] = max(0.1, float(saved['post_submit_orders_join_timeout_seconds']))
+                except Exception:
+                    pass
+            if 'post_submit_verify_orders_on_matrix_partial_only' in saved:
+                CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = bool(saved['post_submit_verify_orders_on_matrix_partial_only'])
+            if 'post_submit_orders_sync_fallback' in saved:
+                CONFIG['post_submit_orders_sync_fallback'] = bool(saved['post_submit_orders_sync_fallback'])
             if 'refill_window_seconds' in saved:
                 CONFIG['refill_window_seconds'] = saved['refill_window_seconds']
             # ✅ 新增：锁定重试的两个配置
@@ -835,7 +847,7 @@ class ApiClient:
 
         def filter_still_available(items):
             try:
-                verify = self.get_matrix(date_str)
+                verify = self.get_matrix(date_str, include_mine_overlay=False)
                 if not isinstance(verify, dict) or verify.get("error"):
                     return list(items)
                 matrix = verify.get("matrix") or {}
@@ -1179,39 +1191,49 @@ class ApiClient:
             })
 
         # ---------- 下单后验证 ----------
+        api_success_count = sum(1 for r in results if r.get("status") == "success")
         verify_success_count = None
         verify_success_items = []
         verify_failed_items = []
         try:
-            verify = {"error": "未执行"}
-            orders_res = {"error": "未执行"}
+            verify = self.get_matrix(date_str, include_mine_overlay=False)
+            orders_res = {"error": "按配置跳过"}
             order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
             order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
-
-            def _fetch_matrix():
-                nonlocal verify
-                verify = self.get_matrix(date_str)
-
-            def _fetch_orders():
-                nonlocal orders_res
-                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
-
-            t_matrix = threading.Thread(target=_fetch_matrix, daemon=True)
-            t_orders = threading.Thread(target=_fetch_orders, daemon=True)
-            t_matrix.start()
-            t_orders.start()
-            t_matrix.join(timeout=max(2.0, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0) + 1.0))
-            t_orders.join(timeout=max(2.0, order_timeout_s * order_max_pages + 1.0))
-
-            # 线程超时/未完成时，做一次同步兜底，避免把“未执行”误判成失败。
-            if isinstance(verify, dict) and verify.get("error") == "未执行":
-                verify = self.get_matrix(date_str)
-            if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
-                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
 
             if isinstance(verify, dict) and not verify.get("error"):
                 v_matrix = verify["matrix"]
                 verify_states = []
+
+                matrix_success_items = []
+                matrix_failed_items = []
+                for item in submit_items:
+                    p = str(item["place"])
+                    t = item["time"]
+                    status = v_matrix.get(p, {}).get(t, "N/A")
+                    if status in ("booked", "mine"):
+                        matrix_success_items.append({"place": p, "time": t})
+                    else:
+                        matrix_failed_items.append({"place": p, "time": t})
+
+                verify_orders_only_on_partial = bool(CONFIG.get('post_submit_verify_orders_on_matrix_partial_only', True))
+                needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
+
+                if needs_orders_query:
+                    orders_res = {"error": "未执行"}
+
+                    def _fetch_orders():
+                        nonlocal orders_res
+                        orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
+                    t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+                    t_orders.start()
+                    join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
+                    t_orders.join(timeout=join_timeout_s)
+                    if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                        orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
+                        if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                            orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
 
                 mine_slots = set()
                 orders_query_ok = False
@@ -1230,11 +1252,8 @@ class ApiClient:
                     mine_hit = (p, t) in mine_slots
                     verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
 
-                    # 优先用“我的订单”判定是否真实成功；仅当订单查询失败时，才退回矩阵状态。
-                    if orders_query_ok:
-                        success = mine_hit
-                    else:
-                        success = status in ("booked", "mine")
+                    # 若订单查询可用：优先用 mine 兜底；否则只用矩阵状态，保证验证链路尽快收敛。
+                    success = mine_hit or status in ("booked", "mine") if orders_query_ok else status in ("booked", "mine")
 
                     if success:
                         verify_success_items.append({"place": p, "time": t})
@@ -1261,7 +1280,6 @@ class ApiClient:
 
         # ---------- 汇总结果 ----------
         # 1) 接口返回层面的成功批次数
-        api_success_count = sum(1 for r in results if r.get("status") == "success")
 
         # 2) 真实已被占用的场次数量（如果验证成功）
         verify_ok = verify_success_count is not None
@@ -3030,6 +3048,9 @@ def update_config():
     - matrix_timeout_seconds：查询矩阵超时(秒)，建议高峰期使用短超时
     - order_query_timeout_seconds：订单查询超时(秒)
     - order_query_max_pages：订单查询最大页数
+    - post_submit_orders_join_timeout_seconds：提交后订单查询线程等待上限(秒)
+    - post_submit_verify_orders_on_matrix_partial_only：仅在矩阵校验存在缺口时再查订单
+    - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
@@ -3106,8 +3127,31 @@ def update_config():
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 30.0))
         _update_float_field('matrix_timeout_seconds', 0.5, CONFIG.get('matrix_timeout_seconds', 3.0))
         _update_float_field('order_query_timeout_seconds', 0.5, CONFIG.get('order_query_timeout_seconds', 2.5))
+        _update_float_field('post_submit_orders_join_timeout_seconds', 0.1, CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
+
+        if 'post_submit_verify_orders_on_matrix_partial_only' in data:
+            val = data['post_submit_verify_orders_on_matrix_partial_only']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = enabled
+            saved['post_submit_verify_orders_on_matrix_partial_only'] = enabled
+
+        if 'post_submit_orders_sync_fallback' in data:
+            val = data['post_submit_orders_sync_fallback']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_orders_sync_fallback'] = enabled
+            saved['post_submit_orders_sync_fallback'] = enabled
 
         if 'stop_on_none_stage_without_refill' in data:
             val = data['stop_on_none_stage_without_refill']
