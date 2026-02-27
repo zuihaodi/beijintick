@@ -205,7 +205,7 @@ CONFIG = {
     "batch_retry_times": 2,
     "batch_retry_interval": 0.5,
     "submit_batch_size": 3,
-    "initial_submit_batch_size": 3,
+    "initial_submit_batch_size": 2,
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
@@ -215,9 +215,9 @@ CONFIG = {
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
     "locked_state_values": [2, 3, 5, 6],  # 接口 state 落在这些值时视为“锁定/暂不可下单”
-    "open_retry_seconds": 20,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
+    "open_retry_seconds": 30,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
     "matrix_timeout_seconds": 3.0,  # 高峰查询超时(秒)，建议短超时+高频重试
-    "stop_on_none_stage_without_refill": True,  # pipeline 阶段结束且无 refill 时是否立即结束
+    "stop_on_none_stage_without_refill": False,  # pipeline 阶段结束且无 refill 时是否立即结束
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
@@ -1759,6 +1759,27 @@ class TaskManager:
             "target_date": None,
             "saw_locked": False,
             "unlocked_after_locked": False,
+            "config_snapshot": {
+                "retry_interval": float(CONFIG.get("retry_interval", 1.0) or 1.0),
+                "aggressive_retry_interval": float(CONFIG.get("aggressive_retry_interval", 0.3) or 0.3),
+                "batch_retry_times": int(CONFIG.get("batch_retry_times", 2) or 2),
+                "batch_retry_interval": float(CONFIG.get("batch_retry_interval", 0.5) or 0.5),
+                "submit_batch_size": int(CONFIG.get("submit_batch_size", 3) or 3),
+                "initial_submit_batch_size": int(CONFIG.get("initial_submit_batch_size", CONFIG.get("submit_batch_size", 3)) or 3),
+                "submit_timeout_seconds": float(CONFIG.get("submit_timeout_seconds", 4.0) or 4.0),
+                "submit_split_retry_times": int(CONFIG.get("submit_split_retry_times", 1) or 1),
+                "batch_min_interval": float(CONFIG.get("batch_min_interval", 0.8) or 0.8),
+                "order_query_timeout_seconds": float(CONFIG.get("order_query_timeout_seconds", 2.5) or 2.5),
+                "order_query_max_pages": int(CONFIG.get("order_query_max_pages", 2) or 2),
+                "locked_retry_interval": float(CONFIG.get("locked_retry_interval", 1.0) or 1.0),
+                "locked_max_seconds": float(CONFIG.get("locked_max_seconds", 60.0) or 60.0),
+                "open_retry_seconds": float(CONFIG.get("open_retry_seconds", 30.0) or 30.0),
+                "matrix_timeout_seconds": float(CONFIG.get("matrix_timeout_seconds", 3.0) or 3.0),
+                "stop_on_none_stage_without_refill": bool(CONFIG.get("stop_on_none_stage_without_refill", False)),
+            },
+            "goal_achieved": False,
+            "success_item_count": 0,
+            "failed_item_count": 0,
         }
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
@@ -1805,6 +1826,8 @@ class TaskManager:
 
             run_metrics["result_status"] = "success" if success else ("partial" if partial else "fail")
             run_metrics["result_msg"] = str(message or "")[:200]
+            if success:
+                run_metrics["goal_achieved"] = True
             if date_str:
                 run_metrics["target_date"] = str(date_str)
             if (success or partial) and run_metrics.get("first_success_ms") is None:
@@ -2580,6 +2603,9 @@ class TaskManager:
                         continue
 
                 if status == "success":
+                    run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), len(res.get("success_items") or final_items or []))
+                    run_metrics["failed_item_count"] = len(res.get("failed_items") or [])
+                    run_metrics["goal_achieved"] = True
                     log(f"✅ 下单完成: 全部成功 ({status})")
                     for it in (res.get('success_items') or final_items or []):
                         pair_fail_cache.pop((str(it.get('place')), str(it.get('time'))), None)
@@ -2595,6 +2621,8 @@ class TaskManager:
                     finalize_run_metrics(target_date)
                     return
                 elif status == "partial":
+                    run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), len(res.get("success_items") or []))
+                    run_metrics["failed_item_count"] = max(int(run_metrics.get("failed_item_count") or 0), len(res.get("failed_items") or []))
                     log(f"⚠️ 下单完成: 部分成功 ({status})")
                     for it in (res.get('success_items') or []):
                         pair_fail_cache.pop((str(it.get('place')), str(it.get('time'))), None)
@@ -2614,6 +2642,7 @@ class TaskManager:
                     finalize_run_metrics(target_date)
                     return
                 else:
+                    run_metrics["failed_item_count"] = max(int(run_metrics.get("failed_item_count") or 0), len(res.get("failed_items") or final_items or []))
                     log(f"❌ 下单失败: {res.get('msg')}")
                     last_fail_reason = str(res.get('msg') or "下单失败")
                     fail_type = classify_fail_type(last_fail_reason)
@@ -3464,6 +3493,7 @@ def get_run_metrics():
         'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
         'first_success_p95_ms': int(_percentile(first_success_samples, 0.95)) if first_success_samples else None,
         'submit_p95_p50_ms': int(_percentile(submit_p95_samples, 0.5)) if submit_p95_samples else None,
+        'goal_achieved_rate': round(sum(1 for r in records if bool(r.get('goal_achieved'))) / len(records), 4) if records else None,
     }
 
     recommendation = {

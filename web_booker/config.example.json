@@ -17,14 +17,15 @@
   "batch_retry_times": 2,
   "batch_retry_interval": 0.5,
   "submit_batch_size": 3,
-  "initial_submit_batch_size": 3,
+  "initial_submit_batch_size": 2,
   "batch_min_interval": 0.8,
   "refill_window_seconds": 8.0,
   "locked_retry_interval": 1.0,
   "locked_max_seconds": 60.0,
-  "open_retry_seconds": 20.0,
+  "open_retry_seconds": 30.0,
   "order_query_timeout_seconds": 2.5,
   "order_query_max_pages": 2,
+  "stop_on_none_stage_without_refill": false,
   "sms": {
     "user": "<sms-user>",
     "api_key": "<sms-api-key>"
