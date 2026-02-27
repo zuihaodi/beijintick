@@ -205,9 +205,12 @@ CONFIG = {
     "batch_retry_times": 2,
     "batch_retry_interval": 0.5,
     "submit_batch_size": 3,
+    "initial_submit_batch_size": 3,
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
+    "order_query_timeout_seconds": 2.5,
+    "order_query_max_pages": 2,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
@@ -295,6 +298,11 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['batch_retry_interval'] = saved['batch_retry_interval']
             if 'submit_batch_size' in saved:
                 CONFIG['submit_batch_size'] = saved['submit_batch_size']
+            if 'initial_submit_batch_size' in saved:
+                try:
+                    CONFIG['initial_submit_batch_size'] = max(1, min(9, int(saved['initial_submit_batch_size'])))
+                except Exception:
+                    pass
             if 'submit_timeout_seconds' in saved:
                 try:
                     CONFIG['submit_timeout_seconds'] = max(0.5, float(saved['submit_timeout_seconds']))
@@ -307,6 +315,16 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'batch_min_interval' in saved:
                 CONFIG['batch_min_interval'] = saved['batch_min_interval']
+            if 'order_query_timeout_seconds' in saved:
+                try:
+                    CONFIG['order_query_timeout_seconds'] = max(0.5, float(saved['order_query_timeout_seconds']))
+                except Exception:
+                    pass
+            if 'order_query_max_pages' in saved:
+                try:
+                    CONFIG['order_query_max_pages'] = max(1, min(10, int(saved['order_query_max_pages'])))
+                except Exception:
+                    pass
             if 'refill_window_seconds' in saved:
                 CONFIG['refill_window_seconds'] = saved['refill_window_seconds']
             # ✅ 新增：锁定重试的两个配置
@@ -460,7 +478,7 @@ class ApiClient:
         except Exception as e:
             return {'ok': False, 'unknown': True, 'msg': f"探测异常: {e}"}
 
-    def get_place_orders(self, page_size=20, max_pages=6):
+    def get_place_orders(self, page_size=20, max_pages=6, timeout_s=10):
         """获取我的场地订单列表（用于识别 mine 状态）。"""
         url = f"https://{self.host}/easyserpClient/place/getPlaceOrder"
         all_orders = []
@@ -473,7 +491,13 @@ class ApiClient:
                 "token": self.token,
             }
             try:
-                resp = self.session.get(url, headers=self.headers, params=params, timeout=10, verify=False)
+                resp = self.session.get(
+                    url,
+                    headers=self.headers,
+                    params=params,
+                    timeout=max(0.5, float(timeout_s or 10)),
+                    verify=False,
+                )
                 data = resp.json()
             except Exception as e:
                 return {"error": f"获取订单失败: {e}"}
@@ -756,7 +780,8 @@ class ApiClient:
         except Exception:
             degrade_batch_size = 3
         degrade_batch_size = max(1, min(9, degrade_batch_size))
-        initial_batch_size = max(1, min(9, len(selected_items) or 1))
+        configured_initial_batch_size = int(CONFIG.get("initial_submit_batch_size", CONFIG.get("submit_batch_size", 3)) or 3)
+        initial_batch_size = max(1, min(9, configured_initial_batch_size))
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
@@ -765,8 +790,8 @@ class ApiClient:
         submit_split_retry_times = max(0, min(3, int(CONFIG.get("submit_split_retry_times", 1) or 1)))
 
         print(
-            f"🧭 [批次策略] 首批=按本次选择数量({len(selected_items)})→{initial_batch_size}；"
-            f"降级=按配置 submit_batch_size→{degrade_batch_size}"
+            f"🧭 [批次策略] 首批=按配置 initial_submit_batch_size→{initial_batch_size}；"
+            f"降级=按配置 submit_batch_size→{degrade_batch_size}；本次选择={len(selected_items)}"
         )
         print(
             f"⏱️ [提交超时] submit_timeout={submit_timeout_seconds}s, split_retry_times={submit_split_retry_times}"
@@ -1165,7 +1190,9 @@ class ApiClient:
 
                 mine_slots = set()
                 orders_query_ok = False
-                orders_res = self.get_place_orders()
+                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+                order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
                 if "error" not in orders_res:
                     mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
                     orders_query_ok = True
@@ -2931,12 +2958,15 @@ def update_config():
     - submit_batch_size：单批提交上限
     - submit_timeout_seconds：下单接口超时(秒)
     - submit_split_retry_times：降级分段重试轮次
+    - initial_submit_batch_size：首批提交上限
     - batch_min_interval：批次间最小间隔
     - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
     - open_retry_seconds：已开放无组合时继续重试窗口
     - matrix_timeout_seconds：查询矩阵超时(秒)，建议高峰期使用短超时
+    - order_query_timeout_seconds：订单查询超时(秒)
+    - order_query_max_pages：订单查询最大页数
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
@@ -3012,6 +3042,7 @@ def update_config():
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
         _update_float_field('matrix_timeout_seconds', 0.5, CONFIG.get('matrix_timeout_seconds', 3.0))
+        _update_float_field('order_query_timeout_seconds', 0.5, CONFIG.get('order_query_timeout_seconds', 2.5))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
 
@@ -3043,6 +3074,24 @@ def update_config():
             val = max(1, min(9, val))
             CONFIG['submit_batch_size'] = val
             saved['submit_batch_size'] = val
+
+        if 'initial_submit_batch_size' in data:
+            try:
+                val = int(data['initial_submit_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('initial_submit_batch_size', CONFIG.get('submit_batch_size', 3)))
+            val = max(1, min(9, val))
+            CONFIG['initial_submit_batch_size'] = val
+            saved['initial_submit_batch_size'] = val
+
+        if 'order_query_max_pages' in data:
+            try:
+                val = int(data['order_query_max_pages'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('order_query_max_pages', 2))
+            val = max(1, min(10, val))
+            CONFIG['order_query_max_pages'] = val
+            saved['order_query_max_pages'] = val
 
         if 'submit_split_retry_times' in data:
             try:
