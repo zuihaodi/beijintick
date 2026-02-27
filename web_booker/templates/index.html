@@ -1064,6 +1064,26 @@
         <!-- Tab 3: 系统设置 -->
         {% if page_mode == 'settings' %}
         <div id="tab-settings" class="tab-content active">
+        <div class="form-group"
+            style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <label style="font-weight:bold;margin-bottom:8px;">🎯 第一性原理自动档（推荐）</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                <div style="flex:1;min-width:220px;">
+                    <label style="font-size:12px;">网络档位</label>
+                    <select id="networkProfile" class="form-control">
+                        <option value="balanced">平衡（默认）</option>
+                        <option value="stable">稳健（网络一般/波动）</option>
+                        <option value="aggressive">激进（抢开场黄金1分钟）</option>
+                    </select>
+                </div>
+                <button class="btn" style="padding:8px 12px;background:#007aff;color:#fff;"
+                    onclick="applyNetworkProfile()">⚙️ 一键套用档位</button>
+            </div>
+            <div style="font-size:12px;color:#666;margin-top:6px;line-height:1.5;">
+                * 任务页参数是“任务级”（每个任务自己带），系统设置是“全局级”（默认策略）。<br>
+                * 目标是减少手动调参：每天仅需选档位 + 保存一次。
+            </div>
+        </div>
         <!-- 速度设置 -->
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
@@ -2153,6 +2173,48 @@
                 console.error('保存配置失败', e);
                 showToast('保存失败，请查看控制台日志', true);
             }
+        }
+
+        function applyNetworkProfile() {
+            const profile = (document.getElementById('networkProfile') || {}).value || 'balanced';
+            const presets = {
+                stable: {
+                    retryInterval: 1.0,
+                    aggressiveRetryInterval: 0.4,
+                    submitTimeoutSeconds: 5.0,
+                    matrixTimeoutSeconds: 3.5,
+                    submitSplitRetryTimes: 1,
+                    openRetrySeconds: 10,
+                },
+                balanced: {
+                    retryInterval: 0.8,
+                    aggressiveRetryInterval: 0.3,
+                    submitTimeoutSeconds: 4.0,
+                    matrixTimeoutSeconds: 3.0,
+                    submitSplitRetryTimes: 1,
+                    openRetrySeconds: 8,
+                },
+                aggressive: {
+                    retryInterval: 0.5,
+                    aggressiveRetryInterval: 0.2,
+                    submitTimeoutSeconds: 3.0,
+                    matrixTimeoutSeconds: 2.5,
+                    submitSplitRetryTimes: 2,
+                    openRetrySeconds: 6,
+                }
+            };
+            const p = presets[profile] || presets.balanced;
+            const setV = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.value = String(v);
+            };
+            setV('retryInterval', p.retryInterval);
+            setV('aggressiveRetryInterval', p.aggressiveRetryInterval);
+            setV('submitTimeoutSeconds', p.submitTimeoutSeconds);
+            setV('matrixTimeoutSeconds', p.matrixTimeoutSeconds);
+            setV('submitSplitRetryTimes', p.submitSplitRetryTimes);
+            setV('openRetrySeconds', p.openRetrySeconds);
+            showToast('已套用自动档参数，请点“保存全部系统设置”');
         }
 
 
