@@ -1304,6 +1304,7 @@
         let lastLogIndex = 0; // 记录日志位置
         let editingTaskId = null;
         const PAGE_MODE = '{{ page_mode }}';
+        let editingRefillId = null;
 
         function showToast(msg, isError = false) {
             const toast = document.getElementById('saveToast');
