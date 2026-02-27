@@ -1203,6 +1203,12 @@ class ApiClient:
             t_matrix.join(timeout=max(2.0, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0) + 1.0))
             t_orders.join(timeout=max(2.0, order_timeout_s * order_max_pages + 1.0))
 
+            # 线程超时/未完成时，做一次同步兜底，避免把“未执行”误判成失败。
+            if isinstance(verify, dict) and verify.get("error") == "未执行":
+                verify = self.get_matrix(date_str)
+            if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
             if isinstance(verify, dict) and not verify.get("error"):
                 v_matrix = verify["matrix"]
                 verify_states = []
@@ -1848,6 +1854,9 @@ class TaskManager:
             run_metrics["result_msg"] = str(message or "")[:200]
             if success:
                 run_metrics["goal_achieved"] = True
+                run_metrics["failed_item_count"] = 0
+                if items:
+                    run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), len(items))
             if date_str:
                 run_metrics["target_date"] = str(date_str)
             if (success or partial) and run_metrics.get("first_success_ms") is None:
