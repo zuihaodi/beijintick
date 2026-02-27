@@ -2455,6 +2455,7 @@
 
 
         function isContinuousNumbers(values) {
+            // 兼容旧逻辑：当前主任务已允许离散候选场地，不再强制使用该校验。
             const sorted = values.map(v => Number(v)).sort((a, b) => a - b);
             if (sorted.length <= 1) return true;
             for (let i = 1; i < sorted.length; i++) {
@@ -3135,10 +3136,6 @@
                 return;
             }
 
-            if (!isContinuousNumbers(places)) {
-                alert('候选场地必须连续（如 6,7 或 6,7,8）');
-                return;
-            }
             if (!isContinuousTimes(times)) {
                 alert('时间段必须连续（如 13:00,14:00,15:00）');
                 return;

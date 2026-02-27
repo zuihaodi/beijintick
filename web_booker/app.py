@@ -1183,16 +1183,32 @@ class ApiClient:
         verify_success_items = []
         verify_failed_items = []
         try:
-            verify = self.get_matrix(date_str)
+            verify = {"error": "未执行"}
+            orders_res = {"error": "未执行"}
+            order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+            order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+
+            def _fetch_matrix():
+                nonlocal verify
+                verify = self.get_matrix(date_str)
+
+            def _fetch_orders():
+                nonlocal orders_res
+                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
+            t_matrix = threading.Thread(target=_fetch_matrix, daemon=True)
+            t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+            t_matrix.start()
+            t_orders.start()
+            t_matrix.join(timeout=max(2.0, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0) + 1.0))
+            t_orders.join(timeout=max(2.0, order_timeout_s * order_max_pages + 1.0))
+
             if isinstance(verify, dict) and not verify.get("error"):
                 v_matrix = verify["matrix"]
                 verify_states = []
 
                 mine_slots = set()
                 orders_query_ok = False
-                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
-                order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
-                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
                 if "error" not in orders_res:
                     mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
                     orders_query_ok = True
