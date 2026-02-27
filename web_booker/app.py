@@ -2152,7 +2152,7 @@ class TaskManager:
         # 新增：锁定状态下的重试间隔 & 最多等待时间
         locked_retry_interval = CONFIG.get('locked_retry_interval', retry_interval)
         locked_max_seconds = CONFIG.get('locked_max_seconds', 60)
-        open_retry_seconds = CONFIG.get('open_retry_seconds', 20)
+        open_retry_seconds = CONFIG.get('open_retry_seconds', 30)
 
         # 记录进入「锁定等待模式」的起始时间，用于统计已等待多久
         locked_mode_started_at = None
@@ -2336,7 +2336,7 @@ class TaskManager:
                         stype = 'random'
                     pipeline_active_stage = stype
                     log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
-                    if not stype and refill_stage is None and bool(CONFIG.get('stop_on_none_stage_without_refill', True)):
+                    if not stype and refill_stage is None and bool(CONFIG.get('stop_on_none_stage_without_refill', False)):
                         pipeline_none_stage_without_refill = True
                         log("🧪 [pipeline] 阶段窗口已结束且未启用refill，按配置立即结束任务")
                     if stype == 'continuous':
@@ -3069,7 +3069,7 @@ def update_config():
         _update_float_field('refill_window_seconds', 0.0, CONFIG.get('refill_window_seconds', 8.0))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
-        _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
+        _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 30.0))
         _update_float_field('matrix_timeout_seconds', 0.5, CONFIG.get('matrix_timeout_seconds', 3.0))
         _update_float_field('order_query_timeout_seconds', 0.5, CONFIG.get('order_query_timeout_seconds', 2.5))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
