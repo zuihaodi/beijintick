@@ -211,6 +211,7 @@ CONFIG = {
     "locked_max_seconds": 60,  # ✅ 新增：锁定状态最多刷 N 秒
     "locked_state_values": [2, 3, 5, 6],  # 接口 state 落在这些值时视为“锁定/暂不可下单”
     "open_retry_seconds": 20,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
+    "stop_on_none_stage_without_refill": True,  # pipeline 阶段结束且无 refill 时是否立即结束
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
@@ -279,6 +280,8 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['locked_state_values'] = parsed_locked_states
             if 'open_retry_seconds' in saved:
                 CONFIG['open_retry_seconds'] = saved['open_retry_seconds']
+            if 'stop_on_none_stage_without_refill' in saved:
+                CONFIG['stop_on_none_stage_without_refill'] = bool(saved['stop_on_none_stage_without_refill'])
             if 'health_check_enabled' in saved:
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
@@ -1457,6 +1460,14 @@ class TaskManager:
                 t['last_result'] = {'status': 'stopped', 'msg': f'达到截止时间({deadline_text})，自动停用'}
                 self.append_refill_history(t, t['last_result'])
                 self.save_refill_tasks()
+                try:
+                    task_id = str(t.get('id') or '-')
+                    date_str = str(t.get('date') or '')
+                    content = f"Refill#{task_id} 已到截止时间({deadline_text})，任务自动停用。日期: {date_str}"
+                    self.send_notification(content)
+                    self.send_wechat_notification(content)
+                except Exception as e:
+                    log(f"⚠️ [refill#{t.get('id')}] 截止停用通知发送失败: {e}")
                 continue
             interval = max(1.0, float(t.get('interval_seconds', 10.0) or 10.0))
             last = float(self._refill_last_run.get(tid, 0.0))
@@ -1986,6 +1997,7 @@ class TaskManager:
         pipeline_force_random_after_continuous = False
         pipeline_no_progress_rounds = 0
         pipeline_need_before_submit = None
+        pipeline_none_stage_without_refill = False
         pair_fail_cache = {}
         pair_fail_cache_ttl_s = 120.0
         pair_fail_cache_max = 300
@@ -2082,6 +2094,7 @@ class TaskManager:
             pipeline_active_stage = None
             pipeline_cfg_for_retry = None
             pipeline_refill_wait_seconds = 0.0
+            pipeline_none_stage_without_refill = False
             for cfg in mode_configs:
                 mode = cfg.get('mode', 'normal')
                 target_times = cfg.get('target_times', [])
@@ -2140,6 +2153,9 @@ class TaskManager:
                         stype = 'random'
                     pipeline_active_stage = stype
                     log(f"🧪 [pipeline] 当前阶段={stype or 'none'} elapsed={round(elapsed, 2)}s")
+                    if not stype and refill_stage is None and bool(CONFIG.get('stop_on_none_stage_without_refill', True)):
+                        pipeline_none_stage_without_refill = True
+                        log("🧪 [pipeline] 阶段窗口已结束且未启用refill，按配置立即结束任务")
                     if stype == 'continuous':
                         mode_items = choose_pipeline_items(matrix, need_res, 'continuous', prefer_adjacent=pipe_cfg.get('continuous_prefer_adjacent', True), pair_fail_cache=pair_fail_cache, biz_fail_cooldown_seconds=CONFIG.get('biz_fail_cooldown_seconds', 15.0))
                     elif stype == 'random':
@@ -2340,6 +2356,10 @@ class TaskManager:
 
             if selected_mode and len(mode_configs) > 1:
                 log(f"🎛️ 单任务多模式命中: 当前使用 {selected_mode} 模式提交，不跨模式补齐")
+
+            if not final_items and pipeline_none_stage_without_refill:
+                notify_task_result(False, "pipeline阶段窗口已结束且未启用refill，停止继续轮询", date_str=target_date)
+                return
 
             # 4. 提交订单
             if final_items:
@@ -2770,6 +2790,7 @@ def update_config():
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
     - open_retry_seconds：已开放无组合时继续重试窗口
+    - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
@@ -2844,6 +2865,17 @@ def update_config():
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 20.0))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
+
+        if 'stop_on_none_stage_without_refill' in data:
+            val = data['stop_on_none_stage_without_refill']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['stop_on_none_stage_without_refill'] = enabled
+            saved['stop_on_none_stage_without_refill'] = enabled
 
         if 'batch_retry_times' in data:
             try:
