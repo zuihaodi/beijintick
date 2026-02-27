@@ -1749,6 +1749,8 @@ class TaskManager:
             "task_id": task.get('id'),
             "task_type": task.get('type', 'daily'),
             "started_at": int(run_started_ts * 1000),
+            "active_started_at": int(run_started_ts * 1000),
+            "prestart_wait_ms": 0,
             "attempt_count": 0,
             "first_matrix_ok_ms": None,
             "first_submit_ms": None,
@@ -1781,6 +1783,8 @@ class TaskManager:
             "success_item_count": 0,
             "failed_item_count": 0,
         }
+
+        active_started_ts = run_started_ts
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
@@ -1831,13 +1835,14 @@ class TaskManager:
             if date_str:
                 run_metrics["target_date"] = str(date_str)
             if (success or partial) and run_metrics.get("first_success_ms") is None:
-                run_metrics["first_success_ms"] = int(max(0.0, time.time() - run_started_ts) * 1000)
+                run_metrics["first_success_ms"] = int(max(0.0, time.time() - active_started_ts) * 1000)
 
         def finalize_run_metrics(date_str=None):
             try:
                 now_ts = time.time()
                 run_metrics["finished_at"] = int(now_ts * 1000)
                 run_metrics["duration_ms"] = int(max(0.0, now_ts - run_started_ts) * 1000)
+                run_metrics["active_duration_ms"] = int(max(0.0, now_ts - active_started_ts) * 1000)
                 if date_str and not run_metrics.get("target_date"):
                     run_metrics["target_date"] = str(date_str)
                 samples = sorted(int(x) for x in (run_metrics.get("submit_latencies_ms") or []) if x is not None)
@@ -1908,6 +1913,10 @@ class TaskManager:
                 if 0 < wait_s <= 120:
                     log(f"⏳ [时间对齐] 服务端未到触发时刻，等待 {round(wait_s, 2)}s 后开始抢票")
                     time.sleep(wait_s)
+
+        active_started_ts = time.time()
+        run_metrics["active_started_at"] = int(active_started_ts * 1000)
+        run_metrics["prestart_wait_ms"] = int(max(0.0, active_started_ts - run_started_ts) * 1000)
 
         config = task.get('config')
 
@@ -2247,7 +2256,7 @@ class TaskManager:
 
             # 1.2 正常拿到矩阵
             if run_metrics.get("first_matrix_ok_ms") is None:
-                run_metrics["first_matrix_ok_ms"] = int(max(0.0, time.time() - run_started_ts) * 1000)
+                run_metrics["first_matrix_ok_ms"] = int(max(0.0, time.time() - active_started_ts) * 1000)
             matrix = matrix_res.get("matrix", {})
 
             mode_configs = config.get('modes') if isinstance(config.get('modes'), list) and config.get('modes') else [config]
@@ -2550,7 +2559,7 @@ class TaskManager:
             if final_items:
                 submit_started_at = time.time()
                 if run_metrics.get("first_submit_ms") is None:
-                    run_metrics["first_submit_ms"] = int(max(0.0, submit_started_at - run_started_ts) * 1000)
+                    run_metrics["first_submit_ms"] = int(max(0.0, submit_started_at - active_started_ts) * 1000)
                 log(f"正在提交分批订单: {final_items}")
                 res = client.submit_order(target_date, final_items)
                 submit_spent_s = max(0.0, time.time() - submit_started_at)
