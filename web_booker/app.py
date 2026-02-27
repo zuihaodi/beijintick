@@ -1730,6 +1730,8 @@ class TaskManager:
             "result_status": None,
             "result_msg": None,
             "target_date": None,
+            "saw_locked": False,
+            "unlocked_after_locked": False,
         }
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
@@ -2210,6 +2212,11 @@ class TaskManager:
                         break
                 if locked_exists:
                     break
+
+            if locked_exists:
+                run_metrics["saw_locked"] = True
+            elif run_metrics.get("saw_locked"):
+                run_metrics["unlocked_after_locked"] = True
 
             # 3. 单任务多模式：按顺序尝试，命中一个模式后仅使用该模式结果，不跨模式补齐
             final_items: list[dict] = []
@@ -3376,6 +3383,7 @@ def get_logs():
 @app.route('/api/run-metrics', methods=['GET'])
 def get_run_metrics():
     task_id = request.args.get('task_id')
+    unlock_only = str(request.args.get('unlock_only', '1')).lower() in ('1', 'true', 'yes', 'on')
     limit = request.args.get('limit', default=50, type=int)
     limit = max(1, min(500, int(limit or 50)))
     records = []
@@ -3389,6 +3397,11 @@ def get_run_metrics():
         records = []
     if task_id:
         records = [r for r in records if str(r.get('task_id')) == str(task_id)]
+    if unlock_only:
+        records = [
+            r for r in records
+            if bool(r.get('saw_locked')) and bool(r.get('unlocked_after_locked'))
+        ]
     records = records[-limit:]
 
     success_within_60 = [r for r in records if r.get('success_within_60s') is True]
@@ -3396,12 +3409,31 @@ def get_run_metrics():
     submit_p95_samples = sorted(int(r.get('submit_latency_p95_ms')) for r in records if r.get('submit_latency_p95_ms') is not None)
     summary = {
         'total_runs': len(records),
+        'unlock_only': unlock_only,
         'success_within_60_rate': round(len(success_within_60) / len(records), 4) if records else None,
         'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
         'first_success_p95_ms': int(_percentile(first_success_samples, 0.95)) if first_success_samples else None,
         'submit_p95_p50_ms': int(_percentile(submit_p95_samples, 0.5)) if submit_p95_samples else None,
     }
-    return jsonify({'summary': summary, 'records': records})
+
+    recommendation = {
+        'profile': 'balanced',
+        'reason': '数据不足，先用平衡档持续采样',
+    }
+    rate = summary.get('success_within_60_rate')
+    first_p95 = summary.get('first_success_p95_ms')
+    submit_p95_med = summary.get('submit_p95_p50_ms')
+    if records:
+        if rate is not None and first_p95 is not None and submit_p95_med is not None:
+            if rate >= 0.6 and first_p95 <= 12000 and submit_p95_med <= 2500:
+                recommendation = {'profile': 'stable', 'reason': '命中率高且时延稳定，建议稳健档降低风控风险'}
+            elif rate < 0.35 or first_p95 > 25000 or submit_p95_med > 4500:
+                recommendation = {'profile': 'aggressive', 'reason': '60秒命中率偏低或时延偏高，建议激进档提升前60秒命中'}
+            else:
+                recommendation = {'profile': 'balanced', 'reason': '命中率与时延居中，建议平衡档持续观察'}
+        else:
+            recommendation = {'profile': 'balanced', 'reason': '样本尚不完整，先保持平衡档'}
+    return jsonify({'summary': summary, 'recommendation': recommendation, 'records': records})
 
 if __name__ == "__main__":
     validate_templates_on_startup()
