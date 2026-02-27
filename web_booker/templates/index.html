@@ -1084,6 +1084,28 @@
                 * 目标是减少手动调参：每天仅需选档位 + 保存一次。
             </div>
         </div>
+        <div class="form-group"
+            style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <label style="font-weight:bold;margin-bottom:0;">📈 解锁瞬间复盘（最近任务）</label>
+                <button class="btn" style="padding:6px 10px;background:#5856d6;color:#fff;" onclick="loadRunMetricsCard()">刷新</button>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+                <div style="flex:1;min-width:180px;background:#f8f9ff;border-radius:8px;padding:8px;">
+                    <div style="font-size:12px;color:#666;">60秒命中率</div>
+                    <div id="metricSuccess60" style="font-size:18px;font-weight:700;">--</div>
+                </div>
+                <div style="flex:1;min-width:180px;background:#f8f9ff;border-radius:8px;padding:8px;">
+                    <div style="font-size:12px;color:#666;">首成功 P95</div>
+                    <div id="metricFirstSuccessP95" style="font-size:18px;font-weight:700;">--</div>
+                </div>
+                <div style="flex:1;min-width:180px;background:#f8f9ff;border-radius:8px;padding:8px;">
+                    <div style="font-size:12px;color:#666;">提交P95中位</div>
+                    <div id="metricSubmitP95Median" style="font-size:18px;font-weight:700;">--</div>
+                </div>
+            </div>
+            <div id="runMetricHint" style="font-size:12px;color:#666;margin-top:6px;">统计最近50次任务，先埋点后优化策略。</div>
+        </div>
         <!-- 速度设置 -->
         <div class="form-group"
             style="margin-top:10px;border:1px solid #eee;padding:10px;border-radius:8px;background:white;">
@@ -1443,6 +1465,7 @@
         if (document.getElementById('taskList')) loadTasks();
         if (document.getElementById('refillTaskList')) loadRefillTasks();
         loadConfig();
+        if (document.getElementById('metricSuccess60')) loadRunMetricsCard();
         if (document.getElementById('taskSummary')) updateTaskSummary();
         if (document.getElementById('taskType')) onTaskTypeChange();
         if (document.getElementById('pipelineConfigPanel')) toggleTaskModePanels();
@@ -2215,6 +2238,32 @@
             setV('submitSplitRetryTimes', p.submitSplitRetryTimes);
             setV('openRetrySeconds', p.openRetrySeconds);
             showToast('已套用自动档参数，请点“保存全部系统设置”');
+        }
+
+        async function loadRunMetricsCard() {
+            const el60 = document.getElementById('metricSuccess60');
+            const elFs = document.getElementById('metricFirstSuccessP95');
+            const elSub = document.getElementById('metricSubmitP95Median');
+            const hint = document.getElementById('runMetricHint');
+            if (!el60 || !elFs || !elSub) return;
+            try {
+                const res = await fetch('/api/run-metrics?limit=50');
+                const data = await res.json();
+                const sum = data.summary || {};
+                const rate = sum.success_within_60_rate;
+                el60.textContent = rate == null ? '--' : `${(Number(rate) * 100).toFixed(1)}%`;
+                elFs.textContent = sum.first_success_p95_ms == null ? '--' : `${(sum.first_success_p95_ms / 1000).toFixed(1)}s`;
+                elSub.textContent = sum.submit_p95_p50_ms == null ? '--' : `${(sum.submit_p95_p50_ms / 1000).toFixed(1)}s`;
+                if (hint) {
+                    const total = Number(sum.total_runs || 0);
+                    hint.textContent = total > 0 ? `统计最近 ${total} 次任务，建议以“60秒命中率”优先调档。` : '暂无历史任务指标，先跑任务再复盘。';
+                }
+            } catch (e) {
+                el60.textContent = '--';
+                elFs.textContent = '--';
+                elSub.textContent = '--';
+                if (hint) hint.textContent = '复盘数据加载失败，请稍后重试。';
+            }
         }
 
 

@@ -232,6 +232,38 @@ LOG_BUFFER = []
 MAX_LOG_SIZE = 500
 MAX_TARGET_COUNT = 9
 REFILL_TASKS_FILE = os.path.join(BASE_DIR, "refill_tasks.json")
+TASK_RUN_METRICS_FILE = os.path.join(BASE_DIR, "task_run_metrics.json")
+_TASK_RUN_METRICS_LOCK = threading.Lock()
+
+
+def _percentile(sorted_values, p):
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    idx = int(round((len(sorted_values) - 1) * float(p)))
+    idx = max(0, min(len(sorted_values) - 1, idx))
+    return float(sorted_values[idx])
+
+
+def append_task_run_metric(record, keep_last=200):
+    try:
+        with _TASK_RUN_METRICS_LOCK:
+            old = []
+            if os.path.exists(TASK_RUN_METRICS_FILE):
+                try:
+                    with open(TASK_RUN_METRICS_FILE, 'r', encoding='utf-8') as f:
+                        old = json.load(f) or []
+                except Exception:
+                    old = []
+            if not isinstance(old, list):
+                old = []
+            old.append(record)
+            old = old[-max(10, int(keep_last or 200)):]
+            with open(TASK_RUN_METRICS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(old, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ 任务指标写入失败: {e}")
 
 def log(msg):
     """记录日志到内存缓冲区和控制台"""
@@ -1685,6 +1717,21 @@ class TaskManager:
         if task.get('id') is not None:
             self.mark_task_run(task['id'])
 
+        run_started_ts = time.time()
+        run_metrics = {
+            "task_id": task.get('id'),
+            "task_type": task.get('type', 'daily'),
+            "started_at": int(run_started_ts * 1000),
+            "attempt_count": 0,
+            "first_matrix_ok_ms": None,
+            "first_submit_ms": None,
+            "submit_latencies_ms": [],
+            "first_success_ms": None,
+            "result_status": None,
+            "result_msg": None,
+            "target_date": None,
+        }
+
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
         task_pushplus_tokens = task.get('pushplus_tokens') or None
@@ -1726,6 +1773,35 @@ class TaskManager:
             content = f"{prefix}{details}"
             self.send_notification(content, phones=task_phones)
             self.send_wechat_notification(content, tokens=task_pushplus_tokens)
+
+            run_metrics["result_status"] = "success" if success else ("partial" if partial else "fail")
+            run_metrics["result_msg"] = str(message or "")[:200]
+            if date_str:
+                run_metrics["target_date"] = str(date_str)
+            if (success or partial) and run_metrics.get("first_success_ms") is None:
+                run_metrics["first_success_ms"] = int(max(0.0, time.time() - run_started_ts) * 1000)
+
+        def finalize_run_metrics(date_str=None):
+            try:
+                now_ts = time.time()
+                run_metrics["finished_at"] = int(now_ts * 1000)
+                run_metrics["duration_ms"] = int(max(0.0, now_ts - run_started_ts) * 1000)
+                if date_str and not run_metrics.get("target_date"):
+                    run_metrics["target_date"] = str(date_str)
+                samples = sorted(int(x) for x in (run_metrics.get("submit_latencies_ms") or []) if x is not None)
+                run_metrics["submit_latency_p50_ms"] = int(_percentile(samples, 0.5)) if samples else None
+                run_metrics["submit_latency_p95_ms"] = int(_percentile(samples, 0.95)) if samples else None
+                run_metrics["success_within_60s"] = bool(
+                    run_metrics.get("first_success_ms") is not None and int(run_metrics.get("first_success_ms") or 0) <= 60000
+                )
+                append_task_run_metric(run_metrics)
+                log(
+                    f"📊 [run-metric] task={run_metrics.get('task_id')} attempts={run_metrics.get('attempt_count')} "
+                    f"first_matrix={run_metrics.get('first_matrix_ok_ms')}ms first_submit={run_metrics.get('first_submit_ms')}ms "
+                    f"first_success={run_metrics.get('first_success_ms')}ms p95={run_metrics.get('submit_latency_p95_ms')}ms"
+                )
+            except Exception as e:
+                log(f"⚠️ [run-metric] 汇总失败: {e}")
 
         # 0. 先检查 token 是否有效（只记录日志，不立刻报警）
         #    以“获取场地状态异常”为准触发短信提醒，避免误报
@@ -1799,6 +1875,7 @@ class TaskManager:
                 notify_task_result(False, "部分成功", items=res.get('success_items') or task['items'], date_str=target_date, partial=True)
             else:
                 notify_task_result(False, f"下单失败：{res.get('msg')}", items=task['items'], date_str=target_date)
+            finalize_run_metrics(target_date)
             return
 
         # 4. 这次任务真正关心的 (场地, 时间) 组合，用来判断是否还在“锁定未开放”阶段
@@ -2074,6 +2151,7 @@ class TaskManager:
             open_retry_seconds = CONFIG.get('open_retry_seconds', open_retry_seconds)
 
             attempt += 1
+            run_metrics["attempt_count"] = int(attempt)
             compact_pair_fail_cache()
             log(f"🔄 第 {attempt} 轮无限尝试...喵")
 
@@ -2104,13 +2182,20 @@ class TaskManager:
                 if "失效" in err_msg or "凭证" in err_msg or "token" in err_msg.lower():
                     log(f"❌ 严重错误: {err_msg}，任务终止。")
                     notify_task_result(False, f"登录状态/Token 失效({err_msg})，请尽快处理！", date_str=target_date)
+                    finalize_run_metrics(target_date)
                     return
 
                 # 普通错误：按普通间隔重试
                 time.sleep(retry_interval)
                 continue
 
+        # 执行循环之外：落盘本次任务关键指标（用于次日复盘）
+        # 注意：正常流程基本都在 while 内 return，本段作为兜底；
+        # 另外在 finally 中统一写盘可覆盖绝大多数 return 路径。
+
             # 1.2 正常拿到矩阵
+            if run_metrics.get("first_matrix_ok_ms") is None:
+                run_metrics["first_matrix_ok_ms"] = int(max(0.0, time.time() - run_started_ts) * 1000)
             matrix = matrix_res.get("matrix", {})
 
             mode_configs = config.get('modes') if isinstance(config.get('modes'), list) and config.get('modes') else [config]
@@ -2152,11 +2237,13 @@ class TaskManager:
 
                     if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
                         notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
+                        finalize_run_metrics(target_date)
                         return
 
                     deadline = calc_pipeline_deadline(cfg, target_date)
                     if deadline and client.get_aligned_now() >= deadline:
                         notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        finalize_run_metrics(target_date)
                         return
 
                     stages = pipe_cfg['stages']
@@ -2335,6 +2422,7 @@ class TaskManager:
                     if 'candidate_places' not in cfg:
                         log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
                         notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
+                        finalize_run_metrics(target_date)
                         return
 
                     candidate_places = [str(p) for p in cfg['candidate_places']]
@@ -2398,14 +2486,18 @@ class TaskManager:
 
             if not final_items and pipeline_none_stage_without_refill:
                 notify_task_result(False, "pipeline阶段窗口已结束且未启用refill，停止继续轮询", date_str=target_date)
+                finalize_run_metrics(target_date)
                 return
 
             # 4. 提交订单
             if final_items:
                 submit_started_at = time.time()
+                if run_metrics.get("first_submit_ms") is None:
+                    run_metrics["first_submit_ms"] = int(max(0.0, submit_started_at - run_started_ts) * 1000)
                 log(f"正在提交分批订单: {final_items}")
                 res = client.submit_order(target_date, final_items)
                 submit_spent_s = max(0.0, time.time() - submit_started_at)
+                run_metrics.setdefault("submit_latencies_ms", []).append(int(submit_spent_s * 1000))
                 if selected_mode == 'pipeline' and pipeline_started_at is not None and submit_spent_s > 0:
                     # 提交/校验耗时不应吞掉 pipeline 阶段窗口，否则会导致 random/refill 阶段被提前跳过
                     pipeline_started_at += submit_spent_s
@@ -2426,6 +2518,7 @@ class TaskManager:
                         deadline = calc_pipeline_deadline(selected_cfg, target_date)
                         if deadline and client.get_aligned_now() >= deadline:
                             notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                            finalize_run_metrics(target_date)
                             return
                         need_detail = post_need.get('need_by_time') or {}
                         before_need = int(pipeline_need_before_submit if pipeline_need_before_submit is not None else remaining_slots)
@@ -2465,6 +2558,7 @@ class TaskManager:
                         )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
+                    finalize_run_metrics(target_date)
                     return
                 elif status == "partial":
                     log(f"⚠️ 下单完成: 部分成功 ({status})")
@@ -2483,6 +2577,7 @@ class TaskManager:
                         )
                     except Exception as e:
                         log(f"构建短信内容失败: {e}")
+                    finalize_run_metrics(target_date)
                     return
                 else:
                     log(f"❌ 下单失败: {res.get('msg')}")
@@ -2518,6 +2613,7 @@ class TaskManager:
                     if last_fail_reason:
                         fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
                     notify_task_result(False, fail_msg, date_str=target_date)
+                    finalize_run_metrics(target_date)
                     return
 
                 # 仍在允许范围内，按锁定间隔继续轮询
@@ -2541,6 +2637,7 @@ class TaskManager:
                     deadline = calc_pipeline_deadline(pipeline_cfg_for_retry, target_date)
                     if deadline and client.get_aligned_now() >= deadline:
                         notify_task_result(False, f"达到截止时间({deadline.strftime('%Y-%m-%d %H:%M:%S')})，停止补齐", date_str=target_date)
+                        finalize_run_metrics(target_date)
                         return
                     refill_sleep_s = retry_interval
                     if not final_items:
@@ -2571,6 +2668,7 @@ class TaskManager:
                 if last_fail_reason:
                     fail_msg = f"{fail_msg} 失败原因：{last_fail_reason}"
                 notify_task_result(False, fail_msg, date_str=target_date)
+                finalize_run_metrics(target_date)
                 return
 
         # print(" 所有重试均失败，放弃。")
@@ -3273,6 +3371,37 @@ def get_logs():
     if status_kw:
         logs = [line for line in logs if status_kw in str(line).lower()]
     return jsonify(logs)
+
+
+@app.route('/api/run-metrics', methods=['GET'])
+def get_run_metrics():
+    task_id = request.args.get('task_id')
+    limit = request.args.get('limit', default=50, type=int)
+    limit = max(1, min(500, int(limit or 50)))
+    records = []
+    if os.path.exists(TASK_RUN_METRICS_FILE):
+        try:
+            with open(TASK_RUN_METRICS_FILE, 'r', encoding='utf-8') as f:
+                records = json.load(f) or []
+        except Exception:
+            records = []
+    if not isinstance(records, list):
+        records = []
+    if task_id:
+        records = [r for r in records if str(r.get('task_id')) == str(task_id)]
+    records = records[-limit:]
+
+    success_within_60 = [r for r in records if r.get('success_within_60s') is True]
+    first_success_samples = sorted(int(r.get('first_success_ms')) for r in records if r.get('first_success_ms') is not None)
+    submit_p95_samples = sorted(int(r.get('submit_latency_p95_ms')) for r in records if r.get('submit_latency_p95_ms') is not None)
+    summary = {
+        'total_runs': len(records),
+        'success_within_60_rate': round(len(success_within_60) / len(records), 4) if records else None,
+        'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
+        'first_success_p95_ms': int(_percentile(first_success_samples, 0.95)) if first_success_samples else None,
+        'submit_p95_p50_ms': int(_percentile(submit_p95_samples, 0.5)) if submit_p95_samples else None,
+    }
+    return jsonify({'summary': summary, 'records': records})
 
 if __name__ == "__main__":
     validate_templates_on_startup()
