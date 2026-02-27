@@ -3063,7 +3063,10 @@
             };
 
             try {
-                await saveConfig(false);  // 仍然保存全局配置（速度 & 全局手机号）
+                // 仅在系统设置页存在全局配置控件时才保存全局配置，避免任务页误覆盖系统参数
+                if (document.getElementById('globalNotificationPhones')) {
+                    await saveConfig(false);
+                }
                 const isEditing = editingTaskId !== null;
                 const resp = await fetch(isEditing ? `/api/tasks/${editingTaskId}` : '/api/tasks', {
                     method: isEditing ? 'PUT' : 'POST',
