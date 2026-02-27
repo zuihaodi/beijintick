@@ -1071,8 +1071,8 @@
                 <div style="flex:1;min-width:220px;">
                     <label style="font-size:12px;">网络档位</label>
                     <select id="networkProfile" class="form-control">
-                        <option value="balanced">平衡（默认）</option>
-                        <option value="stable">稳健（网络一般/波动）</option>
+                        <option value="balanced">平衡</option>
+                        <option value="stable" selected>稳健（默认推荐，网络一般/波动）</option>
                         <option value="aggressive">激进（抢开场黄金1分钟）</option>
                     </select>
                 </div>
@@ -1131,6 +1131,10 @@
                 <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">单批提交上限 (1-9)</label>
                     <input type="number" id="submitBatchSize" class="form-control" value="3" step="1" min="1" max="9">
+                </div>
+                <div style="flex:1;min-width:160px;">
+                    <label style="font-size:12px;">首批提交上限 (1-9)</label>
+                    <input type="number" id="initialSubmitBatchSize" class="form-control" value="2" step="1" min="1" max="9">
                 </div>
                 <div style="flex:1;min-width:160px;">
                     <label style="font-size:12px;">下单接口超时 (秒)</label>
@@ -1192,11 +1196,11 @@
                    class="form-control"
                    step="1"
                    min="0"
-                   placeholder="例如 20">
+                   placeholder="例如 30">
           </div>
           <div style="flex:1;min-width:260px;display:flex;align-items:flex-end;">
             <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <input type="checkbox" id="stopOnNoneStageWithoutRefill" checked>
+              <input type="checkbox" id="stopOnNoneStageWithoutRefill">
               阶段结束无Refill时立即停止（stop_on_none_stage_without_refill）
             </label>
           </div>
@@ -2005,6 +2009,10 @@
                         if (config.submit_batch_size != null) {
                             document.getElementById('submitBatchSize').value = config.submit_batch_size;
                         }
+                        if (config.initial_submit_batch_size != null) {
+                            const elInit = document.getElementById('initialSubmitBatchSize');
+                            if (elInit) elInit.value = config.initial_submit_batch_size;
+                        }
 
                         if (config.batch_retry_times != null) {
                             document.getElementById('batchRetryTimes').value = config.batch_retry_times;
@@ -2135,6 +2143,7 @@
                 const retryInterval = parseFloat(getValue('retryInterval', '1.0'));
                 const aggressiveRetryInterval = parseFloat(getValue('aggressiveRetryInterval', '0.3'));
                 const submitBatchSize = parseInt(getValue('submitBatchSize', '3') || '3', 10);
+                const initialSubmitBatchSize = parseInt(getValue('initialSubmitBatchSize', '2') || '2', 10);
                 const submitTimeoutSeconds = parseFloat(getValue('submitTimeoutSeconds', '4'));
                 const batchRetryTimes = parseInt(getValue('batchRetryTimes', '2') || '2', 10);
                 const batchRetryInterval = parseFloat(getValue('batchRetryInterval', '0.5'));
@@ -2143,7 +2152,7 @@
                 const submitSplitRetryTimes = parseInt(getValue('submitSplitRetryTimes', '1') || '1', 10);
                 const lockedRetryInterval = parseFloat(getValue('lockedRetryInterval', '1.0'));
                 const lockedMaxSeconds = parseFloat(getValue('lockedMaxSeconds', '60'));
-                const openRetrySeconds = parseFloat(getValue('openRetrySeconds', '20'));
+                const openRetrySeconds = parseFloat(getValue('openRetrySeconds', '30'));
 
                 // 获取健康检查字段
                 const healthEnabledEl = document.getElementById('healthCheckEnabled');
@@ -2156,6 +2165,7 @@
                     retry_interval: isNaN(retryInterval) ? 1.0 : retryInterval,
                     aggressive_retry_interval: isNaN(aggressiveRetryInterval) ? 0.3 : aggressiveRetryInterval,
                     submit_batch_size: isNaN(submitBatchSize) ? 3 : submitBatchSize,
+                    initial_submit_batch_size: isNaN(initialSubmitBatchSize) ? 2 : initialSubmitBatchSize,
                     submit_timeout_seconds: isNaN(submitTimeoutSeconds) ? 4.0 : submitTimeoutSeconds,
                     batch_retry_times: isNaN(batchRetryTimes) ? 2 : batchRetryTimes,
                     batch_retry_interval: isNaN(batchRetryInterval) ? 0.5 : batchRetryInterval,
@@ -2164,7 +2174,7 @@
                     submit_split_retry_times: isNaN(submitSplitRetryTimes) ? 1 : submitSplitRetryTimes,
                     locked_retry_interval: isNaN(lockedRetryInterval) ? 1.0 : lockedRetryInterval,
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
-                    open_retry_seconds: isNaN(openRetrySeconds) ? 20.0 : openRetrySeconds,
+                    open_retry_seconds: isNaN(openRetrySeconds) ? 30.0 : openRetrySeconds,
                     stop_on_none_stage_without_refill: !!((document.getElementById('stopOnNoneStageWithoutRefill') || {}).checked),
                 };
 
@@ -2204,44 +2214,57 @@
         }
 
         function applyNetworkProfile() {
-            const profile = (document.getElementById('networkProfile') || {}).value || 'balanced';
+            const profile = (document.getElementById('networkProfile') || {}).value || 'stable';
             const presets = {
                 stable: {
                     retryInterval: 1.0,
-                    aggressiveRetryInterval: 0.4,
-                    submitTimeoutSeconds: 5.0,
-                    matrixTimeoutSeconds: 3.5,
+                    aggressiveRetryInterval: 0.3,
+                    submitBatchSize: 3,
+                    initialSubmitBatchSize: 2,
+                    submitTimeoutSeconds: 4.0,
+                    matrixTimeoutSeconds: 3.0,
                     submitSplitRetryTimes: 1,
-                    openRetrySeconds: 10,
+                    openRetrySeconds: 30,
+                    stopOnNoneStageWithoutRefill: false,
                 },
                 balanced: {
                     retryInterval: 0.8,
                     aggressiveRetryInterval: 0.3,
+                    submitBatchSize: 3,
+                    initialSubmitBatchSize: 2,
                     submitTimeoutSeconds: 4.0,
                     matrixTimeoutSeconds: 3.0,
                     submitSplitRetryTimes: 1,
-                    openRetrySeconds: 8,
+                    openRetrySeconds: 20,
+                    stopOnNoneStageWithoutRefill: true,
                 },
                 aggressive: {
                     retryInterval: 0.5,
                     aggressiveRetryInterval: 0.2,
+                    submitBatchSize: 4,
+                    initialSubmitBatchSize: 3,
                     submitTimeoutSeconds: 3.0,
                     matrixTimeoutSeconds: 2.5,
                     submitSplitRetryTimes: 2,
-                    openRetrySeconds: 6,
+                    openRetrySeconds: 12,
+                    stopOnNoneStageWithoutRefill: true,
                 }
             };
-            const p = presets[profile] || presets.balanced;
+            const p = presets[profile] || presets.stable;
             const setV = (id, v) => {
                 const el = document.getElementById(id);
                 if (el) el.value = String(v);
             };
             setV('retryInterval', p.retryInterval);
             setV('aggressiveRetryInterval', p.aggressiveRetryInterval);
+            setV('submitBatchSize', p.submitBatchSize);
+            setV('initialSubmitBatchSize', p.initialSubmitBatchSize);
             setV('submitTimeoutSeconds', p.submitTimeoutSeconds);
             setV('matrixTimeoutSeconds', p.matrixTimeoutSeconds);
             setV('submitSplitRetryTimes', p.submitSplitRetryTimes);
             setV('openRetrySeconds', p.openRetrySeconds);
+            const stopEl = document.getElementById('stopOnNoneStageWithoutRefill');
+            if (stopEl) stopEl.checked = !!p.stopOnNoneStageWithoutRefill;
             showToast('已套用自动档参数，请点“保存全部系统设置”');
         }
 
@@ -2432,6 +2455,7 @@
 
 
         function isContinuousNumbers(values) {
+            // 兼容旧逻辑：当前主任务已允许离散候选场地，不再强制使用该校验。
             const sorted = values.map(v => Number(v)).sort((a, b) => a - b);
             if (sorted.length <= 1) return true;
             for (let i = 1; i < sorted.length; i++) {
@@ -3112,10 +3136,6 @@
                 return;
             }
 
-            if (!isContinuousNumbers(places)) {
-                alert('候选场地必须连续（如 6,7 或 6,7,8）');
-                return;
-            }
             if (!isContinuousTimes(times)) {
                 alert('时间段必须连续（如 13:00,14:00,15:00）');
                 return;
