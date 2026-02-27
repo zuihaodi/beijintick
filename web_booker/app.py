@@ -205,6 +205,8 @@ CONFIG = {
     "batch_retry_times": 2,
     "batch_retry_interval": 0.5,
     "submit_batch_size": 3,
+    "submit_timeout_seconds": 4.0,
+    "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -261,6 +263,16 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['batch_retry_interval'] = saved['batch_retry_interval']
             if 'submit_batch_size' in saved:
                 CONFIG['submit_batch_size'] = saved['submit_batch_size']
+            if 'submit_timeout_seconds' in saved:
+                try:
+                    CONFIG['submit_timeout_seconds'] = max(0.5, float(saved['submit_timeout_seconds']))
+                except Exception:
+                    pass
+            if 'submit_split_retry_times' in saved:
+                try:
+                    CONFIG['submit_split_retry_times'] = max(0, min(3, int(saved['submit_split_retry_times'])))
+                except Exception:
+                    pass
             if 'batch_min_interval' in saved:
                 CONFIG['batch_min_interval'] = saved['batch_min_interval']
             if 'refill_window_seconds' in saved:
@@ -717,10 +729,15 @@ class ApiClient:
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
         refill_window_seconds = float(CONFIG.get("refill_window_seconds", 8.0))
+        submit_timeout_seconds = max(0.5, float(CONFIG.get("submit_timeout_seconds", 4.0) or 4.0))
+        submit_split_retry_times = max(0, min(3, int(CONFIG.get("submit_split_retry_times", 1) or 1)))
 
         print(
             f"🧭 [批次策略] 首批=按本次选择数量({len(selected_items)})→{initial_batch_size}；"
             f"降级=按配置 submit_batch_size→{degrade_batch_size}"
+        )
+        print(
+            f"⏱️ [提交超时] submit_timeout={submit_timeout_seconds}s, split_retry_times={submit_split_retry_times}"
         )
 
         def normalize_fail_message(msg):
@@ -894,7 +911,7 @@ class ApiClient:
             for attempt in range(batch_retry_times + 1):
                 try:
                     resp = self.session.post(
-                        url, headers=self.headers, data=body, timeout=10, verify=False
+                        url, headers=self.headers, data=body, timeout=submit_timeout_seconds, verify=False
                     )
 
                     try:
@@ -930,60 +947,70 @@ class ApiClient:
                     # 命中“可重试/规则异常”时，按配置分批降级重提一次
                     if len(batch) > degrade_batch_size and should_degrade(fail_msg):
                         print(f"↘️ 批次 {i // initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
-                        degrade_fail = []
-                        for j in range(0, len(batch), degrade_batch_size):
-                            sub = batch[j:j + degrade_batch_size]
-                            try:
-                                sub_field_info = []
-                                sub_total = 0
-                                for item in sub:
-                                    p_num = item["place"]
-                                    start = item["time"]
-                                    try:
-                                        st_obj = datetime.strptime(start, "%H:%M")
-                                        et_obj = st_obj + timedelta(hours=1)
-                                        end = et_obj.strftime("%H:%M")
-                                        price = 80 if st_obj.hour < 14 else 100
-                                    except Exception:
-                                        end = "22:00"
-                                        price = 100
-                                    try:
-                                        p_int = int(p_num)
-                                    except (TypeError, ValueError):
-                                        p_int = None
-                                    if p_int is not None and p_int >= 15:
-                                        place_short = f"mdb{p_num}"
-                                        place_name = f"木地板{p_num}"
-                                    else:
-                                        place_short = f"ymq{p_num}"
-                                        place_name = f"羽毛球{p_num}"
-                                    sub_field_info.append({
-                                        "day": date_str,
-                                        "oldMoney": price,
-                                        "startTime": start,
-                                        "endTime": end,
-                                        "placeShortName": place_short,
-                                        "name": place_name,
-                                        "stageTypeShortName": "ymq",
-                                        "newMoney": price,
-                                    })
-                                    sub_total += price
+                        degrade_fail = list(batch)
+                        current = list(batch)
+                        for split_round in range(submit_split_retry_times + 1):
+                            round_fail = []
+                            for j in range(0, len(current), degrade_batch_size):
+                                sub = current[j:j + degrade_batch_size]
+                                try:
+                                    sub_field_info = []
+                                    sub_total = 0
+                                    for item in sub:
+                                        p_num = item["place"]
+                                        start = item["time"]
+                                        try:
+                                            st_obj = datetime.strptime(start, "%H:%M")
+                                            et_obj = st_obj + timedelta(hours=1)
+                                            end = et_obj.strftime("%H:%M")
+                                            price = 80 if st_obj.hour < 14 else 100
+                                        except Exception:
+                                            end = "22:00"
+                                            price = 100
+                                        try:
+                                            p_int = int(p_num)
+                                        except (TypeError, ValueError):
+                                            p_int = None
+                                        if p_int is not None and p_int >= 15:
+                                            place_short = f"mdb{p_num}"
+                                            place_name = f"木地板{p_num}"
+                                        else:
+                                            place_short = f"ymq{p_num}"
+                                            place_name = f"羽毛球{p_num}"
+                                        sub_field_info.append({
+                                            "day": date_str,
+                                            "oldMoney": price,
+                                            "startTime": start,
+                                            "endTime": end,
+                                            "placeShortName": place_short,
+                                            "name": place_name,
+                                            "stageTypeShortName": "ymq",
+                                            "newMoney": price,
+                                        })
+                                        sub_total += price
 
-                                info_str = urllib.parse.quote(json.dumps(sub_field_info, separators=(",", ":"), ensure_ascii=False))
-                                type_encoded = urllib.parse.quote("羽毛球")
-                                sub_body = (
-                                    f"token={self.token}&shopNum={CONFIG['auth']['shop_num']}&fieldinfo={info_str}&"
-                                    f"cardStId={CONFIG['auth']['card_st_id']}&oldTotal={sub_total}.00&cardPayType=0&"
-                                    f"type={type_encoded}&offerId=&offerType=&total={sub_total}.00&premerother=&"
-                                    f"cardIndex={CONFIG['auth']['card_index']}"
-                                )
-                                sub_resp = self.session.post(url, headers=self.headers, data=sub_body, timeout=10, verify=False)
-                                sub_data = sub_resp.json() if sub_resp.text else None
-                                if not (isinstance(sub_data, dict) and sub_data.get("msg") == "success"):
-                                    degrade_fail.extend(sub)
-                            except Exception:
-                                degrade_fail.extend(sub)
-                            time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+                                    info_str = urllib.parse.quote(json.dumps(sub_field_info, separators=(",", ":"), ensure_ascii=False))
+                                    type_encoded = urllib.parse.quote("羽毛球")
+                                    sub_body = (
+                                        f"token={self.token}&shopNum={CONFIG['auth']['shop_num']}&fieldinfo={info_str}&"
+                                        f"cardStId={CONFIG['auth']['card_st_id']}&oldTotal={sub_total}.00&cardPayType=0&"
+                                        f"type={type_encoded}&offerId=&offerType=&total={sub_total}.00&premerother=&"
+                                        f"cardIndex={CONFIG['auth']['card_index']}"
+                                    )
+                                    sub_resp = self.session.post(url, headers=self.headers, data=sub_body, timeout=submit_timeout_seconds, verify=False)
+                                    sub_data = sub_resp.json() if sub_resp.text else None
+                                    if not (isinstance(sub_data, dict) and sub_data.get("msg") == "success"):
+                                        round_fail.extend(sub)
+                                except Exception:
+                                    round_fail.extend(sub)
+                                time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+                            degrade_fail = round_fail
+                            if not degrade_fail:
+                                break
+                            if split_round < submit_split_retry_times:
+                                current = list(degrade_fail)
+                                print(f"🔁 [降级分段重试] round={split_round + 1}/{submit_split_retry_times}, remain={len(current)}")
+                                time.sleep(batch_retry_interval)
 
                         if not degrade_fail:
                             final_result = {"status": "success", "batch": batch}
@@ -2797,6 +2824,8 @@ def update_config():
     - batch_retry_times：分批失败重试次数
     - batch_retry_interval：分批失败重试间隔
     - submit_batch_size：单批提交上限
+    - submit_timeout_seconds：下单接口超时(秒)
+    - submit_split_retry_times：降级分段重试轮次
     - batch_min_interval：批次间最小间隔
     - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
@@ -2871,6 +2900,7 @@ def update_config():
         _update_float_field('retry_interval', 0.1, CONFIG.get('retry_interval', 1.0))
         _update_float_field('aggressive_retry_interval', 0.1, CONFIG.get('aggressive_retry_interval', 0.3))
         _update_float_field('batch_retry_interval', 0.1, CONFIG.get('batch_retry_interval', 0.5))
+        _update_float_field('submit_timeout_seconds', 0.5, CONFIG.get('submit_timeout_seconds', 4.0))
         _update_float_field('batch_min_interval', 0.1, CONFIG.get('batch_min_interval', 0.8))
         _update_float_field('refill_window_seconds', 0.0, CONFIG.get('refill_window_seconds', 8.0))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
@@ -2908,6 +2938,15 @@ def update_config():
             val = max(1, min(9, val))
             CONFIG['submit_batch_size'] = val
             saved['submit_batch_size'] = val
+
+        if 'submit_split_retry_times' in data:
+            try:
+                val = int(data['submit_split_retry_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_split_retry_times', 1))
+            val = max(0, min(3, val))
+            CONFIG['submit_split_retry_times'] = val
+            saved['submit_split_retry_times'] = val
 
         if 'health_check_start_time' in data:
             time_str = normalize_time_str(data['health_check_start_time'])
