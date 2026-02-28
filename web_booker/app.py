@@ -213,8 +213,10 @@ CONFIG = {
     "order_query_max_pages": 2,
     "post_submit_orders_join_timeout_seconds": 1.2,
     "post_submit_verify_orders_on_matrix_partial_only": True,
+    "post_submit_skip_sync_orders_query": True,
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
+    "post_submit_verify_pending_matrix_recheck_times": 4,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -223,6 +225,13 @@ CONFIG = {
     "open_retry_seconds": 30,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
     "matrix_timeout_seconds": 3.0,  # 高峰查询超时(秒)，建议短超时+高频重试
     "stop_on_none_stage_without_refill": False,  # pipeline 阶段结束且无 refill 时是否立即结束
+    "pipeline_continuous_window_seconds": 8,
+    "pipeline_random_window_seconds": 12,
+    "pipeline_refill_interval_seconds": 15,
+    "pipeline_stop_when_reached": True,
+    "pipeline_continuous_prefer_adjacent": True,
+    "pipeline_greedy_end_mode": "absolute",
+    "pipeline_greedy_end_before_hours": 24.0,
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
@@ -340,11 +349,18 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'post_submit_verify_orders_on_matrix_partial_only' in saved:
                 CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = bool(saved['post_submit_verify_orders_on_matrix_partial_only'])
+            if 'post_submit_skip_sync_orders_query' in saved:
+                CONFIG['post_submit_skip_sync_orders_query'] = bool(saved['post_submit_skip_sync_orders_query'])
             if 'post_submit_orders_sync_fallback' in saved:
                 CONFIG['post_submit_orders_sync_fallback'] = bool(saved['post_submit_orders_sync_fallback'])
             if 'post_submit_verify_pending_retry_seconds' in saved:
                 try:
                     CONFIG['post_submit_verify_pending_retry_seconds'] = max(0.05, float(saved['post_submit_verify_pending_retry_seconds']))
+                except Exception:
+                    pass
+            if 'post_submit_verify_pending_matrix_recheck_times' in saved:
+                try:
+                    CONFIG['post_submit_verify_pending_matrix_recheck_times'] = max(0, min(5, int(saved['post_submit_verify_pending_matrix_recheck_times'])))
                 except Exception:
                     pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
@@ -374,6 +390,33 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'stop_on_none_stage_without_refill' in saved:
                 CONFIG['stop_on_none_stage_without_refill'] = bool(saved['stop_on_none_stage_without_refill'])
+            if 'pipeline_continuous_window_seconds' in saved:
+                try:
+                    CONFIG['pipeline_continuous_window_seconds'] = max(1, min(120, int(saved['pipeline_continuous_window_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_random_window_seconds' in saved:
+                try:
+                    CONFIG['pipeline_random_window_seconds'] = max(1, min(180, int(saved['pipeline_random_window_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_refill_interval_seconds' in saved:
+                try:
+                    CONFIG['pipeline_refill_interval_seconds'] = max(1, min(300, int(saved['pipeline_refill_interval_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_stop_when_reached' in saved:
+                CONFIG['pipeline_stop_when_reached'] = bool(saved['pipeline_stop_when_reached'])
+            if 'pipeline_continuous_prefer_adjacent' in saved:
+                CONFIG['pipeline_continuous_prefer_adjacent'] = bool(saved['pipeline_continuous_prefer_adjacent'])
+            if 'pipeline_greedy_end_mode' in saved:
+                mode = str(saved['pipeline_greedy_end_mode'] or '').strip()
+                CONFIG['pipeline_greedy_end_mode'] = mode if mode in ('absolute', 'before_start') else 'absolute'
+            if 'pipeline_greedy_end_before_hours' in saved:
+                try:
+                    CONFIG['pipeline_greedy_end_before_hours'] = max(0.0, float(saved['pipeline_greedy_end_before_hours']))
+                except Exception:
+                    pass
             if 'health_check_enabled' in saved:
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
@@ -1243,20 +1286,24 @@ class ApiClient:
                 needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
 
                 if needs_orders_query:
-                    orders_res = {"error": "未执行"}
+                    skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
+                    if skip_sync_orders_query:
+                        orders_res = {"error": "按配置跳过同步订单查询"}
+                    else:
+                        orders_res = {"error": "未执行"}
 
-                    def _fetch_orders():
-                        nonlocal orders_res
-                        orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
-
-                    t_orders = threading.Thread(target=_fetch_orders, daemon=True)
-                    t_orders.start()
-                    join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
-                    t_orders.join(timeout=join_timeout_s)
-                    if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
-                        orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
-                        if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                        def _fetch_orders():
+                            nonlocal orders_res
                             orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
+                        t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+                        t_orders.start()
+                        join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
+                        t_orders.join(timeout=join_timeout_s)
+                        if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                            orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
+                            if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
 
                 mine_slots = set()
                 if "error" not in orders_res:
@@ -1264,9 +1311,13 @@ class ApiClient:
                     orders_query_ok = True
                 else:
                     orders_query_error = str(orders_res.get("error") or "")
-                    print(
-                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}"
-                    )
+                    if orders_query_error == "按配置跳过同步订单查询":
+                        if is_verbose_logs_enabled():
+                            print("🧾 [提交后验证调试] 已按配置跳过同步订单查询，mine校验使用矩阵状态")
+                    else:
+                        print(
+                            f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}"
+                        )
 
                 for item in submit_items:
                     p = str(item["place"])
@@ -1849,6 +1900,13 @@ class TaskManager:
                 "open_retry_seconds": float(CONFIG.get("open_retry_seconds", 30.0) or 30.0),
                 "matrix_timeout_seconds": float(CONFIG.get("matrix_timeout_seconds", 3.0) or 3.0),
                 "stop_on_none_stage_without_refill": bool(CONFIG.get("stop_on_none_stage_without_refill", False)),
+                "pipeline_continuous_window_seconds": int(CONFIG.get("pipeline_continuous_window_seconds", 8) or 8),
+                "pipeline_random_window_seconds": int(CONFIG.get("pipeline_random_window_seconds", 12) or 12),
+                "pipeline_refill_interval_seconds": int(CONFIG.get("pipeline_refill_interval_seconds", 15) or 15),
+                "pipeline_stop_when_reached": bool(CONFIG.get("pipeline_stop_when_reached", True)),
+                "pipeline_continuous_prefer_adjacent": bool(CONFIG.get("pipeline_continuous_prefer_adjacent", True)),
+                "pipeline_greedy_end_mode": str(CONFIG.get("pipeline_greedy_end_mode", "absolute") or "absolute"),
+                "pipeline_greedy_end_before_hours": float(CONFIG.get("pipeline_greedy_end_before_hours", 24.0) or 24.0),
                 "preselect_enabled": bool(CONFIG.get("preselect_enabled", True)),
                 "preselect_ttl_seconds": float(CONFIG.get("preselect_ttl_seconds", 2.0) or 2.0),
             },
@@ -2047,18 +2105,11 @@ class TaskManager:
             return pairs
 
         def calc_pipeline_deadline(cfg, date_str):
-            pipeline_cfg = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
-            mode = str(pipeline_cfg.get('greedy_end_mode') or '').strip()
+            mode = str(CONFIG.get('pipeline_greedy_end_mode', 'absolute') or 'absolute').strip()
 
-            abs_raw = str(pipeline_cfg.get('greedy_end_time') or '').strip()
-            if abs_raw:
-                try:
-                    return datetime.strptime(abs_raw, "%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    pass
-
+            # 全局参数化：任务级不再携带 pipeline 截止配置
             if mode == 'before_start':
-                hours_raw = pipeline_cfg.get('greedy_end_before_hours', 24)
+                hours_raw = CONFIG.get('pipeline_greedy_end_before_hours', 24)
                 try:
                     hours = float(hours_raw)
                 except Exception:
@@ -2075,18 +2126,36 @@ class TaskManager:
             return None
 
         def build_pipeline_cfg(cfg):
+            mode = str(cfg.get('mode', 'normal') or 'normal').strip()
             pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
-            stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
-            if not stages:
-                stages = [
-                    {"type": "continuous", "enabled": True, "window_seconds": 8},
-                    {"type": "random", "enabled": True, "window_seconds": 12},
-                    {"type": "refill", "enabled": False, "interval_seconds": 15},
-                ]
+            stages_raw = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
+            enabled_map = {}
+            for st in stages_raw:
+                if isinstance(st, dict) and st.get('type'):
+                    enabled_map[str(st.get('type'))] = bool(st.get('enabled', True))
+
+            # 兼容旧任务：normal/smart_continuous 统一映射到 pipeline 核心。
+            # - normal: continuous-only（保持“整场优先”语义）
+            # - smart_continuous: 仅影响 continuous 连号偏好
+            if mode == 'normal':
+                enabled_map = {
+                    'continuous': True,
+                    'random': False,
+                    'refill': False,
+                }
+                continuous_prefer_adjacent = bool(cfg.get('smart_continuous', False))
+            else:
+                continuous_prefer_adjacent = bool(CONFIG.get('pipeline_continuous_prefer_adjacent', True))
+
+            stages = [
+                {"type": "continuous", "enabled": enabled_map.get('continuous', True), "window_seconds": max(1, int(CONFIG.get('pipeline_continuous_window_seconds', 8) or 8))},
+                {"type": "random", "enabled": enabled_map.get('random', True), "window_seconds": max(1, int(CONFIG.get('pipeline_random_window_seconds', 12) or 12))},
+                {"type": "refill", "enabled": enabled_map.get('refill', False), "interval_seconds": max(1, int(CONFIG.get('pipeline_refill_interval_seconds', 15) or 15))},
+            ]
             return {
                 "stages": stages,
-                "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
-                "continuous_prefer_adjacent": bool(pipe.get('continuous_prefer_adjacent', True)),
+                "stop_when_reached": bool(CONFIG.get('pipeline_stop_when_reached', True)),
+                "continuous_prefer_adjacent": continuous_prefer_adjacent,
                 "no_progress_switch_rounds": max(1, int(pipe.get('no_progress_switch_rounds', 2) or 2)),
             }
 
@@ -2456,8 +2525,9 @@ class TaskManager:
                     target_times = cfg.get('target_times', [])
                     mode_items: list[dict] = []
 
-                    # --- 模式 P: pipeline(continuous/random/refill) ---
-                    if mode == 'pipeline':
+                    # --- 统一核心模式：pipeline(continuous/random/refill)
+                    # normal/smart_continuous 会在 build_pipeline_cfg 内映射为 continuous-only pipeline。 ---
+                    if mode in ('pipeline', 'normal'):
                         pipeline_cfg_for_retry = cfg
                         now_ts = time.time()
                         if pipeline_started_at is None:
@@ -2468,10 +2538,27 @@ class TaskManager:
                         current_need_total = sum(int(v) for v in (need_res.get('need_by_time') or {}).values())
 
                         if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
-                            achieved_count = len(need_res.get("task_mine") or [])
+                            achieved_slots = list(need_res.get("task_mine") or [])
+                            achieved_count = len(achieved_slots)
                             run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), achieved_count)
                             run_metrics["failed_item_count"] = 0
-                            notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
+                            achieved_items = [
+                                {"place": str(p), "time": str(t)}
+                                for (p, t) in sorted(
+                                    achieved_slots,
+                                    key=lambda x: (
+                                        str(x[1]),
+                                        int(str(x[0])) if str(x[0]).isdigit() else 999,
+                                        str(x[0]),
+                                    ),
+                                )
+                            ]
+                            notify_task_result(
+                                True,
+                                "已达任务目标，无需补齐",
+                                items=achieved_items,
+                                date_str=target_date,
+                            )
                             finalize_run_metrics(target_date)
                             return
 
@@ -2658,63 +2745,11 @@ class TaskManager:
                                             mode_items.append({"place": p, "time": t})
                                             log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
 
-                    # --- 模式 C: 普通 / 智能连号 (normal) ---
                     else:
-                        if 'candidate_places' not in cfg:
-                            log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
-                            notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
-                            finalize_run_metrics(target_date)
-                            return
-
-                        candidate_places = [str(p) for p in cfg['candidate_places']]
-                        target_courts = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
-                        smart_mode = cfg.get('smart_continuous', False)
-
-                        if target_courts <= 0:
-                            log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
-                        else:
-                            available_courts: list[int] = []
-                            for p in candidate_places:
-                                p_str = str(p)
-                                ok = True
-                                for t in target_times:
-                                    if p_str not in matrix or matrix[p_str].get(t) != "available":
-                                        ok = False
-                                        break
-                                if ok:
-                                    available_courts.append(int(p))
-
-                            if not available_courts:
-                                log("⚠️ 当前没有同时满足所有时间段的候选场地。")
-                            else:
-                                available_courts.sort()
-                                need = min(target_courts, len(available_courts))
-                                selected_courts: list[int] = []
-
-                                if smart_mode and len(available_courts) > 1:
-                                    best_run: list[int] | None = None
-                                    best_len = 0
-                                    i = 0
-                                    while i < len(available_courts):
-                                        j = i
-                                        while j + 1 < len(available_courts) and                                             available_courts[j + 1] == available_courts[j] + 1:
-                                            j += 1
-                                        run = available_courts[i: j + 1]
-                                        if len(run) > best_len:
-                                            best_len = len(run)
-                                            best_run = run
-                                        i = j + 1
-
-                                    if best_run:
-                                        selected_courts = best_run[:need]
-
-                                if not selected_courts:
-                                    selected_courts = available_courts[:need]
-
-                                for p_int in selected_courts:
-                                    p_str = str(p_int)
-                                    for t in target_times:
-                                        mode_items.append({"place": p_str, "time": t})
+                        log(f"❌ 任务配置错误: 不支持的模式 {mode}")
+                        notify_task_result(False, f"任务配置错误：不支持的模式 {mode}", date_str=target_date)
+                        finalize_run_metrics(target_date)
+                        return
 
                     if mode_items and preselect_enabled and (not preselect_only_before_first_submit or not has_submitted_once):
                         preselect_cache = {"items": [dict(x) for x in mode_items], "ts": time.time(), "date": target_date, "mode": mode, "cfg_idx": cfg_idx}
@@ -2830,8 +2865,49 @@ class TaskManager:
                     return
                 elif status == "verify_pending":
                     fast_retry_s = max(0.05, float(CONFIG.get("post_submit_verify_pending_retry_seconds", 0.35) or 0.35))
-                    log(f"⏳ 提交成功但验证未收敛，{round(fast_retry_s, 2)}s 后快速复核: {res.get('msg')}")
-                    time.sleep(fast_retry_s)
+                    recheck_times = max(0, min(5, int(CONFIG.get("post_submit_verify_pending_matrix_recheck_times", 4) or 4)))
+                    pending_items = list(res.get("failed_items") or final_items or [])
+                    recovered_items = []
+                    if recheck_times > 0 and pending_items:
+                        log(f"⏳ 提交成功但验证未收敛，先做矩阵快速复核({recheck_times}次，每次{round(fast_retry_s, 2)}s): {res.get('msg')}")
+                    for idx in range(recheck_times):
+                        if not pending_items:
+                            break
+                        time.sleep(fast_retry_s)
+                        verify_res = client.get_matrix(target_date, include_mine_overlay=False)
+                        if not isinstance(verify_res, dict) or verify_res.get("error"):
+                            continue
+                        v_matrix = verify_res.get("matrix") or {}
+                        still_pending = []
+                        for it in pending_items:
+                            p = str(it.get("place"))
+                            t = str(it.get("time"))
+                            state = v_matrix.get(p, {}).get(t)
+                            if state in ("booked", "mine"):
+                                recovered_items.append({"place": p, "time": t})
+                            else:
+                                still_pending.append({"place": p, "time": t})
+                        pending_items = still_pending
+                        if not pending_items:
+                            break
+                    if final_items and len(recovered_items) >= len(final_items):
+                        run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), len(recovered_items))
+                        run_metrics["failed_item_count"] = 0
+                        run_metrics["goal_achieved"] = True
+                        log("✅ verify_pending 经矩阵快速复核后收敛为成功，跳过重复提交")
+                        try:
+                            notify_task_result(
+                                True,
+                                "已预订",
+                                items=recovered_items,
+                                date_str=target_date,
+                            )
+                        except Exception as e:
+                            log(f"构建短信内容失败: {e}")
+                        finalize_run_metrics(target_date)
+                        return
+
+                    log(f"⏳ verify_pending 矩阵复核后仍未收敛，继续进入下一轮: remain={len(pending_items) if pending_items else len(final_items or [])}")
                     continue
                 else:
                     run_metrics["failed_item_count"] = max(int(run_metrics.get("failed_item_count") or 0), len(res.get("failed_items") or final_items or []))
@@ -3190,10 +3266,19 @@ def update_config():
     - order_query_max_pages：订单查询最大页数
     - post_submit_orders_join_timeout_seconds：提交后订单查询线程等待上限(秒)
     - post_submit_verify_orders_on_matrix_partial_only：仅在矩阵校验存在缺口时再查订单
+    - post_submit_skip_sync_orders_query：提交后是否跳过同步订单查询(用矩阵快速确认)
     - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - post_submit_verify_pending_retry_seconds：验证未收敛时快速复核间隔(秒)
+    - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
+    - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
+    - pipeline_random_window_seconds：pipeline 随机阶段窗口(秒, 系统级)
+    - pipeline_refill_interval_seconds：pipeline refill 阶段轮询间隔(秒, 系统级)
+    - pipeline_stop_when_reached：pipeline 达标立即停止(系统级)
+    - pipeline_continuous_prefer_adjacent：pipeline 连号优先(系统级)
+    - pipeline_greedy_end_mode：pipeline 截止模式(absolute/before_start, 系统级)
+    - pipeline_greedy_end_before_hours：pipeline 开场前小时数(系统级)
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
@@ -3289,6 +3374,17 @@ def update_config():
             CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = enabled
             saved['post_submit_verify_orders_on_matrix_partial_only'] = enabled
 
+        if 'post_submit_skip_sync_orders_query' in data:
+            val = data['post_submit_skip_sync_orders_query']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_skip_sync_orders_query'] = enabled
+            saved['post_submit_skip_sync_orders_query'] = enabled
+
         if 'post_submit_orders_sync_fallback' in data:
             val = data['post_submit_orders_sync_fallback']
             if isinstance(val, bool):
@@ -3344,6 +3440,34 @@ def update_config():
             CONFIG['stop_on_none_stage_without_refill'] = enabled
             saved['stop_on_none_stage_without_refill'] = enabled
 
+        if 'pipeline_stop_when_reached' in data:
+            val = data['pipeline_stop_when_reached']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['pipeline_stop_when_reached'] = enabled
+            saved['pipeline_stop_when_reached'] = enabled
+
+        if 'pipeline_continuous_prefer_adjacent' in data:
+            val = data['pipeline_continuous_prefer_adjacent']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['pipeline_continuous_prefer_adjacent'] = enabled
+            saved['pipeline_continuous_prefer_adjacent'] = enabled
+
+        if 'pipeline_greedy_end_mode' in data:
+            mode = str(data.get('pipeline_greedy_end_mode') or '').strip()
+            mode = mode if mode in ('absolute', 'before_start') else 'absolute'
+            CONFIG['pipeline_greedy_end_mode'] = mode
+            saved['pipeline_greedy_end_mode'] = mode
+
         if 'batch_retry_times' in data:
             try:
                 val = int(data['batch_retry_times'])
@@ -3388,6 +3512,51 @@ def update_config():
             val = max(0, min(3, val))
             CONFIG['submit_split_retry_times'] = val
             saved['submit_split_retry_times'] = val
+
+        if 'pipeline_continuous_window_seconds' in data:
+            try:
+                val = int(data['pipeline_continuous_window_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_continuous_window_seconds', 8))
+            val = max(1, min(120, val))
+            CONFIG['pipeline_continuous_window_seconds'] = val
+            saved['pipeline_continuous_window_seconds'] = val
+
+        if 'pipeline_random_window_seconds' in data:
+            try:
+                val = int(data['pipeline_random_window_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_random_window_seconds', 12))
+            val = max(1, min(180, val))
+            CONFIG['pipeline_random_window_seconds'] = val
+            saved['pipeline_random_window_seconds'] = val
+
+        if 'pipeline_refill_interval_seconds' in data:
+            try:
+                val = int(data['pipeline_refill_interval_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_refill_interval_seconds', 15))
+            val = max(1, min(300, val))
+            CONFIG['pipeline_refill_interval_seconds'] = val
+            saved['pipeline_refill_interval_seconds'] = val
+
+        if 'pipeline_greedy_end_before_hours' in data:
+            try:
+                val = float(data['pipeline_greedy_end_before_hours'])
+            except (TypeError, ValueError):
+                val = float(CONFIG.get('pipeline_greedy_end_before_hours', 24.0))
+            val = max(0.0, val)
+            CONFIG['pipeline_greedy_end_before_hours'] = val
+            saved['pipeline_greedy_end_before_hours'] = val
+
+        if 'post_submit_verify_pending_matrix_recheck_times' in data:
+            try:
+                val = int(data['post_submit_verify_pending_matrix_recheck_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('post_submit_verify_pending_matrix_recheck_times', 4))
+            val = max(0, min(5, val))
+            CONFIG['post_submit_verify_pending_matrix_recheck_times'] = val
+            saved['post_submit_verify_pending_matrix_recheck_times'] = val
 
         if 'health_check_start_time' in data:
             time_str = normalize_time_str(data['health_check_start_time'])
