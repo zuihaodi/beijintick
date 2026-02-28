@@ -1471,6 +1471,7 @@
 
         // 初始化任务区域 (页面加载时直接调用)
         if (document.getElementById('targetDateList')) initDateSelector();
+        syncTaskParamScopeUI();
         // initPlaceSelector 移到 renderTable 之后调用，或者给个默认调用
         if (document.getElementById('placeSelector')) initPlaceSelector();
         if (document.getElementById('timeSelector')) initTimeSelector();
@@ -3144,6 +3145,39 @@
         function toggleTaskModePanels() {
             const panel = document.getElementById('pipelineConfigPanel');
             if (panel) panel.style.display = 'block';
+        }
+
+
+        async function maybeBootstrapRefillAfterTaskCreate({offset, targetCount, places, times, isEditing}) {
+            if (isEditing) return;
+            if (!document.getElementById('taskAutoCreateRefill')?.checked) return;
+            try {
+                const dt = new Date();
+                dt.setHours(0, 0, 0, 0);
+                dt.setDate(dt.getDate() + (Number.isFinite(offset) ? offset : 0));
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const d = String(dt.getDate()).padStart(2, '0');
+                const targetDate = `${y}-${m}-${d}`;
+
+                const refillDateEl = document.getElementById('refillDate');
+                const refillCountEl = document.getElementById('refillTargetCount');
+                const refillPlacesEl = document.getElementById('refillPlaces');
+                const refillTimesEl = document.getElementById('refillTimes');
+                if (refillDateEl) refillDateEl.value = targetDate;
+                if (refillCountEl) refillCountEl.value = String(targetCount || 1);
+                if (refillPlacesEl) refillPlacesEl.value = (places || []).join(',');
+                if (refillTimesEl) refillTimesEl.value = (times || []).join(',');
+
+                const ok = confirm('已预填独立Refill参数，是否立即创建Refill任务？');
+                if (ok) {
+                    await createRefillTask();
+                } else {
+                    document.getElementById('refillDate')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (e) {
+                console.error('自动引导Refill失败', e);
+            }
         }
 
 
