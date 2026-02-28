@@ -1209,6 +1209,51 @@
           </div>
         </div>
 
+        <div style="margin-top:8px;padding:10px;border:1px dashed #eee;border-radius:8px;">
+          <div style="font-size:12px;color:#666;margin-bottom:6px;">Pipeline系统级参数（任务级仅保留continuous/random/refill开关）</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">continuous阶段窗口(秒)</label>
+              <input type="number" id="pipelineContinuousWindowGlobal" class="form-control" min="1" step="1" value="8">
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">random阶段窗口(秒)</label>
+              <input type="number" id="pipelineRandomWindowGlobal" class="form-control" min="1" step="1" value="12">
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">pipeline refill间隔(秒)</label>
+              <input type="number" id="pipelineRefillIntervalGlobal" class="form-control" min="1" step="1" value="15">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+            <div style="flex:1;min-width:220px;display:flex;align-items:flex-end;">
+              <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <input type="checkbox" id="pipelineStopWhenReachedGlobal" checked>
+                pipeline达标后立即停止
+              </label>
+            </div>
+            <div style="flex:1;min-width:220px;display:flex;align-items:flex-end;">
+              <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <input type="checkbox" id="pipelineContinuousPreferAdjacentGlobal" checked>
+                continuous连号优先
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">pipeline截止模式</label>
+              <select id="pipelineGreedyEndModeGlobal" class="form-control">
+                <option value="absolute">absolute（固定截止时间）</option>
+                <option value="before_start">before_start（开场前N小时）</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">开场前小时数(before_start)</label>
+              <input type="number" id="pipelineGreedyEndBeforeHoursGlobal" class="form-control" min="0" step="0.5" value="24">
+            </div>
+          </div>
+        </div>
+
 
         <!-- 全局通知手机号 + 保存配置 -->
         <div class="form-group"
@@ -2070,6 +2115,34 @@
                             const chk = document.getElementById('stopOnNoneStageWithoutRefill');
                             if (chk) chk.checked = !!config.stop_on_none_stage_without_refill;
                         }
+                        if (config.pipeline_continuous_window_seconds != null) {
+                            const el = document.getElementById('pipelineContinuousWindowGlobal');
+                            if (el) el.value = config.pipeline_continuous_window_seconds;
+                        }
+                        if (config.pipeline_random_window_seconds != null) {
+                            const el = document.getElementById('pipelineRandomWindowGlobal');
+                            if (el) el.value = config.pipeline_random_window_seconds;
+                        }
+                        if (config.pipeline_refill_interval_seconds != null) {
+                            const el = document.getElementById('pipelineRefillIntervalGlobal');
+                            if (el) el.value = config.pipeline_refill_interval_seconds;
+                        }
+                        if (config.pipeline_stop_when_reached != null) {
+                            const el = document.getElementById('pipelineStopWhenReachedGlobal');
+                            if (el) el.checked = !!config.pipeline_stop_when_reached;
+                        }
+                        if (config.pipeline_continuous_prefer_adjacent != null) {
+                            const el = document.getElementById('pipelineContinuousPreferAdjacentGlobal');
+                            if (el) el.checked = !!config.pipeline_continuous_prefer_adjacent;
+                        }
+                        if (config.pipeline_greedy_end_mode != null) {
+                            const el = document.getElementById('pipelineGreedyEndModeGlobal');
+                            if (el) el.value = String(config.pipeline_greedy_end_mode || 'absolute');
+                        }
+                        if (config.pipeline_greedy_end_before_hours != null) {
+                            const el = document.getElementById('pipelineGreedyEndBeforeHoursGlobal');
+                            if (el) el.value = config.pipeline_greedy_end_before_hours;
+                        }
 
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
@@ -2192,6 +2265,13 @@
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
                     open_retry_seconds: isNaN(openRetrySeconds) ? 30.0 : openRetrySeconds,
                     stop_on_none_stage_without_refill: !!((document.getElementById('stopOnNoneStageWithoutRefill') || {}).checked),
+                    pipeline_continuous_window_seconds: parseInt(getValue('pipelineContinuousWindowGlobal', '8') || '8', 10),
+                    pipeline_random_window_seconds: parseInt(getValue('pipelineRandomWindowGlobal', '12') || '12', 10),
+                    pipeline_refill_interval_seconds: parseInt(getValue('pipelineRefillIntervalGlobal', '15') || '15', 10),
+                    pipeline_stop_when_reached: !!((document.getElementById('pipelineStopWhenReachedGlobal') || {}).checked),
+                    pipeline_continuous_prefer_adjacent: !!((document.getElementById('pipelineContinuousPreferAdjacentGlobal') || {}).checked),
+                    pipeline_greedy_end_mode: ((document.getElementById('pipelineGreedyEndModeGlobal') || {}).value || 'absolute'),
+                    pipeline_greedy_end_before_hours: parseFloat(getValue('pipelineGreedyEndBeforeHoursGlobal', '24') || '24'),
                 };
 
                 const stopOnNoneEl = document.getElementById('stopOnNoneStageWithoutRefill');
