@@ -213,6 +213,7 @@ CONFIG = {
     "order_query_max_pages": 2,
     "post_submit_orders_join_timeout_seconds": 1.2,
     "post_submit_verify_orders_on_matrix_partial_only": True,
+    "post_submit_skip_sync_orders_query": True,
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
     "post_submit_treat_verify_timeout_as_retry": True,
@@ -340,6 +341,8 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'post_submit_verify_orders_on_matrix_partial_only' in saved:
                 CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = bool(saved['post_submit_verify_orders_on_matrix_partial_only'])
+            if 'post_submit_skip_sync_orders_query' in saved:
+                CONFIG['post_submit_skip_sync_orders_query'] = bool(saved['post_submit_skip_sync_orders_query'])
             if 'post_submit_orders_sync_fallback' in saved:
                 CONFIG['post_submit_orders_sync_fallback'] = bool(saved['post_submit_orders_sync_fallback'])
             if 'post_submit_verify_pending_retry_seconds' in saved:
@@ -1243,20 +1246,24 @@ class ApiClient:
                 needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
 
                 if needs_orders_query:
-                    orders_res = {"error": "未执行"}
+                    skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
+                    if skip_sync_orders_query:
+                        orders_res = {"error": "按配置跳过同步订单查询"}
+                    else:
+                        orders_res = {"error": "未执行"}
 
-                    def _fetch_orders():
-                        nonlocal orders_res
-                        orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
-
-                    t_orders = threading.Thread(target=_fetch_orders, daemon=True)
-                    t_orders.start()
-                    join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
-                    t_orders.join(timeout=join_timeout_s)
-                    if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
-                        orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
-                        if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                        def _fetch_orders():
+                            nonlocal orders_res
                             orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
+                        t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+                        t_orders.start()
+                        join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
+                        t_orders.join(timeout=join_timeout_s)
+                        if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                            orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
+                            if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
 
                 mine_slots = set()
                 if "error" not in orders_res:
@@ -3190,6 +3197,7 @@ def update_config():
     - order_query_max_pages：订单查询最大页数
     - post_submit_orders_join_timeout_seconds：提交后订单查询线程等待上限(秒)
     - post_submit_verify_orders_on_matrix_partial_only：仅在矩阵校验存在缺口时再查订单
+    - post_submit_skip_sync_orders_query：提交后是否跳过同步订单查询(用矩阵快速确认)
     - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - post_submit_verify_pending_retry_seconds：验证未收敛时快速复核间隔(秒)
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
@@ -3288,6 +3296,17 @@ def update_config():
                 enabled = bool(val)
             CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = enabled
             saved['post_submit_verify_orders_on_matrix_partial_only'] = enabled
+
+        if 'post_submit_skip_sync_orders_query' in data:
+            val = data['post_submit_skip_sync_orders_query']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_skip_sync_orders_query'] = enabled
+            saved['post_submit_skip_sync_orders_query'] = enabled
 
         if 'post_submit_orders_sync_fallback' in data:
             val = data['post_submit_orders_sync_fallback']
