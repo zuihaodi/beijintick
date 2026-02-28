@@ -2270,7 +2270,16 @@
                     matrixTimeoutSeconds: 3.0,
                     submitSplitRetryTimes: 1,
                     openRetrySeconds: 30,
+                    lockedRetryInterval: 1.0,
+                    lockedMaxSeconds: 60,
                     stopOnNoneStageWithoutRefill: false,
+                    pipelineContinuousWindow: 8,
+                    pipelineRandomWindow: 12,
+                    pipelineRefillInterval: 15,
+                    pipelineStopWhenReached: true,
+                    pipelineContinuousPreferAdjacent: true,
+                    pipelineGreedyEndMode: 'absolute',
+                    pipelineGreedyEndBeforeHours: 24,
                 },
                 balanced: {
                     retryInterval: 0.8,
@@ -2281,7 +2290,16 @@
                     matrixTimeoutSeconds: 3.0,
                     submitSplitRetryTimes: 1,
                     openRetrySeconds: 20,
+                    lockedRetryInterval: 1.0,
+                    lockedMaxSeconds: 60,
                     stopOnNoneStageWithoutRefill: true,
+                    pipelineContinuousWindow: 8,
+                    pipelineRandomWindow: 12,
+                    pipelineRefillInterval: 15,
+                    pipelineStopWhenReached: true,
+                    pipelineContinuousPreferAdjacent: true,
+                    pipelineGreedyEndMode: 'absolute',
+                    pipelineGreedyEndBeforeHours: 24,
                 },
                 aggressive: {
                     retryInterval: 0.5,
@@ -2292,7 +2310,16 @@
                     matrixTimeoutSeconds: 1.2,
                     submitSplitRetryTimes: 2,
                     openRetrySeconds: 12,
+                    lockedRetryInterval: 1.0,
+                    lockedMaxSeconds: 60,
                     stopOnNoneStageWithoutRefill: true,
+                    pipelineContinuousWindow: 6,
+                    pipelineRandomWindow: 10,
+                    pipelineRefillInterval: 12,
+                    pipelineStopWhenReached: true,
+                    pipelineContinuousPreferAdjacent: true,
+                    pipelineGreedyEndMode: 'absolute',
+                    pipelineGreedyEndBeforeHours: 24,
                 }
             };
             const p = presets[profile] || presets.stable;
@@ -2308,9 +2335,21 @@
             setV('matrixTimeoutSeconds', p.matrixTimeoutSeconds);
             setV('submitSplitRetryTimes', p.submitSplitRetryTimes);
             setV('openRetrySeconds', p.openRetrySeconds);
+            setV('lockedRetryInterval', p.lockedRetryInterval);
+            setV('lockedMaxSeconds', p.lockedMaxSeconds);
+            setV('pipelineContinuousWindowGlobal', p.pipelineContinuousWindow);
+            setV('pipelineRandomWindowGlobal', p.pipelineRandomWindow);
+            setV('pipelineRefillIntervalGlobal', p.pipelineRefillInterval);
+            setV('pipelineGreedyEndBeforeHoursGlobal', p.pipelineGreedyEndBeforeHours);
             const stopEl = document.getElementById('stopOnNoneStageWithoutRefill');
             if (stopEl) stopEl.checked = !!p.stopOnNoneStageWithoutRefill;
-            showToast('已套用自动档参数（激进档已内置异常日关键参数），请点“保存全部系统设置”');
+            const pStopEl = document.getElementById('pipelineStopWhenReachedGlobal');
+            if (pStopEl) pStopEl.checked = !!p.pipelineStopWhenReached;
+            const pAdjEl = document.getElementById('pipelineContinuousPreferAdjacentGlobal');
+            if (pAdjEl) pAdjEl.checked = !!p.pipelineContinuousPreferAdjacent;
+            const pModeEl = document.getElementById('pipelineGreedyEndModeGlobal');
+            if (pModeEl) pModeEl.value = String(p.pipelineGreedyEndMode || 'absolute');
+            showToast('已套用自动档参数（含Pipeline全局参数），请点“保存全部系统设置”');
         }
 
         async function loadRunMetricsCard() {

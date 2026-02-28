@@ -2538,10 +2538,27 @@ class TaskManager:
                         current_need_total = sum(int(v) for v in (need_res.get('need_by_time') or {}).values())
 
                         if sum(need_res['need_by_time'].values()) == 0 and pipe_cfg['stop_when_reached']:
-                            achieved_count = len(need_res.get("task_mine") or [])
+                            achieved_slots = list(need_res.get("task_mine") or [])
+                            achieved_count = len(achieved_slots)
                             run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), achieved_count)
                             run_metrics["failed_item_count"] = 0
-                            notify_task_result(True, "已达任务目标，无需补齐", date_str=target_date)
+                            achieved_items = [
+                                {"place": str(p), "time": str(t)}
+                                for (p, t) in sorted(
+                                    achieved_slots,
+                                    key=lambda x: (
+                                        str(x[1]),
+                                        int(str(x[0])) if str(x[0]).isdigit() else 999,
+                                        str(x[0]),
+                                    ),
+                                )
+                            ]
+                            notify_task_result(
+                                True,
+                                "已达任务目标，无需补齐",
+                                items=achieved_items,
+                                date_str=target_date,
+                            )
                             finalize_run_metrics(target_date)
                             return
 
