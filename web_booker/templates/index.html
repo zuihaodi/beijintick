@@ -908,51 +908,16 @@
                 </div>
 
                 <div id="pipelineConfigPanel" style="display:block;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">
-                                <input type="checkbox" id="pipelineStopWhenReached" checked>
-                                达标后立即停止
-                            </label>
-                            <div style="font-size:12px;color:#666;margin-top:4px;">建议保持开启：达到目标数量后立即收敛，减少无效并发。</div>
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">截止模式</label>
-                            <select id="pipelineGreedyEndMode" class="form-control">
-                                <option value="absolute">absolute（固定截止时间）</option>
-                                <option value="before_start">before_start（开场前N小时）</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
-                        <div style="flex:1;min-width:200px;">
-                            <label style="font-size:12px;">截止时间（absolute）</label>
-                            <input type="datetime-local" id="pipelineGreedyEndTime" class="form-control">
-                        </div>
-                        <div style="flex:1;min-width:160px;">
-                            <label style="font-size:12px;">开场前小时数（before_start）</label>
-                            <input type="number" id="pipelineGreedyEndBeforeHours" class="form-control" value="24" min="1" step="1">
-                        </div>
-                    </div>
-
-                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
-                    <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
-                        <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
-                        continuous 连号优先（建议开启）
-                    </label>
+                    <div style="font-size:12px;color:#666;margin-top:6px;">任务级仅保留阶段开关；窗口/截止/连号偏好统一由系统设置控制</div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 阶段窗口(秒)</label>
-                            <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 整场优先阶段</label>
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 窗口(秒)</label>
-                            <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 快速补齐阶段</label>
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)（实验，不建议；推荐独立Refill）</label>
-                            <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 慢速补订阶段（推荐独立Refill）</label>
                         </div>
                     </div>
                 </div>
@@ -972,6 +937,9 @@
                 </select>
             </div>
 
+            <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:13px;color:#333;">
+                <input type="checkbox" id="taskAutoCreateRefill"> 保存任务后弹出“新建Refill”引导（独立任务）
+            </label>
             <button class="btn btn-primary" id="saveTaskBtn" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
@@ -1081,7 +1049,7 @@
             </div>
             <div style="font-size:12px;color:#666;margin-top:6px;line-height:1.5;">
                 * 任务页参数是“任务级”（每个任务自己带），系统设置是“全局级”（默认策略）。<br>
-                * 目标是减少手动调参：每天仅需选档位 + 保存一次。
+                * 目标是减少手动调参：每天仅需选档位 + 保存一次。<br>* 激进档已内置异常日参数（更短超时+更小首批），避免临场手改遗漏。
             </div>
         </div>
         <div class="form-group"
@@ -1203,6 +1171,51 @@
               <input type="checkbox" id="stopOnNoneStageWithoutRefill">
               阶段结束无Refill时立即停止（stop_on_none_stage_without_refill）
             </label>
+          </div>
+        </div>
+
+        <div style="margin-top:8px;padding:10px;border:1px dashed #eee;border-radius:8px;">
+          <div style="font-size:12px;color:#666;margin-bottom:6px;">Pipeline系统级参数（任务级仅保留continuous/random/refill开关）</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">continuous阶段窗口(秒)</label>
+              <input type="number" id="pipelineContinuousWindowGlobal" class="form-control" min="1" step="1" value="8">
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">random阶段窗口(秒)</label>
+              <input type="number" id="pipelineRandomWindowGlobal" class="form-control" min="1" step="1" value="12">
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">pipeline refill间隔(秒)</label>
+              <input type="number" id="pipelineRefillIntervalGlobal" class="form-control" min="1" step="1" value="15">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+            <div style="flex:1;min-width:220px;display:flex;align-items:flex-end;">
+              <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <input type="checkbox" id="pipelineStopWhenReachedGlobal" checked>
+                pipeline达标后立即停止
+              </label>
+            </div>
+            <div style="flex:1;min-width:220px;display:flex;align-items:flex-end;">
+              <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <input type="checkbox" id="pipelineContinuousPreferAdjacentGlobal" checked>
+                continuous连号优先
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">pipeline截止模式</label>
+              <select id="pipelineGreedyEndModeGlobal" class="form-control">
+                <option value="absolute">absolute（固定截止时间）</option>
+                <option value="before_start">before_start（开场前N小时）</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:12px;">开场前小时数(before_start)</label>
+              <input type="number" id="pipelineGreedyEndBeforeHoursGlobal" class="form-control" min="0" step="0.5" value="24">
+            </div>
           </div>
         </div>
 
@@ -1481,6 +1494,7 @@
 
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
+
 
         async function syncTime() {
             const start = Date.now();
@@ -2054,6 +2068,34 @@
                             const chk = document.getElementById('stopOnNoneStageWithoutRefill');
                             if (chk) chk.checked = !!config.stop_on_none_stage_without_refill;
                         }
+                        if (config.pipeline_continuous_window_seconds != null) {
+                            const el = document.getElementById('pipelineContinuousWindowGlobal');
+                            if (el) el.value = config.pipeline_continuous_window_seconds;
+                        }
+                        if (config.pipeline_random_window_seconds != null) {
+                            const el = document.getElementById('pipelineRandomWindowGlobal');
+                            if (el) el.value = config.pipeline_random_window_seconds;
+                        }
+                        if (config.pipeline_refill_interval_seconds != null) {
+                            const el = document.getElementById('pipelineRefillIntervalGlobal');
+                            if (el) el.value = config.pipeline_refill_interval_seconds;
+                        }
+                        if (config.pipeline_stop_when_reached != null) {
+                            const el = document.getElementById('pipelineStopWhenReachedGlobal');
+                            if (el) el.checked = !!config.pipeline_stop_when_reached;
+                        }
+                        if (config.pipeline_continuous_prefer_adjacent != null) {
+                            const el = document.getElementById('pipelineContinuousPreferAdjacentGlobal');
+                            if (el) el.checked = !!config.pipeline_continuous_prefer_adjacent;
+                        }
+                        if (config.pipeline_greedy_end_mode != null) {
+                            const el = document.getElementById('pipelineGreedyEndModeGlobal');
+                            if (el) el.value = String(config.pipeline_greedy_end_mode || 'absolute');
+                        }
+                        if (config.pipeline_greedy_end_before_hours != null) {
+                            const el = document.getElementById('pipelineGreedyEndBeforeHoursGlobal');
+                            if (el) el.value = config.pipeline_greedy_end_before_hours;
+                        }
 
                         // ✅ 健康检查配置
                         if (config.health_check_enabled != null) {
@@ -2176,6 +2218,13 @@
                     locked_max_seconds: isNaN(lockedMaxSeconds) ? 60.0 : lockedMaxSeconds,
                     open_retry_seconds: isNaN(openRetrySeconds) ? 30.0 : openRetrySeconds,
                     stop_on_none_stage_without_refill: !!((document.getElementById('stopOnNoneStageWithoutRefill') || {}).checked),
+                    pipeline_continuous_window_seconds: parseInt(getValue('pipelineContinuousWindowGlobal', '8') || '8', 10),
+                    pipeline_random_window_seconds: parseInt(getValue('pipelineRandomWindowGlobal', '12') || '12', 10),
+                    pipeline_refill_interval_seconds: parseInt(getValue('pipelineRefillIntervalGlobal', '15') || '15', 10),
+                    pipeline_stop_when_reached: !!((document.getElementById('pipelineStopWhenReachedGlobal') || {}).checked),
+                    pipeline_continuous_prefer_adjacent: !!((document.getElementById('pipelineContinuousPreferAdjacentGlobal') || {}).checked),
+                    pipeline_greedy_end_mode: ((document.getElementById('pipelineGreedyEndModeGlobal') || {}).value || 'absolute'),
+                    pipeline_greedy_end_before_hours: parseFloat(getValue('pipelineGreedyEndBeforeHoursGlobal', '24') || '24'),
                 };
 
                 const stopOnNoneEl = document.getElementById('stopOnNoneStageWithoutRefill');
@@ -2241,10 +2290,10 @@
                 aggressive: {
                     retryInterval: 0.5,
                     aggressiveRetryInterval: 0.2,
-                    submitBatchSize: 4,
-                    initialSubmitBatchSize: 3,
-                    submitTimeoutSeconds: 3.0,
-                    matrixTimeoutSeconds: 2.5,
+                    submitBatchSize: 3,
+                    initialSubmitBatchSize: 1,
+                    submitTimeoutSeconds: 2.2,
+                    matrixTimeoutSeconds: 1.2,
                     submitSplitRetryTimes: 2,
                     openRetrySeconds: 12,
                     stopOnNoneStageWithoutRefill: true,
@@ -2265,7 +2314,7 @@
             setV('openRetrySeconds', p.openRetrySeconds);
             const stopEl = document.getElementById('stopOnNoneStageWithoutRefill');
             if (stopEl) stopEl.checked = !!p.stopOnNoneStageWithoutRefill;
-            showToast('已套用自动档参数，请点“保存全部系统设置”');
+            showToast('已套用自动档参数（激进档已内置异常日关键参数），请点“保存全部系统设置”');
         }
 
         async function loadRunMetricsCard() {
@@ -3109,6 +3158,39 @@
         }
 
 
+        async function maybeBootstrapRefillAfterTaskCreate({offset, targetCount, places, times, isEditing}) {
+            if (isEditing) return;
+            if (!document.getElementById('taskAutoCreateRefill')?.checked) return;
+            try {
+                const dt = new Date();
+                dt.setHours(0, 0, 0, 0);
+                dt.setDate(dt.getDate() + (Number.isFinite(offset) ? offset : 0));
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const d = String(dt.getDate()).padStart(2, '0');
+                const targetDate = `${y}-${m}-${d}`;
+
+                const refillDateEl = document.getElementById('refillDate');
+                const refillCountEl = document.getElementById('refillTargetCount');
+                const refillPlacesEl = document.getElementById('refillPlaces');
+                const refillTimesEl = document.getElementById('refillTimes');
+                if (refillDateEl) refillDateEl.value = targetDate;
+                if (refillCountEl) refillCountEl.value = String(targetCount || 1);
+                if (refillPlacesEl) refillPlacesEl.value = (places || []).join(',');
+                if (refillTimesEl) refillTimesEl.value = (times || []).join(',');
+
+                const ok = confirm('已预填独立Refill参数，是否立即创建Refill任务？');
+                if (ok) {
+                    await createRefillTask();
+                } else {
+                    document.getElementById('refillDate')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (e) {
+                console.error('自动引导Refill失败', e);
+            }
+        }
+
+
         async function createTask() {
             const time = document.getElementById('taskTime').value;
             const type = document.getElementById('taskType').value;
@@ -3145,12 +3227,6 @@
 
             let config;
             if (usePipeline) {
-                const toInt = (v, d) => {
-                    const n = parseInt(String(v || ''), 10);
-                    return Number.isFinite(n) && n > 0 ? n : d;
-                };
-                const dtRaw = (document.getElementById('pipelineGreedyEndTime') || {}).value || '';
-                const greedyEndTime = dtRaw ? `${dtRaw.replace('T', ' ')}:00` : '';
                 config = {
                     mode: 'pipeline',
                     candidate_places: places,
@@ -3161,24 +3237,16 @@
                             {
                                 type: 'continuous',
                                 enabled: !!(document.getElementById('pipelineContinuousEnabled') || {}).checked,
-                                window_seconds: toInt((document.getElementById('pipelineContinuousWindow') || {}).value, 8)
                             },
                             {
                                 type: 'random',
                                 enabled: !!(document.getElementById('pipelineRandomEnabled') || {}).checked,
-                                window_seconds: toInt((document.getElementById('pipelineRandomWindow') || {}).value, 12)
                             },
                             {
                                 type: 'refill',
                                 enabled: !!(document.getElementById('pipelineRefillEnabled') || {}).checked,
-                                interval_seconds: toInt((document.getElementById('pipelineRefillInterval') || {}).value, 15)
                             }
                         ],
-                        stop_when_reached: !!(document.getElementById('pipelineStopWhenReached') || {}).checked,
-                        continuous_prefer_adjacent: !!(document.getElementById('pipelineContinuousPreferAdjacent') || {}).checked,
-                        greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
-                        greedy_end_time: greedyEndTime,
-                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24),
                         no_progress_switch_rounds: 2
                     }
                 };
@@ -3242,6 +3310,13 @@
                     const saveBtn = document.getElementById('saveTaskBtn');
                     if (saveBtn) saveBtn.innerText = '✅ 保存计划';
                     loadTasks();
+                    await maybeBootstrapRefillAfterTaskCreate({
+                        offset,
+                        targetCount,
+                        places,
+                        times,
+                        isEditing,
+                    });
                 } else {
                     alert('保存失败: ' + (data.msg || '未知错误'));
                 }
@@ -3295,18 +3370,9 @@
             const c = byType('continuous');
             const r = byType('random');
             const f = byType('refill');
-            document.getElementById('pipelineStopWhenReached').checked = pipe.stop_when_reached !== false;
-            document.getElementById('pipelineContinuousPreferAdjacent').checked = pipe.continuous_prefer_adjacent !== false;
-            document.getElementById('pipelineGreedyEndMode').value = pipe.greedy_end_mode || 'absolute';
-            document.getElementById('pipelineGreedyEndBeforeHours').value = String(pipe.greedy_end_before_hours || 24);
-            const abs = String(pipe.greedy_end_time || '').trim();
-            document.getElementById('pipelineGreedyEndTime').value = abs ? abs.replace(' ', 'T').slice(0, 16) : '';
             document.getElementById('pipelineContinuousEnabled').checked = c.enabled !== false;
-            document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
             document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
-            document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
             document.getElementById('pipelineRefillEnabled').checked = !!f.enabled;
-            document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
             const places = (t.config && t.config.candidate_places) || [];
