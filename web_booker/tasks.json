@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "run_time": "11:59:40",
+    "type": "daily",
+    "target_day_offset": 5,
+    "config": {
+      "mode": "pipeline",
+      "candidate_places": [
+        "9",
+        "13"
+      ],
+      "target_times": [
+        "12:00"
+      ],
+      "target_count": 2,
+      "pipeline": {
+        "stages": [
+          {
+            "type": "continuous",
+            "enabled": true,
+            "window_seconds": 8
+          },
+          {
+            "type": "random",
+            "enabled": true,
+            "window_seconds": 12
+          },
+          {
+            "type": "refill",
+            "enabled": false,
+            "interval_seconds": 30
+          }
+        ],
+        "stop_when_reached": true,
+        "continuous_prefer_adjacent": true,
+        "greedy_end_mode": "before_start",
+        "greedy_end_time": "",
+        "greedy_end_before_hours": 26,
+        "no_progress_switch_rounds": 2
+      }
+    },
+    "weekly_day": 0,
+    "notification_phones": [],
+    "pushplus_tokens": [
+      "e4dd60912a45405fbc208ae14ea16f7c"
+    ],
+    "id": 1771732252398,
+    "last_run_at": 1772246878453
+  }
+]

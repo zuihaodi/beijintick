@@ -6,11 +6,9 @@
     "card_st_id": "289",
     "shop_num": "1001"
   },
-  "notification_phones": [
-    "13910424189"
-  ],
+  "notification_phones": [],
   "retry_interval": 1.0,
-  "aggressive_retry_interval": 1.0,
+  "aggressive_retry_interval": 0.3,
   "locked_retry_interval": 1.0,
   "locked_max_seconds": 60.0,
   "sms": {
@@ -19,5 +17,16 @@
   },
   "health_check_interval_min": 30.0,
   "health_check_enabled": true,
-  "health_check_start_time": "00:55"
+  "health_check_start_time": "00:55",
+  "pushplus_tokens": [],
+  "batch_retry_interval": 0.5,
+  "batch_min_interval": 0.8,
+  "refill_window_seconds": 8.0,
+  "open_retry_seconds": 30.0,
+  "batch_retry_times": 2,
+  "submit_batch_size": 3,
+  "stop_on_none_stage_without_refill": false,
+  "submit_timeout_seconds": 4.0,
+  "submit_split_retry_times": 1,
+  "initial_submit_batch_size": 2
 }
