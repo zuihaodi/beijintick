@@ -908,51 +908,16 @@
                 </div>
 
                 <div id="pipelineConfigPanel" style="display:block;margin-top:10px;border-top:1px dashed #eee;padding-top:10px;">
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">
-                                <input type="checkbox" id="pipelineStopWhenReached" checked>
-                                达标后立即停止
-                            </label>
-                            <div style="font-size:12px;color:#666;margin-top:4px;">建议保持开启：达到目标数量后立即收敛，减少无效并发。</div>
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;">截止模式</label>
-                            <select id="pipelineGreedyEndMode" class="form-control">
-                                <option value="absolute">absolute（固定截止时间）</option>
-                                <option value="before_start">before_start（开场前N小时）</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
-                        <div style="flex:1;min-width:200px;">
-                            <label style="font-size:12px;">截止时间（absolute）</label>
-                            <input type="datetime-local" id="pipelineGreedyEndTime" class="form-control">
-                        </div>
-                        <div style="flex:1;min-width:160px;">
-                            <label style="font-size:12px;">开场前小时数（before_start）</label>
-                            <input type="number" id="pipelineGreedyEndBeforeHours" class="form-control" value="24" min="1" step="1">
-                        </div>
-                    </div>
-
-                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置（任务级仅保留模式开关；窗口/截止由系统级参数统一控制）</div>
-                    <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
-                        <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
-                        continuous 连号优先（建议开启）
-                    </label>
+                    <div style="font-size:12px;color:#666;margin-top:6px;">任务级仅保留阶段开关；窗口/截止/连号偏好统一由系统设置控制</div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 阶段窗口(秒)</label>
-                            <input type="number" id="pipelineContinuousWindow" class="form-control" value="8" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineContinuousEnabled" checked> continuous 整场优先阶段</label>
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 窗口(秒)</label>
-                            <input type="number" id="pipelineRandomWindow" class="form-control" value="12" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRandomEnabled" checked> random 快速补齐阶段</label>
                         </div>
                         <div style="flex:1;min-width:180px;">
-                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 间隔(秒)（实验，不建议；推荐独立Refill）</label>
-                            <input type="number" id="pipelineRefillInterval" class="form-control" value="15" min="1" step="1">
+                            <label style="font-size:12px;"><input type="checkbox" id="pipelineRefillEnabled"> refill 慢速补订阶段（推荐独立Refill）</label>
                         </div>
                     </div>
                 </div>
@@ -1531,17 +1496,6 @@
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
 
-
-        function syncTaskParamScopeUI() {
-            const ids = [
-                'pipelineStopWhenReached', 'pipelineGreedyEndMode', 'pipelineGreedyEndTime', 'pipelineGreedyEndBeforeHours',
-                'pipelineContinuousPreferAdjacent', 'pipelineContinuousWindow', 'pipelineRandomWindow', 'pipelineRefillInterval'
-            ];
-            ids.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.disabled = true;
-            });
-        }
 
         async function syncTime() {
             const start = Date.now();
@@ -3417,18 +3371,9 @@
             const c = byType('continuous');
             const r = byType('random');
             const f = byType('refill');
-            document.getElementById('pipelineStopWhenReached').checked = pipe.stop_when_reached !== false;
-            document.getElementById('pipelineContinuousPreferAdjacent').checked = pipe.continuous_prefer_adjacent !== false;
-            document.getElementById('pipelineGreedyEndMode').value = pipe.greedy_end_mode || 'absolute';
-            document.getElementById('pipelineGreedyEndBeforeHours').value = String(pipe.greedy_end_before_hours || 24);
-            const abs = String(pipe.greedy_end_time || '').trim();
-            document.getElementById('pipelineGreedyEndTime').value = abs ? abs.replace(' ', 'T').slice(0, 16) : '';
             document.getElementById('pipelineContinuousEnabled').checked = c.enabled !== false;
-            document.getElementById('pipelineContinuousWindow').value = String(c.window_seconds || 8);
             document.getElementById('pipelineRandomEnabled').checked = r.enabled !== false;
-            document.getElementById('pipelineRandomWindow').value = String(r.window_seconds || 12);
             document.getElementById('pipelineRefillEnabled').checked = !!f.enabled;
-            document.getElementById('pipelineRefillInterval').value = String(f.interval_seconds || 15);
 
             document.querySelectorAll('#placeSelector .tag-btn').forEach(btn => btn.classList.remove('active'));
             const places = (t.config && t.config.candidate_places) || [];

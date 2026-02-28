@@ -2126,12 +2126,26 @@ class TaskManager:
             return None
 
         def build_pipeline_cfg(cfg):
+            mode = str(cfg.get('mode', 'normal') or 'normal').strip()
             pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
             stages_raw = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
             enabled_map = {}
             for st in stages_raw:
                 if isinstance(st, dict) and st.get('type'):
                     enabled_map[str(st.get('type'))] = bool(st.get('enabled', True))
+
+            # 兼容旧任务：normal/smart_continuous 统一映射到 pipeline 核心。
+            # - normal: continuous-only（保持“整场优先”语义）
+            # - smart_continuous: 仅影响 continuous 连号偏好
+            if mode == 'normal':
+                enabled_map = {
+                    'continuous': True,
+                    'random': False,
+                    'refill': False,
+                }
+                continuous_prefer_adjacent = bool(cfg.get('smart_continuous', False))
+            else:
+                continuous_prefer_adjacent = bool(CONFIG.get('pipeline_continuous_prefer_adjacent', True))
 
             stages = [
                 {"type": "continuous", "enabled": enabled_map.get('continuous', True), "window_seconds": max(1, int(CONFIG.get('pipeline_continuous_window_seconds', 8) or 8))},
@@ -2141,7 +2155,7 @@ class TaskManager:
             return {
                 "stages": stages,
                 "stop_when_reached": bool(CONFIG.get('pipeline_stop_when_reached', True)),
-                "continuous_prefer_adjacent": bool(CONFIG.get('pipeline_continuous_prefer_adjacent', True)),
+                "continuous_prefer_adjacent": continuous_prefer_adjacent,
                 "no_progress_switch_rounds": max(1, int(pipe.get('no_progress_switch_rounds', 2) or 2)),
             }
 
@@ -2511,8 +2525,9 @@ class TaskManager:
                     target_times = cfg.get('target_times', [])
                     mode_items: list[dict] = []
 
-                    # --- 模式 P: pipeline(continuous/random/refill) ---
-                    if mode == 'pipeline':
+                    # --- 统一核心模式：pipeline(continuous/random/refill)
+                    # normal/smart_continuous 会在 build_pipeline_cfg 内映射为 continuous-only pipeline。 ---
+                    if mode in ('pipeline', 'normal'):
                         pipeline_cfg_for_retry = cfg
                         now_ts = time.time()
                         if pipeline_started_at is None:
@@ -2713,63 +2728,11 @@ class TaskManager:
                                             mode_items.append({"place": p, "time": t})
                                             log(f"   -> 🧩 [时间优先-散] 捡漏: {p}号 @ {t}")
 
-                    # --- 模式 C: 普通 / 智能连号 (normal) ---
                     else:
-                        if 'candidate_places' not in cfg:
-                            log(f"❌ 任务配置错误: 非优先级模式必须包含 candidate_places")
-                            notify_task_result(False, "任务配置错误：缺少 candidate_places。", date_str=target_date)
-                            finalize_run_metrics(target_date)
-                            return
-
-                        candidate_places = [str(p) for p in cfg['candidate_places']]
-                        target_courts = max(1, min(MAX_TARGET_COUNT, int(cfg.get('target_count', 2))))
-                        smart_mode = cfg.get('smart_continuous', False)
-
-                        if target_courts <= 0:
-                            log("⚠️ 目标场地数量 target_count <= 0，跳过本轮。")
-                        else:
-                            available_courts: list[int] = []
-                            for p in candidate_places:
-                                p_str = str(p)
-                                ok = True
-                                for t in target_times:
-                                    if p_str not in matrix or matrix[p_str].get(t) != "available":
-                                        ok = False
-                                        break
-                                if ok:
-                                    available_courts.append(int(p))
-
-                            if not available_courts:
-                                log("⚠️ 当前没有同时满足所有时间段的候选场地。")
-                            else:
-                                available_courts.sort()
-                                need = min(target_courts, len(available_courts))
-                                selected_courts: list[int] = []
-
-                                if smart_mode and len(available_courts) > 1:
-                                    best_run: list[int] | None = None
-                                    best_len = 0
-                                    i = 0
-                                    while i < len(available_courts):
-                                        j = i
-                                        while j + 1 < len(available_courts) and                                             available_courts[j + 1] == available_courts[j] + 1:
-                                            j += 1
-                                        run = available_courts[i: j + 1]
-                                        if len(run) > best_len:
-                                            best_len = len(run)
-                                            best_run = run
-                                        i = j + 1
-
-                                    if best_run:
-                                        selected_courts = best_run[:need]
-
-                                if not selected_courts:
-                                    selected_courts = available_courts[:need]
-
-                                for p_int in selected_courts:
-                                    p_str = str(p_int)
-                                    for t in target_times:
-                                        mode_items.append({"place": p_str, "time": t})
+                        log(f"❌ 任务配置错误: 不支持的模式 {mode}")
+                        notify_task_result(False, f"任务配置错误：不支持的模式 {mode}", date_str=target_date)
+                        finalize_run_metrics(target_date)
+                        return
 
                     if mode_items and preselect_enabled and (not preselect_only_before_first_submit or not has_submitted_once):
                         preselect_cache = {"items": [dict(x) for x in mode_items], "ts": time.time(), "date": target_date, "mode": mode, "cfg_idx": cfg_idx}
