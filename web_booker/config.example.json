@@ -28,6 +28,11 @@
   "post_submit_orders_join_timeout_seconds": 1.2,
   "post_submit_verify_orders_on_matrix_partial_only": true,
   "post_submit_orders_sync_fallback": false,
+  "post_submit_verify_pending_retry_seconds": 0.35,
+  "post_submit_treat_verify_timeout_as_retry": true,
+  "preselect_enabled": true,
+  "preselect_ttl_seconds": 2.0,
+  "preselect_only_before_first_submit": true,
   "stop_on_none_stage_without_refill": false,
   "sms": {
     "user": "<sms-user>",
