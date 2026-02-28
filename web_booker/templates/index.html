@@ -1476,6 +1476,7 @@
 
         // 初始化任务区域 (页面加载时直接调用)
         if (document.getElementById('targetDateList')) initDateSelector();
+        syncTaskParamScopeUI();
         // initPlaceSelector 移到 renderTable 之后调用，或者给个默认调用
         if (document.getElementById('placeSelector')) initPlaceSelector();
         if (document.getElementById('timeSelector')) initTimeSelector();
