@@ -936,7 +936,7 @@
                         </div>
                     </div>
 
-                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置</div>
+                    <div style="font-size:12px;color:#666;margin-top:8px;">阶段配置（任务级仅保留模式开关；窗口/截止由系统级参数统一控制）</div>
                     <label style="font-size:12px;color:#666;display:inline-flex;align-items:center;gap:6px;margin-top:4px;">
                         <input type="checkbox" id="pipelineContinuousPreferAdjacent" checked>
                         continuous 连号优先（建议开启）
@@ -972,6 +972,9 @@
                 </select>
             </div>
 
+            <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:13px;color:#333;">
+                <input type="checkbox" id="taskAutoCreateRefill"> 保存任务后弹出“新建Refill”引导（独立任务）
+            </label>
             <button class="btn btn-primary" id="saveTaskBtn" style="width:100%" onclick="createTask()">✅ 保存计划</button>
         </div>
 
@@ -1468,6 +1471,7 @@
 
         // 初始化任务区域 (页面加载时直接调用)
         if (document.getElementById('targetDateList')) initDateSelector();
+        syncTaskParamScopeUI();
         // initPlaceSelector 移到 renderTable 之后调用，或者给个默认调用
         if (document.getElementById('placeSelector')) initPlaceSelector();
         if (document.getElementById('timeSelector')) initTimeSelector();
@@ -1481,6 +1485,18 @@
 
         // ... (之前的 syncTime, updateClock, selectDate, loadMatrix, renderTable, toggleCell 保持不变) ...
         // 为了节省篇幅，这里复用之前的逻辑，只增加新功能的JS
+
+
+        function syncTaskParamScopeUI() {
+            const ids = [
+                'pipelineStopWhenReached', 'pipelineGreedyEndMode', 'pipelineGreedyEndTime', 'pipelineGreedyEndBeforeHours',
+                'pipelineContinuousPreferAdjacent', 'pipelineContinuousWindow', 'pipelineRandomWindow', 'pipelineRefillInterval'
+            ];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = true;
+            });
+        }
 
         async function syncTime() {
             const start = Date.now();
@@ -3109,6 +3125,39 @@
         }
 
 
+        async function maybeBootstrapRefillAfterTaskCreate({offset, targetCount, places, times, isEditing}) {
+            if (isEditing) return;
+            if (!document.getElementById('taskAutoCreateRefill')?.checked) return;
+            try {
+                const dt = new Date();
+                dt.setHours(0, 0, 0, 0);
+                dt.setDate(dt.getDate() + (Number.isFinite(offset) ? offset : 0));
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const d = String(dt.getDate()).padStart(2, '0');
+                const targetDate = `${y}-${m}-${d}`;
+
+                const refillDateEl = document.getElementById('refillDate');
+                const refillCountEl = document.getElementById('refillTargetCount');
+                const refillPlacesEl = document.getElementById('refillPlaces');
+                const refillTimesEl = document.getElementById('refillTimes');
+                if (refillDateEl) refillDateEl.value = targetDate;
+                if (refillCountEl) refillCountEl.value = String(targetCount || 1);
+                if (refillPlacesEl) refillPlacesEl.value = (places || []).join(',');
+                if (refillTimesEl) refillTimesEl.value = (times || []).join(',');
+
+                const ok = confirm('已预填独立Refill参数，是否立即创建Refill任务？');
+                if (ok) {
+                    await createRefillTask();
+                } else {
+                    document.getElementById('refillDate')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (e) {
+                console.error('自动引导Refill失败', e);
+            }
+        }
+
+
         async function createTask() {
             const time = document.getElementById('taskTime').value;
             const type = document.getElementById('taskType').value;
@@ -3145,12 +3194,6 @@
 
             let config;
             if (usePipeline) {
-                const toInt = (v, d) => {
-                    const n = parseInt(String(v || ''), 10);
-                    return Number.isFinite(n) && n > 0 ? n : d;
-                };
-                const dtRaw = (document.getElementById('pipelineGreedyEndTime') || {}).value || '';
-                const greedyEndTime = dtRaw ? `${dtRaw.replace('T', ' ')}:00` : '';
                 config = {
                     mode: 'pipeline',
                     candidate_places: places,
@@ -3161,24 +3204,16 @@
                             {
                                 type: 'continuous',
                                 enabled: !!(document.getElementById('pipelineContinuousEnabled') || {}).checked,
-                                window_seconds: toInt((document.getElementById('pipelineContinuousWindow') || {}).value, 8)
                             },
                             {
                                 type: 'random',
                                 enabled: !!(document.getElementById('pipelineRandomEnabled') || {}).checked,
-                                window_seconds: toInt((document.getElementById('pipelineRandomWindow') || {}).value, 12)
                             },
                             {
                                 type: 'refill',
                                 enabled: !!(document.getElementById('pipelineRefillEnabled') || {}).checked,
-                                interval_seconds: toInt((document.getElementById('pipelineRefillInterval') || {}).value, 15)
                             }
                         ],
-                        stop_when_reached: !!(document.getElementById('pipelineStopWhenReached') || {}).checked,
-                        continuous_prefer_adjacent: !!(document.getElementById('pipelineContinuousPreferAdjacent') || {}).checked,
-                        greedy_end_mode: ((document.getElementById('pipelineGreedyEndMode') || {}).value || 'absolute'),
-                        greedy_end_time: greedyEndTime,
-                        greedy_end_before_hours: toInt((document.getElementById('pipelineGreedyEndBeforeHours') || {}).value, 24),
                         no_progress_switch_rounds: 2
                     }
                 };
@@ -3242,6 +3277,13 @@
                     const saveBtn = document.getElementById('saveTaskBtn');
                     if (saveBtn) saveBtn.innerText = '✅ 保存计划';
                     loadTasks();
+                    await maybeBootstrapRefillAfterTaskCreate({
+                        offset,
+                        targetCount,
+                        places,
+                        times,
+                        isEditing,
+                    });
                 } else {
                     alert('保存失败: ' + (data.msg || '未知错误'));
                 }

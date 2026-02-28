@@ -225,6 +225,13 @@ CONFIG = {
     "open_retry_seconds": 30,  # ✅ 新增：已开放无组合时继续重试窗口(秒)
     "matrix_timeout_seconds": 3.0,  # 高峰查询超时(秒)，建议短超时+高频重试
     "stop_on_none_stage_without_refill": False,  # pipeline 阶段结束且无 refill 时是否立即结束
+    "pipeline_continuous_window_seconds": 8,
+    "pipeline_random_window_seconds": 12,
+    "pipeline_refill_interval_seconds": 15,
+    "pipeline_stop_when_reached": True,
+    "pipeline_continuous_prefer_adjacent": True,
+    "pipeline_greedy_end_mode": "absolute",
+    "pipeline_greedy_end_before_hours": 24.0,
     # 🔍 新增：凭证健康检查
     "health_check_enabled": True,      # 是否开启自动健康检查
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
@@ -383,6 +390,33 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'stop_on_none_stage_without_refill' in saved:
                 CONFIG['stop_on_none_stage_without_refill'] = bool(saved['stop_on_none_stage_without_refill'])
+            if 'pipeline_continuous_window_seconds' in saved:
+                try:
+                    CONFIG['pipeline_continuous_window_seconds'] = max(1, min(120, int(saved['pipeline_continuous_window_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_random_window_seconds' in saved:
+                try:
+                    CONFIG['pipeline_random_window_seconds'] = max(1, min(180, int(saved['pipeline_random_window_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_refill_interval_seconds' in saved:
+                try:
+                    CONFIG['pipeline_refill_interval_seconds'] = max(1, min(300, int(saved['pipeline_refill_interval_seconds'])))
+                except Exception:
+                    pass
+            if 'pipeline_stop_when_reached' in saved:
+                CONFIG['pipeline_stop_when_reached'] = bool(saved['pipeline_stop_when_reached'])
+            if 'pipeline_continuous_prefer_adjacent' in saved:
+                CONFIG['pipeline_continuous_prefer_adjacent'] = bool(saved['pipeline_continuous_prefer_adjacent'])
+            if 'pipeline_greedy_end_mode' in saved:
+                mode = str(saved['pipeline_greedy_end_mode'] or '').strip()
+                CONFIG['pipeline_greedy_end_mode'] = mode if mode in ('absolute', 'before_start') else 'absolute'
+            if 'pipeline_greedy_end_before_hours' in saved:
+                try:
+                    CONFIG['pipeline_greedy_end_before_hours'] = max(0.0, float(saved['pipeline_greedy_end_before_hours']))
+                except Exception:
+                    pass
             if 'health_check_enabled' in saved:
                 CONFIG['health_check_enabled'] = saved['health_check_enabled']
             if 'health_check_interval_min' in saved:
@@ -2064,18 +2098,11 @@ class TaskManager:
             return pairs
 
         def calc_pipeline_deadline(cfg, date_str):
-            pipeline_cfg = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
-            mode = str(pipeline_cfg.get('greedy_end_mode') or '').strip()
+            mode = str(CONFIG.get('pipeline_greedy_end_mode', 'absolute') or 'absolute').strip()
 
-            abs_raw = str(pipeline_cfg.get('greedy_end_time') or '').strip()
-            if abs_raw:
-                try:
-                    return datetime.strptime(abs_raw, "%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    pass
-
+            # 全局参数化：任务级不再携带 pipeline 截止配置
             if mode == 'before_start':
-                hours_raw = pipeline_cfg.get('greedy_end_before_hours', 24)
+                hours_raw = CONFIG.get('pipeline_greedy_end_before_hours', 24)
                 try:
                     hours = float(hours_raw)
                 except Exception:
@@ -2093,17 +2120,21 @@ class TaskManager:
 
         def build_pipeline_cfg(cfg):
             pipe = cfg.get('pipeline') if isinstance(cfg.get('pipeline'), dict) else {}
-            stages = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
-            if not stages:
-                stages = [
-                    {"type": "continuous", "enabled": True, "window_seconds": 8},
-                    {"type": "random", "enabled": True, "window_seconds": 12},
-                    {"type": "refill", "enabled": False, "interval_seconds": 15},
-                ]
+            stages_raw = pipe.get('stages') if isinstance(pipe.get('stages'), list) else []
+            enabled_map = {}
+            for st in stages_raw:
+                if isinstance(st, dict) and st.get('type'):
+                    enabled_map[str(st.get('type'))] = bool(st.get('enabled', True))
+
+            stages = [
+                {"type": "continuous", "enabled": enabled_map.get('continuous', True), "window_seconds": max(1, int(CONFIG.get('pipeline_continuous_window_seconds', 8) or 8))},
+                {"type": "random", "enabled": enabled_map.get('random', True), "window_seconds": max(1, int(CONFIG.get('pipeline_random_window_seconds', 12) or 12))},
+                {"type": "refill", "enabled": enabled_map.get('refill', False), "interval_seconds": max(1, int(CONFIG.get('pipeline_refill_interval_seconds', 15) or 15))},
+            ]
             return {
                 "stages": stages,
-                "stop_when_reached": bool(pipe.get('stop_when_reached', True)),
-                "continuous_prefer_adjacent": bool(pipe.get('continuous_prefer_adjacent', True)),
+                "stop_when_reached": bool(CONFIG.get('pipeline_stop_when_reached', True)),
+                "continuous_prefer_adjacent": bool(CONFIG.get('pipeline_continuous_prefer_adjacent', True)),
                 "no_progress_switch_rounds": max(1, int(pipe.get('no_progress_switch_rounds', 2) or 2)),
             }
 
@@ -3254,6 +3285,13 @@ def update_config():
     - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
+    - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
+    - pipeline_random_window_seconds：pipeline 随机阶段窗口(秒, 系统级)
+    - pipeline_refill_interval_seconds：pipeline refill 阶段轮询间隔(秒, 系统级)
+    - pipeline_stop_when_reached：pipeline 达标立即停止(系统级)
+    - pipeline_continuous_prefer_adjacent：pipeline 连号优先(系统级)
+    - pipeline_greedy_end_mode：pipeline 截止模式(absolute/before_start, 系统级)
+    - pipeline_greedy_end_before_hours：pipeline 开场前小时数(系统级)
     - health_check_enabled: 健康检查是否开启
     - health_check_interval_min: 健康检查间隔（分钟）
     - health_check_start_time: 健康检查起始时间（HH:MM）
@@ -3415,6 +3453,34 @@ def update_config():
             CONFIG['stop_on_none_stage_without_refill'] = enabled
             saved['stop_on_none_stage_without_refill'] = enabled
 
+        if 'pipeline_stop_when_reached' in data:
+            val = data['pipeline_stop_when_reached']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['pipeline_stop_when_reached'] = enabled
+            saved['pipeline_stop_when_reached'] = enabled
+
+        if 'pipeline_continuous_prefer_adjacent' in data:
+            val = data['pipeline_continuous_prefer_adjacent']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['pipeline_continuous_prefer_adjacent'] = enabled
+            saved['pipeline_continuous_prefer_adjacent'] = enabled
+
+        if 'pipeline_greedy_end_mode' in data:
+            mode = str(data.get('pipeline_greedy_end_mode') or '').strip()
+            mode = mode if mode in ('absolute', 'before_start') else 'absolute'
+            CONFIG['pipeline_greedy_end_mode'] = mode
+            saved['pipeline_greedy_end_mode'] = mode
+
         if 'batch_retry_times' in data:
             try:
                 val = int(data['batch_retry_times'])
@@ -3459,6 +3525,42 @@ def update_config():
             val = max(0, min(3, val))
             CONFIG['submit_split_retry_times'] = val
             saved['submit_split_retry_times'] = val
+
+        if 'pipeline_continuous_window_seconds' in data:
+            try:
+                val = int(data['pipeline_continuous_window_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_continuous_window_seconds', 8))
+            val = max(1, min(120, val))
+            CONFIG['pipeline_continuous_window_seconds'] = val
+            saved['pipeline_continuous_window_seconds'] = val
+
+        if 'pipeline_random_window_seconds' in data:
+            try:
+                val = int(data['pipeline_random_window_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_random_window_seconds', 12))
+            val = max(1, min(180, val))
+            CONFIG['pipeline_random_window_seconds'] = val
+            saved['pipeline_random_window_seconds'] = val
+
+        if 'pipeline_refill_interval_seconds' in data:
+            try:
+                val = int(data['pipeline_refill_interval_seconds'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('pipeline_refill_interval_seconds', 15))
+            val = max(1, min(300, val))
+            CONFIG['pipeline_refill_interval_seconds'] = val
+            saved['pipeline_refill_interval_seconds'] = val
+
+        if 'pipeline_greedy_end_before_hours' in data:
+            try:
+                val = float(data['pipeline_greedy_end_before_hours'])
+            except (TypeError, ValueError):
+                val = float(CONFIG.get('pipeline_greedy_end_before_hours', 24.0))
+            val = max(0.0, val)
+            CONFIG['pipeline_greedy_end_before_hours'] = val
+            saved['pipeline_greedy_end_before_hours'] = val
 
         if 'post_submit_verify_pending_matrix_recheck_times' in data:
             try:
