@@ -86,3 +86,17 @@ PY
 ```
 
 这样可以在启动前尽早发现 `if/endif` 配对错误。
+
+## 多 PR 冲突处理（推荐流程）
+
+当存在多个未合并 PR 且改动重叠时，建议先在集成分支处理，不要直接在主分支逐个硬合。
+
+**最简 5 步（可直接照做）**：
+
+1. 检查工作区干净：`git status --short`
+2. 创建集成分支：`git checkout -b integration/conflict-resolve-$(date +%Y%m%d) origin/main`
+3. 生成重叠矩阵：`bash scripts/pr_diff_matrix.sh 101 111 114 115 122`
+4. 以覆盖最全 PR 为主线（常见是 #122），其它 PR 仅摘取增量提交。
+5. 每一批冲突解决后都执行语法检查与关键链路回归，再继续下一批。
+
+详细作战手册（含预期输出、故障处理、回滚步骤）见：`docs/PR_CONFLICT_RESOLUTION_PLAYBOOK.md`。
