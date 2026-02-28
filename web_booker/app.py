@@ -216,6 +216,7 @@ CONFIG = {
     "post_submit_skip_sync_orders_query": True,
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
+    "post_submit_verify_pending_matrix_recheck_times": 2,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -348,6 +349,11 @@ if os.path.exists(CONFIG_FILE):
             if 'post_submit_verify_pending_retry_seconds' in saved:
                 try:
                     CONFIG['post_submit_verify_pending_retry_seconds'] = max(0.05, float(saved['post_submit_verify_pending_retry_seconds']))
+                except Exception:
+                    pass
+            if 'post_submit_verify_pending_matrix_recheck_times' in saved:
+                try:
+                    CONFIG['post_submit_verify_pending_matrix_recheck_times'] = max(0, min(5, int(saved['post_submit_verify_pending_matrix_recheck_times'])))
                 except Exception:
                     pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
@@ -2837,8 +2843,49 @@ class TaskManager:
                     return
                 elif status == "verify_pending":
                     fast_retry_s = max(0.05, float(CONFIG.get("post_submit_verify_pending_retry_seconds", 0.35) or 0.35))
-                    log(f"⏳ 提交成功但验证未收敛，{round(fast_retry_s, 2)}s 后快速复核: {res.get('msg')}")
-                    time.sleep(fast_retry_s)
+                    recheck_times = max(0, min(5, int(CONFIG.get("post_submit_verify_pending_matrix_recheck_times", 2) or 2)))
+                    pending_items = list(res.get("failed_items") or final_items or [])
+                    recovered_items = []
+                    if recheck_times > 0 and pending_items:
+                        log(f"⏳ 提交成功但验证未收敛，先做矩阵快速复核({recheck_times}次，每次{round(fast_retry_s, 2)}s): {res.get('msg')}")
+                    for idx in range(recheck_times):
+                        if not pending_items:
+                            break
+                        time.sleep(fast_retry_s)
+                        verify_res = client.get_matrix(target_date, include_mine_overlay=False)
+                        if not isinstance(verify_res, dict) or verify_res.get("error"):
+                            continue
+                        v_matrix = verify_res.get("matrix") or {}
+                        still_pending = []
+                        for it in pending_items:
+                            p = str(it.get("place"))
+                            t = str(it.get("time"))
+                            state = v_matrix.get(p, {}).get(t)
+                            if state in ("booked", "mine"):
+                                recovered_items.append({"place": p, "time": t})
+                            else:
+                                still_pending.append({"place": p, "time": t})
+                        pending_items = still_pending
+                        if not pending_items:
+                            break
+                    if final_items and len(recovered_items) >= len(final_items):
+                        run_metrics["success_item_count"] = max(int(run_metrics.get("success_item_count") or 0), len(recovered_items))
+                        run_metrics["failed_item_count"] = 0
+                        run_metrics["goal_achieved"] = True
+                        log("✅ verify_pending 经矩阵快速复核后收敛为成功，跳过重复提交")
+                        try:
+                            notify_task_result(
+                                True,
+                                "已预订",
+                                items=recovered_items,
+                                date_str=target_date,
+                            )
+                        except Exception as e:
+                            log(f"构建短信内容失败: {e}")
+                        finalize_run_metrics(target_date)
+                        return
+
+                    log(f"⏳ verify_pending 矩阵复核后仍未收敛，继续进入下一轮: remain={len(pending_items) if pending_items else len(final_items or [])}")
                     continue
                 else:
                     run_metrics["failed_item_count"] = max(int(run_metrics.get("failed_item_count") or 0), len(res.get("failed_items") or final_items or []))
@@ -3200,6 +3247,7 @@ def update_config():
     - post_submit_skip_sync_orders_query：提交后是否跳过同步订单查询(用矩阵快速确认)
     - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - post_submit_verify_pending_retry_seconds：验证未收敛时快速复核间隔(秒)
+    - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - health_check_enabled: 健康检查是否开启
@@ -3407,6 +3455,15 @@ def update_config():
             val = max(0, min(3, val))
             CONFIG['submit_split_retry_times'] = val
             saved['submit_split_retry_times'] = val
+
+        if 'post_submit_verify_pending_matrix_recheck_times' in data:
+            try:
+                val = int(data['post_submit_verify_pending_matrix_recheck_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('post_submit_verify_pending_matrix_recheck_times', 2))
+            val = max(0, min(5, val))
+            CONFIG['post_submit_verify_pending_matrix_recheck_times'] = val
+            saved['post_submit_verify_pending_matrix_recheck_times'] = val
 
         if 'health_check_start_time' in data:
             time_str = normalize_time_str(data['health_check_start_time'])
