@@ -3311,6 +3311,28 @@ def update_config():
             CONFIG['post_submit_treat_verify_timeout_as_retry'] = enabled
             saved['post_submit_treat_verify_timeout_as_retry'] = enabled
 
+        if 'post_submit_verify_orders_on_matrix_partial_only' in data:
+            val = data['post_submit_verify_orders_on_matrix_partial_only']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_verify_orders_on_matrix_partial_only'] = enabled
+            saved['post_submit_verify_orders_on_matrix_partial_only'] = enabled
+
+        if 'post_submit_orders_sync_fallback' in data:
+            val = data['post_submit_orders_sync_fallback']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['post_submit_orders_sync_fallback'] = enabled
+            saved['post_submit_orders_sync_fallback'] = enabled
+
         if 'stop_on_none_stage_without_refill' in data:
             val = data['stop_on_none_stage_without_refill']
             if isinstance(val, bool):
