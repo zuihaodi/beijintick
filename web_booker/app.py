@@ -216,7 +216,7 @@ CONFIG = {
     "post_submit_skip_sync_orders_query": True,
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
-    "post_submit_verify_pending_matrix_recheck_times": 2,
+    "post_submit_verify_pending_matrix_recheck_times": 4,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -1277,9 +1277,13 @@ class ApiClient:
                     orders_query_ok = True
                 else:
                     orders_query_error = str(orders_res.get("error") or "")
-                    print(
-                        f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}"
-                    )
+                    if orders_query_error == "按配置跳过同步订单查询":
+                        if is_verbose_logs_enabled():
+                            print("🧾 [提交后验证调试] 已按配置跳过同步订单查询，mine校验使用矩阵状态")
+                    else:
+                        print(
+                            f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}"
+                        )
 
                 for item in submit_items:
                     p = str(item["place"])
@@ -2843,7 +2847,7 @@ class TaskManager:
                     return
                 elif status == "verify_pending":
                     fast_retry_s = max(0.05, float(CONFIG.get("post_submit_verify_pending_retry_seconds", 0.35) or 0.35))
-                    recheck_times = max(0, min(5, int(CONFIG.get("post_submit_verify_pending_matrix_recheck_times", 2) or 2)))
+                    recheck_times = max(0, min(5, int(CONFIG.get("post_submit_verify_pending_matrix_recheck_times", 4) or 4)))
                     pending_items = list(res.get("failed_items") or final_items or [])
                     recovered_items = []
                     if recheck_times > 0 and pending_items:
@@ -3460,7 +3464,7 @@ def update_config():
             try:
                 val = int(data['post_submit_verify_pending_matrix_recheck_times'])
             except (TypeError, ValueError):
-                val = int(CONFIG.get('post_submit_verify_pending_matrix_recheck_times', 2))
+                val = int(CONFIG.get('post_submit_verify_pending_matrix_recheck_times', 4))
             val = max(0, min(5, val))
             CONFIG['post_submit_verify_pending_matrix_recheck_times'] = val
             saved['post_submit_verify_pending_matrix_recheck_times'] = val

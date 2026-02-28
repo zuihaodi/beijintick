@@ -30,7 +30,7 @@
   "post_submit_skip_sync_orders_query": true,
   "post_submit_orders_sync_fallback": false,
   "post_submit_verify_pending_retry_seconds": 0.35,
-  "post_submit_verify_pending_matrix_recheck_times": 2,
+  "post_submit_verify_pending_matrix_recheck_times": 4,
   "post_submit_treat_verify_timeout_as_retry": true,
   "preselect_enabled": true,
   "preselect_ttl_seconds": 2.0,
