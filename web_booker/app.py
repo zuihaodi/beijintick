@@ -225,6 +225,8 @@ CONFIG = {
     "manual_verify_pending_retry_seconds": 0.25,
     "manual_verify_pending_orders_fallback_enabled": True,
     "too_fast_skip_refill_in_same_request": True,
+    "multi_item_retry_balance_enabled": True,
+    "multi_item_batch_retry_times_cap": 1,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -424,6 +426,13 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['manual_verify_pending_orders_fallback_enabled'] = bool(saved['manual_verify_pending_orders_fallback_enabled'])
             if 'too_fast_skip_refill_in_same_request' in saved:
                 CONFIG['too_fast_skip_refill_in_same_request'] = bool(saved['too_fast_skip_refill_in_same_request'])
+            if 'multi_item_retry_balance_enabled' in saved:
+                CONFIG['multi_item_retry_balance_enabled'] = bool(saved['multi_item_retry_balance_enabled'])
+            if 'multi_item_batch_retry_times_cap' in saved:
+                try:
+                    CONFIG['multi_item_batch_retry_times_cap'] = max(0, min(3, int(saved['multi_item_batch_retry_times_cap'])))
+                except Exception:
+                    pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
                 CONFIG['post_submit_treat_verify_timeout_as_retry'] = bool(saved['post_submit_treat_verify_timeout_as_retry'])
             if 'refill_window_seconds' in saved:
@@ -1021,6 +1030,15 @@ class ApiClient:
 
         submit_items = list(selected_items or [])
         preblocked_items = []
+        multi_item_retry_balance_enabled = bool(CONFIG.get("multi_item_retry_balance_enabled", True))
+        multi_item_batch_retry_times_cap = max(0, min(3, int(CONFIG.get("multi_item_batch_retry_times_cap", 1) or 1)))
+        effective_batch_retry_times = batch_retry_times
+        if multi_item_retry_balance_enabled and len(submit_items) > 1 and batch_retry_times > multi_item_batch_retry_times_cap:
+            effective_batch_retry_times = multi_item_batch_retry_times_cap
+            print(
+                f"⚖️ [重试均衡] 多项目提交({len(submit_items)})，batch_retry_times: {batch_retry_times} -> {effective_batch_retry_times}"
+            )
+        run_metric["effective_batch_retry_times"] = int(effective_batch_retry_times)
         same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
         if same_time_limit > 0:
             try:
@@ -1135,7 +1153,7 @@ class ApiClient:
             )
 
             final_result = None
-            for attempt in range(batch_retry_times + 1):
+            for attempt in range(effective_batch_retry_times + 1):
                 try:
                     run_metric["submit_req_count"] += 1
                     resp = self.session.post(
@@ -1164,11 +1182,11 @@ class ApiClient:
                         fail_msg = resp.text
                     fail_msg = normalize_fail_message(fail_msg)
 
-                    if attempt < batch_retry_times and is_retryable_fail(fail_msg):
+                    if attempt < effective_batch_retry_times and is_retryable_fail(fail_msg):
                         sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
                         print(
                             f"⏳ 批次 {i // initial_batch_size + 1} 命中可重试错误，"
-                            f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{batch_retry_times})"
+                            f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{effective_batch_retry_times})"
                         )
                         run_metric["submit_retry_count"] += 1
                         time.sleep(sleep_s)
@@ -1251,10 +1269,10 @@ class ApiClient:
                     final_result = {"status": "fail", "msg": fail_msg, "batch": batch}
                     break
                 except Exception as e:
-                    if attempt < batch_retry_times:
+                    if attempt < effective_batch_retry_times:
                         print(
                             f"⏳ 批次 {i // initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
-                            f"({attempt + 1}/{batch_retry_times}): {e}"
+                            f"({attempt + 1}/{effective_batch_retry_times}): {e}"
                         )
                         run_metric["submit_retry_count"] += 1
                         time.sleep(batch_retry_interval)
@@ -1479,10 +1497,6 @@ class ApiClient:
         if fast_lane_enabled:
             run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
 
-        run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
-        if fast_lane_enabled:
-            run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
-
         # ---------- 汇总结果 ----------
         # 1) 接口返回层面的成功批次数
 
@@ -1543,8 +1557,20 @@ class ApiClient:
                 else:
                     msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
             else:
-                first_fail = results[0] if results else {"msg": "无数据"}
-                msg = first_fail.get("msg")
+                fail_msgs = [str((r.get("msg") or "")).strip() for r in results if r.get("status") in ("fail", "error")]
+                fail_msgs = [m for m in fail_msgs if m]
+                if fail_msgs:
+                    priority_keywords = ["数据错误", "规则", "上限", "操作过快", "频繁", "超时", "timeout", "网关"]
+                    def _score(m):
+                        m_lower = m.lower()
+                        for idx, kw in enumerate(priority_keywords):
+                            if kw in m_lower or kw in m:
+                                return idx
+                        return len(priority_keywords)
+                    msg = sorted(fail_msgs, key=lambda x: (_score(x), len(x)))[0]
+                else:
+                    first_fail = results[0] if results else {"msg": "无数据"}
+                    msg = first_fail.get("msg")
             return {
                 "status": "fail",
                 "msg": msg,
@@ -3483,6 +3509,7 @@ def api_book():
             'submit_req_count': int(run_metric.get('submit_req_count') or 0),
             'submit_success_resp_count': int(run_metric.get('submit_success_resp_count') or 0),
             'submit_retry_count': int(run_metric.get('submit_retry_count') or 0),
+            'effective_batch_retry_times': int(run_metric.get('effective_batch_retry_times') or 0),
             'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
@@ -3500,6 +3527,8 @@ def api_book():
                 'fast_lane_enabled': bool(CONFIG.get('fast_lane_enabled', True)),
                 'fast_lane_seconds': float(CONFIG.get('fast_lane_seconds', 2.0) or 2.0),
                 'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
+                'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
+                'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
             },
         }
         append_task_run_metric(manual_record)
@@ -3579,6 +3608,8 @@ def update_config():
     - manual_verify_pending_retry_seconds：半自动verify_pending复核间隔(秒)
     - manual_verify_pending_orders_fallback_enabled：半自动verify_pending是否启用一次订单兜底复核
     - too_fast_skip_refill_in_same_request：命中“操作过快/频繁”时是否跳过同请求内补提
+    - multi_item_retry_balance_enabled：多项目提交时是否启用重试次数均衡
+    - multi_item_batch_retry_times_cap：多项目提交时每批最大重试次数上限
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3742,6 +3773,26 @@ def update_config():
                 enabled = bool(val)
             CONFIG['too_fast_skip_refill_in_same_request'] = enabled
             saved['too_fast_skip_refill_in_same_request'] = enabled
+
+        if 'multi_item_retry_balance_enabled' in data:
+            val = data['multi_item_retry_balance_enabled']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['multi_item_retry_balance_enabled'] = enabled
+            saved['multi_item_retry_balance_enabled'] = enabled
+
+        if 'multi_item_batch_retry_times_cap' in data:
+            try:
+                val = int(data['multi_item_batch_retry_times_cap'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('multi_item_batch_retry_times_cap', 1))
+            val = max(0, min(3, val))
+            CONFIG['multi_item_batch_retry_times_cap'] = val
+            saved['multi_item_batch_retry_times_cap'] = val
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']

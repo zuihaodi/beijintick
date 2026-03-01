@@ -59,5 +59,7 @@
   "manual_verify_pending_recheck_times": 3,
   "manual_verify_pending_retry_seconds": 0.25,
   "manual_verify_pending_orders_fallback_enabled": true,
-  "too_fast_skip_refill_in_same_request": true
+  "too_fast_skip_refill_in_same_request": true,
+  "multi_item_retry_balance_enabled": true,
+  "multi_item_batch_retry_times_cap": 1
 }
