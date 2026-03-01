@@ -25,7 +25,7 @@
   "open_retry_seconds": 30.0,
   "order_query_timeout_seconds": 2.5,
   "order_query_max_pages": 2,
-  "post_submit_orders_join_timeout_seconds": 1.2,
+  "post_submit_orders_join_timeout_seconds": 0.3,
   "post_submit_verify_orders_on_matrix_partial_only": true,
   "post_submit_skip_sync_orders_query": true,
   "post_submit_orders_sync_fallback": false,
@@ -49,5 +49,13 @@
   },
   "health_check_enabled": true,
   "health_check_interval_min": 30.0,
-  "health_check_start_time": "00:00"
+  "health_check_start_time": "00:00",
+  "fast_lane_enabled": true,
+  "fast_lane_seconds": 2.0,
+  "post_submit_verify_matrix_timeout_seconds": 0.8,
+  "post_submit_verify_matrix_recheck_times": 3,
+  "metrics_keep_last": 300,
+  "metrics_retention_days": 7,
+  "manual_verify_pending_recheck_times": 3,
+  "manual_verify_pending_retry_seconds": 0.25
 }
