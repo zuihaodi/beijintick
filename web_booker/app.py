@@ -221,6 +221,8 @@ CONFIG = {
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
     "post_submit_verify_pending_matrix_recheck_times": 4,
+    "manual_verify_pending_recheck_times": 3,
+    "manual_verify_pending_retry_seconds": 0.25,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -404,6 +406,16 @@ if os.path.exists(CONFIG_FILE):
             if 'post_submit_verify_pending_matrix_recheck_times' in saved:
                 try:
                     CONFIG['post_submit_verify_pending_matrix_recheck_times'] = max(0, min(5, int(saved['post_submit_verify_pending_matrix_recheck_times'])))
+                except Exception:
+                    pass
+            if 'manual_verify_pending_recheck_times' in saved:
+                try:
+                    CONFIG['manual_verify_pending_recheck_times'] = max(0, min(8, int(saved['manual_verify_pending_recheck_times'])))
+                except Exception:
+                    pass
+            if 'manual_verify_pending_retry_seconds' in saved:
+                try:
+                    CONFIG['manual_verify_pending_retry_seconds'] = max(0.05, min(2.0, float(saved['manual_verify_pending_retry_seconds'])))
                 except Exception:
                     pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
@@ -3343,6 +3355,48 @@ def api_book():
     items = data.get('items')
     res = client.submit_order(date, items)
 
+    # 半自动场景：对 verify_pending 做轻量矩阵复核，减少“实际成功但展示待确认/失败”的误差。
+    if isinstance(res, dict) and res.get('status') == 'verify_pending':
+        pending_items = list(res.get('failed_items') or items or [])
+        retry_s = max(0.05, float(CONFIG.get('manual_verify_pending_retry_seconds', 0.25) or 0.25))
+        recheck_times = max(0, min(8, int(CONFIG.get('manual_verify_pending_recheck_times', 3) or 3)))
+        recovered_items = []
+        for idx in range(recheck_times):
+            if not pending_items:
+                break
+            if idx > 0:
+                time.sleep(retry_s)
+            verify_res = client.get_matrix(date, include_mine_overlay=False)
+            if not isinstance(verify_res, dict) or verify_res.get('error'):
+                continue
+            v_matrix = verify_res.get('matrix') or {}
+            still_pending = []
+            for it in pending_items:
+                p = str(it.get('place'))
+                t = str(it.get('time'))
+                state = v_matrix.get(p, {}).get(t)
+                if state in ('booked', 'mine'):
+                    recovered_items.append({'place': p, 'time': t})
+                else:
+                    still_pending.append({'place': p, 'time': t})
+            pending_items = still_pending
+        if items and len(recovered_items) >= len(items):
+            res = {
+                'status': 'success',
+                'msg': 'verify_pending 经半自动矩阵复核收敛为成功',
+                'success_items': recovered_items,
+                'failed_items': [],
+                'run_metric': dict(res.get('run_metric') or {}),
+            }
+        elif recovered_items:
+            res = {
+                'status': 'partial',
+                'msg': f"verify_pending 复核后部分收敛({len(recovered_items)}/{len(items or [])})",
+                'success_items': recovered_items,
+                'failed_items': pending_items,
+                'run_metric': dict(res.get('run_metric') or {}),
+            }
+
     try:
         run_metric = res.get('run_metric') if isinstance(res, dict) else {}
         if not isinstance(run_metric, dict):
@@ -3448,6 +3502,8 @@ def update_config():
     - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - post_submit_verify_pending_retry_seconds：验证未收敛时快速复核间隔(秒)
     - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
+    - manual_verify_pending_recheck_times：半自动verify_pending矩阵复核次数
+    - manual_verify_pending_retry_seconds：半自动verify_pending复核间隔(秒)
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3541,6 +3597,7 @@ def update_config():
         _update_float_field('post_submit_orders_join_timeout_seconds', 0.1, CONFIG.get('post_submit_orders_join_timeout_seconds', 0.3))
         _update_float_field('post_submit_verify_matrix_timeout_seconds', 0.3, CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8))
         _update_float_field('post_submit_verify_pending_retry_seconds', 0.05, CONFIG.get('post_submit_verify_pending_retry_seconds', 0.35))
+        _update_float_field('manual_verify_pending_retry_seconds', 0.05, CONFIG.get('manual_verify_pending_retry_seconds', 0.25))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
         _update_float_field('preselect_ttl_seconds', 0.2, CONFIG.get('preselect_ttl_seconds', 2.0))
@@ -3757,6 +3814,15 @@ def update_config():
             val = max(1, min(30, val))
             CONFIG['metrics_retention_days'] = val
             saved['metrics_retention_days'] = val
+
+        if 'manual_verify_pending_recheck_times' in data:
+            try:
+                val = int(data['manual_verify_pending_recheck_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('manual_verify_pending_recheck_times', 3))
+            val = max(0, min(8, val))
+            CONFIG['manual_verify_pending_recheck_times'] = val
+            saved['manual_verify_pending_recheck_times'] = val
 
         if 'post_submit_verify_pending_matrix_recheck_times' in data:
             try:

@@ -55,5 +55,7 @@
   "post_submit_verify_matrix_timeout_seconds": 0.8,
   "post_submit_verify_matrix_recheck_times": 3,
   "metrics_keep_last": 300,
-  "metrics_retention_days": 7
+  "metrics_retention_days": 7,
+  "manual_verify_pending_recheck_times": 3,
+  "manual_verify_pending_retry_seconds": 0.25
 }
