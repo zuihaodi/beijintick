@@ -212,6 +212,7 @@ CONFIG = {
     "submit_adaptive_max_batch_size": 3,
     "submit_adaptive_merge_small_n": 2,
     "submit_adaptive_merge_same_time_only": True,
+    "submit_grouping_mode": "smart",
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
@@ -384,6 +385,9 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'submit_adaptive_merge_same_time_only' in saved:
                 CONFIG['submit_adaptive_merge_same_time_only'] = bool(saved['submit_adaptive_merge_same_time_only'])
+            if 'submit_grouping_mode' in saved:
+                mode = str(saved.get('submit_grouping_mode') or 'smart').strip().lower()
+                CONFIG['submit_grouping_mode'] = mode if mode in ('smart', 'place', 'timeslot') else 'smart'
             if 'submit_timeout_seconds' in saved:
                 try:
                     CONFIG['submit_timeout_seconds'] = max(0.5, float(saved['submit_timeout_seconds']))
@@ -1001,6 +1005,8 @@ class ApiClient:
             "retry_budget_total": 0,
             "retry_budget_used": 0,
             "adaptive_small_n_merge_applied": False,
+            "submit_grouping_mode": str(CONFIG.get("submit_grouping_mode", "smart") or "smart"),
+            "place_first_grouping_applied": False,
         }
 
         print(
@@ -1097,6 +1103,29 @@ class ApiClient:
                     run_metric["adaptive_small_n_merge_applied"] = True
 
             effective_initial_batch_size = min(effective_initial_batch_size, degrade_batch_size)
+
+        submit_grouping_mode = str(CONFIG.get("submit_grouping_mode", "smart") or "smart").strip().lower()
+        if submit_grouping_mode not in ("smart", "place", "timeslot"):
+            submit_grouping_mode = "smart"
+        place_first_grouping = False
+        if len(submit_items) > 1:
+            unique_times = {str(it.get("time")) for it in submit_items if isinstance(it, dict)}
+            unique_places = {str(it.get("place")) for it in submit_items if isinstance(it, dict)}
+            if submit_grouping_mode == "place":
+                place_first_grouping = True
+            elif submit_grouping_mode == "timeslot":
+                place_first_grouping = False
+            else:
+                place_first_grouping = (len(unique_times) > 1 and len(unique_places) > 1)
+        if place_first_grouping:
+            submit_items = sorted(
+                submit_items,
+                key=lambda it: (
+                    int(str(it.get("place"))) if str(it.get("place")).isdigit() else 999,
+                    str(it.get("time")),
+                ),
+            )
+            run_metric["place_first_grouping_applied"] = True
 
         preblocked_items = []
         multi_item_retry_balance_enabled = bool(CONFIG.get("multi_item_retry_balance_enabled", True))
@@ -3613,6 +3642,8 @@ def api_book():
             'retry_budget_total': int(run_metric.get('retry_budget_total') or 0),
             'retry_budget_used': int(run_metric.get('retry_budget_used') or 0),
             'adaptive_small_n_merge_applied': bool(run_metric.get('adaptive_small_n_merge_applied', False)),
+            'submit_grouping_mode': str(run_metric.get('submit_grouping_mode') or ''),
+            'place_first_grouping_applied': bool(run_metric.get('place_first_grouping_applied', False)),
             'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
@@ -3639,6 +3670,7 @@ def api_book():
                 'submit_adaptive_max_batch_size': int(CONFIG.get('submit_adaptive_max_batch_size', 3) or 3),
                 'submit_adaptive_merge_small_n': int(CONFIG.get('submit_adaptive_merge_small_n', 2) or 2),
                 'submit_adaptive_merge_same_time_only': bool(CONFIG.get('submit_adaptive_merge_same_time_only', True)),
+                'submit_grouping_mode': str(CONFIG.get('submit_grouping_mode', 'smart') or 'smart'),
             },
         }
         append_task_run_metric(manual_record)
@@ -3702,6 +3734,7 @@ def update_config():
     - submit_adaptive_max_batch_size：自适应策略最大首批大小
     - submit_adaptive_merge_small_n：小目标数量时合批首击阈值（<=N 时可合批）
     - submit_adaptive_merge_same_time_only：仅同时间目标是否允许小N合批
+    - submit_grouping_mode：提交分组模式（smart/place/timeslot）
     - batch_min_interval：批次间最小间隔
     - fast_lane_enabled：开抢快车道（仅必要时sleep）
     - fast_lane_seconds：快车道持续时间(秒)
@@ -4081,6 +4114,15 @@ def update_config():
                 enabled = bool(val)
             CONFIG['submit_adaptive_merge_same_time_only'] = enabled
             saved['submit_adaptive_merge_same_time_only'] = enabled
+
+        if 'submit_grouping_mode' in data:
+            mode = str(data.get('submit_grouping_mode') or 'smart').strip().lower()
+            if mode not in ('smart', 'place', 'timeslot'):
+                mode = str(CONFIG.get('submit_grouping_mode', 'smart') or 'smart').strip().lower()
+                if mode not in ('smart', 'place', 'timeslot'):
+                    mode = 'smart'
+            CONFIG['submit_grouping_mode'] = mode
+            saved['submit_grouping_mode'] = mode
 
         if 'pipeline_continuous_window_seconds' in data:
             try:
