@@ -224,6 +224,7 @@ CONFIG = {
     "manual_verify_pending_recheck_times": 3,
     "manual_verify_pending_retry_seconds": 0.25,
     "manual_verify_pending_orders_fallback_enabled": True,
+    "too_fast_skip_refill_in_same_request": True,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -421,6 +422,8 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'manual_verify_pending_orders_fallback_enabled' in saved:
                 CONFIG['manual_verify_pending_orders_fallback_enabled'] = bool(saved['manual_verify_pending_orders_fallback_enabled'])
+            if 'too_fast_skip_refill_in_same_request' in saved:
+                CONFIG['too_fast_skip_refill_in_same_request'] = bool(saved['too_fast_skip_refill_in_same_request'])
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
                 CONFIG['post_submit_treat_verify_timeout_as_retry'] = bool(saved['post_submit_treat_verify_timeout_as_retry'])
             if 'refill_window_seconds' in saved:
@@ -990,6 +993,11 @@ class ApiClient:
             ]
             return is_retryable_fail(text) or any(k in text for k in rule_keywords)
 
+        def is_too_fast_fail(msg):
+            text = str(msg or "").lower()
+            keywords = ["操作过快", "请求过于频繁", "too fast", "频繁"]
+            return any(k in text for k in keywords)
+
         def maybe_sleep_non_retryable(default_interval):
             if fast_lane_enabled and time.time() < fast_lane_deadline_ts:
                 return
@@ -1261,7 +1269,12 @@ class ApiClient:
 
         # 对失败项做补提（窗口内仅补提仍 available 的项）
         try:
-            refill_deadline = time.time() + max(0.0, refill_window_seconds)
+            skip_refill_for_too_fast = bool(CONFIG.get("too_fast_skip_refill_in_same_request", True)) and any(
+                r.get("status") == "fail" and is_too_fast_fail(r.get("msg")) for r in results
+            )
+            if skip_refill_for_too_fast:
+                print("⏭️ [补提] 命中操作过快/频繁，按配置跳过同请求内补提，避免触发连续风控")
+            refill_deadline = time.time() if skip_refill_for_too_fast else (time.time() + max(0.0, refill_window_seconds))
             while time.time() < refill_deadline:
                 failed_items = []
                 for r in results:
@@ -1355,109 +1368,116 @@ class ApiClient:
         orders_query_error = ""
         orders_res = {"error": "按配置跳过"}
         confirm_started_ts = time.time()
-        try:
-            order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
-            order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
-            verify_matrix_timeout_s = max(0.3, float(CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8) or 0.8))
-            verify_matrix_recheck_times = max(0, min(8, int(CONFIG.get('post_submit_verify_matrix_recheck_times', 3) or 3)))
+        if api_success_count <= 0:
+            verify = {"error": "无success响应，跳过提交后验证"}
+        else:
+            try:
+                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+                order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+                verify_matrix_timeout_s = max(0.3, float(CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8) or 0.8))
+                verify_matrix_recheck_times = max(0, min(8, int(CONFIG.get('post_submit_verify_matrix_recheck_times', 3) or 3)))
 
-            verify = {"error": "未执行"}
-            for _ in range(verify_matrix_recheck_times + 1):
-                run_metric["confirm_matrix_poll_count"] += 1
-                verify = self.get_matrix(
-                    date_str,
-                    include_mine_overlay=False,
-                    request_timeout=verify_matrix_timeout_s,
-                )
+                verify = {"error": "未执行"}
+                for _ in range(verify_matrix_recheck_times + 1):
+                    run_metric["confirm_matrix_poll_count"] += 1
+                    verify = self.get_matrix(
+                        date_str,
+                        include_mine_overlay=False,
+                        request_timeout=verify_matrix_timeout_s,
+                    )
 
-                if not (isinstance(verify, dict) and not verify.get("error")):
-                    continue
+                    if not (isinstance(verify, dict) and not verify.get("error")):
+                        continue
 
-                v_matrix = verify.get("matrix") or {}
-                current_success = []
-                current_failed = []
-                for item in submit_items:
-                    p = str(item.get("place"))
-                    t = item.get("time")
-                    status = v_matrix.get(p, {}).get(t, "N/A")
-                    if status in ("booked", "mine"):
-                        current_success.append({"place": p, "time": t})
+                    v_matrix = verify.get("matrix") or {}
+                    current_success = []
+                    current_failed = []
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        if status in ("booked", "mine"):
+                            current_success.append({"place": p, "time": t})
+                        else:
+                            current_failed.append({"place": p, "time": t})
+
+                    if not current_failed:
+                        verify_success_items = current_success
+                        verify_failed_items = []
+                        verify_success_count = len(current_success)
+                        break
+
+                if verify_success_count is None and isinstance(verify, dict) and not verify.get("error"):
+                    v_matrix = verify.get("matrix") or {}
+                    verify_states = []
+                    matrix_failed_items = []
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        verify_states.append(f"{p}号{t}={status}")
+                        if status not in ("booked", "mine"):
+                            matrix_failed_items.append({"place": p, "time": t})
+
+                    verify_orders_only_on_partial = bool(CONFIG.get('post_submit_verify_orders_on_matrix_partial_only', True))
+                    needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
+
+                    if needs_orders_query:
+                        skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
+                        if skip_sync_orders_query:
+                            orders_res = {"error": "按配置跳过同步订单查询"}
+                        else:
+                            orders_res = {"error": "未执行"}
+
+                            def _fetch_orders():
+                                nonlocal orders_res
+                                orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+
+                            t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+                            t_orders.start()
+                            join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 0.3) or 0.3))
+                            t_orders.join(timeout=join_timeout_s)
+                            run_metric["confirm_orders_poll_count"] += 1
+                            if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                                orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
+
+                    mine_slots = set()
+                    if "error" not in orders_res:
+                        mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                        orders_query_ok = True
                     else:
-                        current_failed.append({"place": p, "time": t})
+                        orders_query_error = str(orders_res.get("error") or "")
+                        if orders_query_error not in ("按配置跳过同步订单查询", "按配置跳过"):
+                            print(f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}")
 
-                if not current_failed:
-                    verify_success_items = current_success
+                    verify_success_items = []
                     verify_failed_items = []
-                    verify_success_count = len(current_success)
-                    break
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        mine_hit = (p, t) in mine_slots
+                        success = (mine_hit or status in ("booked", "mine")) if orders_query_ok else status in ("booked", "mine")
+                        if success:
+                            verify_success_items.append({"place": p, "time": t})
+                        else:
+                            verify_failed_items.append({"place": p, "time": t})
+                    verify_success_count = len(verify_success_items)
+                elif verify_success_count is None:
+                    print(
+                        f"🧾 [提交后验证调试] 获取矩阵失败: "
+                        f"{verify.get('error') if isinstance(verify, dict) else verify}"
+                    )
 
-            if verify_success_count is None and isinstance(verify, dict) and not verify.get("error"):
-                v_matrix = verify.get("matrix") or {}
-                verify_states = []
-                matrix_failed_items = []
-                for item in submit_items:
-                    p = str(item.get("place"))
-                    t = item.get("time")
-                    status = v_matrix.get(p, {}).get(t, "N/A")
-                    verify_states.append(f"{p}号{t}={status}")
-                    if status not in ("booked", "mine"):
-                        matrix_failed_items.append({"place": p, "time": t})
+                    if preblocked_items:
+                        verify_failed_items.extend(preblocked_items)
+            except Exception as e:
+                run_metric["verify_exception_count"] = int(run_metric.get("verify_exception_count") or 0) + 1
+                print(f"🧾 [提交后验证调试] 异常: {e}")
 
-                verify_orders_only_on_partial = bool(CONFIG.get('post_submit_verify_orders_on_matrix_partial_only', True))
-                needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
-
-                if needs_orders_query:
-                    skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
-                    if skip_sync_orders_query:
-                        orders_res = {"error": "按配置跳过同步订单查询"}
-                    else:
-                        orders_res = {"error": "未执行"}
-
-                        def _fetch_orders():
-                            nonlocal orders_res
-                            orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
-
-                        t_orders = threading.Thread(target=_fetch_orders, daemon=True)
-                        t_orders.start()
-                        join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 0.3) or 0.3))
-                        t_orders.join(timeout=join_timeout_s)
-                        run_metric["confirm_orders_poll_count"] += 1
-                        if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
-                            orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
-
-                mine_slots = set()
-                if "error" not in orders_res:
-                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
-                    orders_query_ok = True
-                else:
-                    orders_query_error = str(orders_res.get("error") or "")
-                    if orders_query_error not in ("按配置跳过同步订单查询", "按配置跳过"):
-                        print(f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}")
-
-                verify_success_items = []
-                verify_failed_items = []
-                for item in submit_items:
-                    p = str(item.get("place"))
-                    t = item.get("time")
-                    status = v_matrix.get(p, {}).get(t, "N/A")
-                    mine_hit = (p, t) in mine_slots
-                    success = (mine_hit or status in ("booked", "mine")) if orders_query_ok else status in ("booked", "mine")
-                    if success:
-                        verify_success_items.append({"place": p, "time": t})
-                    else:
-                        verify_failed_items.append({"place": p, "time": t})
-                verify_success_count = len(verify_success_items)
-            elif verify_success_count is None:
-                print(
-                    f"🧾 [提交后验证调试] 获取矩阵失败: "
-                    f"{verify.get('error') if isinstance(verify, dict) else verify}"
-                )
-
-            if preblocked_items:
-                verify_failed_items.extend(preblocked_items)
-        except Exception as e:
-            run_metric["verify_exception_count"] = int(run_metric.get("verify_exception_count") or 0) + 1
-            print(f"🧾 [提交后验证调试] 异常: {e}")
+        run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
+        if fast_lane_enabled:
+            run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
 
         run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
         if fast_lane_enabled:
@@ -3558,6 +3578,7 @@ def update_config():
     - manual_verify_pending_recheck_times：半自动verify_pending矩阵复核次数
     - manual_verify_pending_retry_seconds：半自动verify_pending复核间隔(秒)
     - manual_verify_pending_orders_fallback_enabled：半自动verify_pending是否启用一次订单兜底复核
+    - too_fast_skip_refill_in_same_request：命中“操作过快/频繁”时是否跳过同请求内补提
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3710,6 +3731,17 @@ def update_config():
                 enabled = bool(val)
             CONFIG['manual_verify_pending_orders_fallback_enabled'] = enabled
             saved['manual_verify_pending_orders_fallback_enabled'] = enabled
+
+        if 'too_fast_skip_refill_in_same_request' in data:
+            val = data['too_fast_skip_refill_in_same_request']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['too_fast_skip_refill_in_same_request'] = enabled
+            saved['too_fast_skip_refill_in_same_request'] = enabled
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']
