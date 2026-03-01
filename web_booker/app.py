@@ -692,7 +692,7 @@ class ApiClient:
             ]
         return result
 
-    def get_matrix(self, date_str, include_mine_overlay=True):
+    def get_matrix(self, date_str, include_mine_overlay=True, request_timeout=None):
         cache_key = (str(date_str or ''), bool(include_mine_overlay))
         now_ts = time.time()
         with self._matrix_cache_lock:
@@ -713,7 +713,7 @@ class ApiClient:
         try:
             # 抢票高峰期采用短超时，避免单次请求卡住吞掉黄金窗口；配合上层高频重试。
             started_at = time.time()
-            matrix_timeout = max(0.5, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0))
+            matrix_timeout = max(0.5, float(request_timeout if request_timeout is not None else CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0))
             resp = self.session.get(url, headers=self.headers, params=params, timeout=matrix_timeout, verify=False)
             ended_at = time.time()
             self._update_server_time_offset(resp, started_at, ended_at)
@@ -896,6 +896,7 @@ class ApiClient:
             "confirm_matrix_poll_count": 0,
             "confirm_orders_poll_count": 0,
             "t_confirm_ms": None,
+            "verify_exception_count": 0,
         }
 
         print(
@@ -1316,12 +1317,11 @@ class ApiClient:
             verify = {"error": "未执行"}
             for _ in range(verify_matrix_recheck_times + 1):
                 run_metric["confirm_matrix_poll_count"] += 1
-                prev_timeout = self.timeout
-                try:
-                    self.timeout = verify_matrix_timeout_s
-                    verify = self.get_matrix(date_str, include_mine_overlay=False)
-                finally:
-                    self.timeout = prev_timeout
+                verify = self.get_matrix(
+                    date_str,
+                    include_mine_overlay=False,
+                    request_timeout=verify_matrix_timeout_s,
+                )
 
                 if not (isinstance(verify, dict) and not verify.get("error")):
                     continue
@@ -1409,6 +1409,7 @@ class ApiClient:
             if preblocked_items:
                 verify_failed_items.extend(preblocked_items)
         except Exception as e:
+            run_metric["verify_exception_count"] = int(run_metric.get("verify_exception_count") or 0) + 1
             print(f"🧾 [提交后验证调试] 异常: {e}")
 
         run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
@@ -1951,6 +1952,7 @@ class TaskManager:
             "confirm_matrix_poll_count": 0,
             "confirm_orders_poll_count": 0,
             "confirm_latencies_ms": [],
+            "verify_exception_count": 0,
             "first_success_ms": None,
             "result_status": None,
             "result_msg": None,
@@ -2061,6 +2063,7 @@ class TaskManager:
             run_metrics["submit_retry_count"] += int(submit_metric.get("submit_retry_count") or 0)
             run_metrics["confirm_matrix_poll_count"] += int(submit_metric.get("confirm_matrix_poll_count") or 0)
             run_metrics["confirm_orders_poll_count"] += int(submit_metric.get("confirm_orders_poll_count") or 0)
+            run_metrics["verify_exception_count"] += int(submit_metric.get("verify_exception_count") or 0)
             run_metrics["fast_lane_used_seconds"] = max(
                 float(run_metrics.get("fast_lane_used_seconds") or 0.0),
                 float(submit_metric.get("fast_lane_used_seconds") or 0.0),
