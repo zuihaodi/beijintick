@@ -65,5 +65,6 @@
   "manual_verify_pending_orders_fallback_enabled": true,
   "too_fast_skip_refill_in_same_request": true,
   "multi_item_retry_balance_enabled": true,
-  "multi_item_batch_retry_times_cap": 1
+  "multi_item_batch_retry_times_cap": 1,
+  "multi_item_retry_total_budget": 3
 }

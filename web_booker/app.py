@@ -231,6 +231,7 @@ CONFIG = {
     "too_fast_skip_refill_in_same_request": True,
     "multi_item_retry_balance_enabled": True,
     "multi_item_batch_retry_times_cap": 1,
+    "multi_item_retry_total_budget": 3,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -453,6 +454,11 @@ if os.path.exists(CONFIG_FILE):
             if 'multi_item_batch_retry_times_cap' in saved:
                 try:
                     CONFIG['multi_item_batch_retry_times_cap'] = max(0, min(3, int(saved['multi_item_batch_retry_times_cap'])))
+                except Exception:
+                    pass
+            if 'multi_item_retry_total_budget' in saved:
+                try:
+                    CONFIG['multi_item_retry_total_budget'] = max(0, min(20, int(saved['multi_item_retry_total_budget'])))
                 except Exception:
                     pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
@@ -983,6 +989,8 @@ class ApiClient:
             "verify_exception_count": 0,
             "effective_initial_batch_size": 0,
             "submit_strategy_mode": submit_strategy_mode,
+            "retry_budget_total": 0,
+            "retry_budget_used": 0,
         }
 
         print(
@@ -1080,6 +1088,23 @@ class ApiClient:
             )
         run_metric["effective_batch_retry_times"] = int(effective_batch_retry_times)
         run_metric["effective_initial_batch_size"] = int(effective_initial_batch_size)
+
+        retry_budget_total = 0
+        retry_budget_used = 0
+        if multi_item_retry_balance_enabled and len(submit_items) > 1:
+            retry_budget_total = max(0, min(20, int(CONFIG.get("multi_item_retry_total_budget", 3) or 3)))
+        run_metric["retry_budget_total"] = int(retry_budget_total)
+
+        def _can_consume_retry_budget():
+            nonlocal retry_budget_used
+            if retry_budget_total <= 0:
+                return False
+            if retry_budget_used >= retry_budget_total:
+                return False
+            retry_budget_used += 1
+            run_metric["retry_budget_used"] = int(retry_budget_used)
+            return True
+
         same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
         if same_time_limit > 0:
             try:
@@ -1121,7 +1146,7 @@ class ApiClient:
         # 首轮提交：按“本次选择数量”自适应分批
         for i in range(0, len(submit_items), effective_initial_batch_size):
             batch = submit_items[i:i + effective_initial_batch_size]
-            print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
+            print(f"📦 正在提交分批订单 ({i // effective_initial_batch_size + 1}): {batch}")
 
             field_info_list = []
             total_money = 0
@@ -1208,7 +1233,7 @@ class ApiClient:
 
                     if is_verbose_logs_enabled():
                         print(
-                            f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
+                            f"📨 [submit_order调试] 批次 {i // effective_initial_batch_size + 1} 响应: {resp.text}"
                         )
 
                     if resp_data and resp_data.get("msg") == "success":
@@ -1224,18 +1249,25 @@ class ApiClient:
                     fail_msg = normalize_fail_message(fail_msg)
 
                     if attempt < effective_batch_retry_times and is_retryable_fail(fail_msg):
-                        sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
-                        print(
-                            f"⏳ 批次 {i // initial_batch_size + 1} 命中可重试错误，"
-                            f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{effective_batch_retry_times})"
-                        )
-                        run_metric["submit_retry_count"] += 1
-                        time.sleep(sleep_s)
-                        continue
+                        can_retry = True
+                        if retry_budget_total > 0:
+                            can_retry = _can_consume_retry_budget()
+                        if can_retry:
+                            sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
+                        else:
+                            sleep_s = None
+                        if sleep_s is not None:
+                            print(
+                                f"⏳ 批次 {i // effective_initial_batch_size + 1} 命中可重试错误，"
+                                f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{effective_batch_retry_times})"
+                            )
+                            run_metric["submit_retry_count"] += 1
+                            time.sleep(sleep_s)
+                            continue
 
                     # 命中“可重试/规则异常”时，按配置分批降级重提一次
                     if len(batch) > degrade_batch_size and should_degrade(fail_msg):
-                        print(f"↘️ 批次 {i // initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
+                        print(f"↘️ 批次 {i // effective_initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
                         degrade_fail = list(batch)
                         current = list(batch)
                         for split_round in range(submit_split_retry_times + 1):
@@ -1311,13 +1343,17 @@ class ApiClient:
                     break
                 except Exception as e:
                     if attempt < effective_batch_retry_times:
-                        print(
-                            f"⏳ 批次 {i // initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
-                            f"({attempt + 1}/{effective_batch_retry_times}): {e}"
-                        )
-                        run_metric["submit_retry_count"] += 1
-                        time.sleep(batch_retry_interval)
-                        continue
+                        can_retry = True
+                        if retry_budget_total > 0:
+                            can_retry = _can_consume_retry_budget()
+                        if can_retry:
+                            print(
+                                f"⏳ 批次 {i // effective_initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
+                                f"({attempt + 1}/{effective_batch_retry_times}): {e}"
+                            )
+                            run_metric["submit_retry_count"] += 1
+                            time.sleep(batch_retry_interval)
+                            continue
                     final_result = {"status": "error", "msg": str(e), "batch": batch}
                     break
 
@@ -3553,6 +3589,8 @@ def api_book():
             'effective_batch_retry_times': int(run_metric.get('effective_batch_retry_times') or 0),
             'effective_initial_batch_size': int(run_metric.get('effective_initial_batch_size') or 0),
             'submit_strategy_mode': str(run_metric.get('submit_strategy_mode') or ''),
+            'retry_budget_total': int(run_metric.get('retry_budget_total') or 0),
+            'retry_budget_used': int(run_metric.get('retry_budget_used') or 0),
             'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
@@ -3572,6 +3610,7 @@ def api_book():
                 'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
                 'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
                 'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
+                'multi_item_retry_total_budget': int(CONFIG.get('multi_item_retry_total_budget', 3) or 3),
                 'submit_strategy_mode': str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive'),
                 'submit_adaptive_target_batches': int(CONFIG.get('submit_adaptive_target_batches', 2) or 2),
                 'submit_adaptive_min_batch_size': int(CONFIG.get('submit_adaptive_min_batch_size', 1) or 1),
@@ -3661,6 +3700,7 @@ def update_config():
     - too_fast_skip_refill_in_same_request：命中“操作过快/频繁”时是否跳过同请求内补提
     - multi_item_retry_balance_enabled：多项目提交时是否启用重试次数均衡
     - multi_item_batch_retry_times_cap：多项目提交时每批最大重试次数上限
+    - multi_item_retry_total_budget：多项目提交时本次请求可消耗的总重试预算
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3844,6 +3884,15 @@ def update_config():
             val = max(0, min(3, val))
             CONFIG['multi_item_batch_retry_times_cap'] = val
             saved['multi_item_batch_retry_times_cap'] = val
+
+        if 'multi_item_retry_total_budget' in data:
+            try:
+                val = int(data['multi_item_retry_total_budget'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('multi_item_retry_total_budget', 3))
+            val = max(0, min(20, val))
+            CONFIG['multi_item_retry_total_budget'] = val
+            saved['multi_item_retry_total_budget'] = val
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']
