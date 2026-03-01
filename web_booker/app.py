@@ -1479,6 +1479,10 @@ class ApiClient:
         if fast_lane_enabled:
             run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
 
+        run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
+        if fast_lane_enabled:
+            run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
+
         # ---------- 汇总结果 ----------
         # 1) 接口返回层面的成功批次数
 
