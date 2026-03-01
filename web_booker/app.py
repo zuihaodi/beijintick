@@ -206,17 +206,34 @@ CONFIG = {
     "batch_retry_interval": 0.5,
     "submit_batch_size": 3,
     "initial_submit_batch_size": 2,
+    "submit_strategy_mode": "adaptive",
+    "submit_adaptive_target_batches": 2,
+    "submit_adaptive_min_batch_size": 1,
+    "submit_adaptive_max_batch_size": 3,
+    "submit_adaptive_merge_small_n": 2,
+    "submit_adaptive_merge_same_time_only": True,
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
+    "fast_lane_enabled": True,
+    "fast_lane_seconds": 2.0,
     "order_query_timeout_seconds": 2.5,
     "order_query_max_pages": 2,
-    "post_submit_orders_join_timeout_seconds": 1.2,
+    "post_submit_orders_join_timeout_seconds": 0.3,
+    "post_submit_verify_matrix_timeout_seconds": 0.8,
+    "post_submit_verify_matrix_recheck_times": 3,
     "post_submit_verify_orders_on_matrix_partial_only": True,
     "post_submit_skip_sync_orders_query": True,
     "post_submit_orders_sync_fallback": False,
     "post_submit_verify_pending_retry_seconds": 0.35,
     "post_submit_verify_pending_matrix_recheck_times": 4,
+    "manual_verify_pending_recheck_times": 3,
+    "manual_verify_pending_retry_seconds": 0.25,
+    "manual_verify_pending_orders_fallback_enabled": True,
+    "too_fast_skip_refill_in_same_request": True,
+    "multi_item_retry_balance_enabled": True,
+    "multi_item_batch_retry_times_cap": 1,
+    "multi_item_retry_total_budget": 3,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -237,6 +254,8 @@ CONFIG = {
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
     "verbose_logs": False,  # 是否打印高频调试日志
+    "metrics_keep_last": 300,  # 统一观测文件最大保留条数
+    "metrics_retention_days": 7,  # 统一观测文件保留天数
     "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
     "biz_fail_cooldown_seconds": 15.0,  # pipeline 中业务失败组合冷却时间
     "preselect_enabled": True,
@@ -266,7 +285,7 @@ def _percentile(sorted_values, p):
     return float(sorted_values[idx])
 
 
-def append_task_run_metric(record, keep_last=200):
+def append_task_run_metric(record, keep_last=None, retention_days=None):
     try:
         with _TASK_RUN_METRICS_LOCK:
             old = []
@@ -278,8 +297,28 @@ def append_task_run_metric(record, keep_last=200):
                     old = []
             if not isinstance(old, list):
                 old = []
+
             old.append(record)
-            old = old[-max(10, int(keep_last or 200)):]
+
+            keep_last_val = max(50, min(5000, int(keep_last if keep_last is not None else CONFIG.get('metrics_keep_last', 300) or 300)))
+            retention_days_val = max(1, min(30, int(retention_days if retention_days is not None else CONFIG.get('metrics_retention_days', 7) or 7)))
+            cutoff_ms = int((time.time() - retention_days_val * 24 * 3600) * 1000)
+
+            def _ts_ms(rec):
+                if not isinstance(rec, dict):
+                    return 0
+                for k in ('finished_at', 'started_at', 'ts'):
+                    v = rec.get(k)
+                    if v is None:
+                        continue
+                    try:
+                        return int(v)
+                    except Exception:
+                        continue
+                return 0
+
+            old = [r for r in old if _ts_ms(r) >= cutoff_ms]
+            old = old[-keep_last_val:]
             with open(TASK_RUN_METRICS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(old, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -320,6 +359,31 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['initial_submit_batch_size'] = max(1, min(9, int(saved['initial_submit_batch_size'])))
                 except Exception:
                     pass
+            if 'submit_strategy_mode' in saved:
+                mode = str(saved.get('submit_strategy_mode') or 'adaptive').strip().lower()
+                CONFIG['submit_strategy_mode'] = mode if mode in ('adaptive', 'fixed') else 'adaptive'
+            if 'submit_adaptive_target_batches' in saved:
+                try:
+                    CONFIG['submit_adaptive_target_batches'] = max(1, min(6, int(saved['submit_adaptive_target_batches'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_min_batch_size' in saved:
+                try:
+                    CONFIG['submit_adaptive_min_batch_size'] = max(1, min(9, int(saved['submit_adaptive_min_batch_size'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_max_batch_size' in saved:
+                try:
+                    CONFIG['submit_adaptive_max_batch_size'] = max(1, min(9, int(saved['submit_adaptive_max_batch_size'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_merge_small_n' in saved:
+                try:
+                    CONFIG['submit_adaptive_merge_small_n'] = max(1, min(9, int(saved['submit_adaptive_merge_small_n'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_merge_same_time_only' in saved:
+                CONFIG['submit_adaptive_merge_same_time_only'] = bool(saved['submit_adaptive_merge_same_time_only'])
             if 'submit_timeout_seconds' in saved:
                 try:
                     CONFIG['submit_timeout_seconds'] = max(0.5, float(saved['submit_timeout_seconds']))
@@ -332,6 +396,13 @@ if os.path.exists(CONFIG_FILE):
                     pass
             if 'batch_min_interval' in saved:
                 CONFIG['batch_min_interval'] = saved['batch_min_interval']
+            if 'fast_lane_enabled' in saved:
+                CONFIG['fast_lane_enabled'] = bool(saved['fast_lane_enabled'])
+            if 'fast_lane_seconds' in saved:
+                try:
+                    CONFIG['fast_lane_seconds'] = max(0.0, float(saved['fast_lane_seconds']))
+                except Exception:
+                    pass
             if 'order_query_timeout_seconds' in saved:
                 try:
                     CONFIG['order_query_timeout_seconds'] = max(0.5, float(saved['order_query_timeout_seconds']))
@@ -345,6 +416,16 @@ if os.path.exists(CONFIG_FILE):
             if 'post_submit_orders_join_timeout_seconds' in saved:
                 try:
                     CONFIG['post_submit_orders_join_timeout_seconds'] = max(0.1, float(saved['post_submit_orders_join_timeout_seconds']))
+                except Exception:
+                    pass
+            if 'post_submit_verify_matrix_timeout_seconds' in saved:
+                try:
+                    CONFIG['post_submit_verify_matrix_timeout_seconds'] = max(0.3, float(saved['post_submit_verify_matrix_timeout_seconds']))
+                except Exception:
+                    pass
+            if 'post_submit_verify_matrix_recheck_times' in saved:
+                try:
+                    CONFIG['post_submit_verify_matrix_recheck_times'] = max(0, min(8, int(saved['post_submit_verify_matrix_recheck_times'])))
                 except Exception:
                     pass
             if 'post_submit_verify_orders_on_matrix_partial_only' in saved:
@@ -361,6 +442,32 @@ if os.path.exists(CONFIG_FILE):
             if 'post_submit_verify_pending_matrix_recheck_times' in saved:
                 try:
                     CONFIG['post_submit_verify_pending_matrix_recheck_times'] = max(0, min(5, int(saved['post_submit_verify_pending_matrix_recheck_times'])))
+                except Exception:
+                    pass
+            if 'manual_verify_pending_recheck_times' in saved:
+                try:
+                    CONFIG['manual_verify_pending_recheck_times'] = max(0, min(8, int(saved['manual_verify_pending_recheck_times'])))
+                except Exception:
+                    pass
+            if 'manual_verify_pending_retry_seconds' in saved:
+                try:
+                    CONFIG['manual_verify_pending_retry_seconds'] = max(0.05, min(2.0, float(saved['manual_verify_pending_retry_seconds'])))
+                except Exception:
+                    pass
+            if 'manual_verify_pending_orders_fallback_enabled' in saved:
+                CONFIG['manual_verify_pending_orders_fallback_enabled'] = bool(saved['manual_verify_pending_orders_fallback_enabled'])
+            if 'too_fast_skip_refill_in_same_request' in saved:
+                CONFIG['too_fast_skip_refill_in_same_request'] = bool(saved['too_fast_skip_refill_in_same_request'])
+            if 'multi_item_retry_balance_enabled' in saved:
+                CONFIG['multi_item_retry_balance_enabled'] = bool(saved['multi_item_retry_balance_enabled'])
+            if 'multi_item_batch_retry_times_cap' in saved:
+                try:
+                    CONFIG['multi_item_batch_retry_times_cap'] = max(0, min(3, int(saved['multi_item_batch_retry_times_cap'])))
+                except Exception:
+                    pass
+            if 'multi_item_retry_total_budget' in saved:
+                try:
+                    CONFIG['multi_item_retry_total_budget'] = max(0, min(20, int(saved['multi_item_retry_total_budget'])))
                 except Exception:
                     pass
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
@@ -425,6 +532,16 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
             if 'verbose_logs' in saved:
                 CONFIG['verbose_logs'] = bool(saved['verbose_logs'])
+            if 'metrics_keep_last' in saved:
+                try:
+                    CONFIG['metrics_keep_last'] = max(50, min(5000, int(saved['metrics_keep_last'])))
+                except Exception:
+                    pass
+            if 'metrics_retention_days' in saved:
+                try:
+                    CONFIG['metrics_retention_days'] = max(1, min(30, int(saved['metrics_retention_days'])))
+                except Exception:
+                    pass
             if 'preselect_enabled' in saved:
                 CONFIG['preselect_enabled'] = bool(saved['preselect_enabled'])
             if 'preselect_ttl_seconds' in saved:
@@ -671,7 +788,7 @@ class ApiClient:
             ]
         return result
 
-    def get_matrix(self, date_str, include_mine_overlay=True):
+    def get_matrix(self, date_str, include_mine_overlay=True, request_timeout=None):
         cache_key = (str(date_str or ''), bool(include_mine_overlay))
         now_ts = time.time()
         with self._matrix_cache_lock:
@@ -692,7 +809,7 @@ class ApiClient:
         try:
             # 抢票高峰期采用短超时，避免单次请求卡住吞掉黄金窗口；配合上层高频重试。
             started_at = time.time()
-            matrix_timeout = max(0.5, float(CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0))
+            matrix_timeout = max(0.5, float(request_timeout if request_timeout is not None else CONFIG.get('matrix_timeout_seconds', 3.0) or 3.0))
             resp = self.session.get(url, headers=self.headers, params=params, timeout=matrix_timeout, verify=False)
             ended_at = time.time()
             self._update_server_time_offset(resp, started_at, ended_at)
@@ -858,16 +975,37 @@ class ApiClient:
         degrade_batch_size = max(1, min(9, degrade_batch_size))
         configured_initial_batch_size = int(CONFIG.get("initial_submit_batch_size", CONFIG.get("submit_batch_size", 3)) or 3)
         initial_batch_size = max(1, min(9, configured_initial_batch_size))
+        submit_strategy_mode = str(CONFIG.get("submit_strategy_mode", "adaptive") or "adaptive").strip().lower()
+        if submit_strategy_mode not in ("adaptive", "fixed"):
+            submit_strategy_mode = "adaptive"
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
         refill_window_seconds = float(CONFIG.get("refill_window_seconds", 8.0))
         submit_timeout_seconds = max(0.5, float(CONFIG.get("submit_timeout_seconds", 4.0) or 4.0))
         submit_split_retry_times = max(0, min(3, int(CONFIG.get("submit_split_retry_times", 1) or 1)))
+        fast_lane_enabled = bool(CONFIG.get("fast_lane_enabled", True))
+        fast_lane_seconds = max(0.0, float(CONFIG.get("fast_lane_seconds", 2.0) or 2.0))
+        fast_lane_deadline_ts = time.time() + fast_lane_seconds if fast_lane_enabled else 0.0
+        run_metric = {
+            "submit_req_count": 0,
+            "submit_success_resp_count": 0,
+            "submit_retry_count": 0,
+            "fast_lane_used_seconds": 0,
+            "confirm_matrix_poll_count": 0,
+            "confirm_orders_poll_count": 0,
+            "t_confirm_ms": None,
+            "verify_exception_count": 0,
+            "effective_initial_batch_size": 0,
+            "submit_strategy_mode": submit_strategy_mode,
+            "retry_budget_total": 0,
+            "retry_budget_used": 0,
+            "adaptive_small_n_merge_applied": False,
+        }
 
         print(
             f"🧭 [批次策略] 首批=按配置 initial_submit_batch_size→{initial_batch_size}；"
-            f"降级=按配置 submit_batch_size→{degrade_batch_size}；本次选择={len(selected_items)}"
+            f"降级=按配置 submit_batch_size→{degrade_batch_size}；策略={submit_strategy_mode}；本次选择={len(selected_items)}"
         )
         print(
             f"⏱️ [提交超时] submit_timeout={submit_timeout_seconds}s, split_retry_times={submit_split_retry_times}"
@@ -909,6 +1047,16 @@ class ApiClient:
             ]
             return is_retryable_fail(text) or any(k in text for k in rule_keywords)
 
+        def is_too_fast_fail(msg):
+            text = str(msg or "").lower()
+            keywords = ["操作过快", "请求过于频繁", "too fast", "频繁"]
+            return any(k in text for k in keywords)
+
+        def maybe_sleep_non_retryable(default_interval):
+            if fast_lane_enabled and time.time() < fast_lane_deadline_ts:
+                return
+            time.sleep(max(default_interval, CONFIG.get("retry_interval", 0.5)))
+
         def filter_still_available(items):
             try:
                 verify = self.get_matrix(date_str, include_mine_overlay=False)
@@ -927,6 +1075,57 @@ class ApiClient:
 
         submit_items = list(selected_items or [])
         preblocked_items = []
+
+        effective_initial_batch_size = initial_batch_size
+        if submit_strategy_mode == "adaptive":
+            n_items = len(submit_items)
+            target_batches = max(1, min(6, int(CONFIG.get("submit_adaptive_target_batches", 2) or 2)))
+            adaptive_min = max(1, min(9, int(CONFIG.get("submit_adaptive_min_batch_size", 1) or 1)))
+            adaptive_max = max(adaptive_min, min(9, int(CONFIG.get("submit_adaptive_max_batch_size", 3) or 3)))
+            merge_small_n = max(1, min(9, int(CONFIG.get("submit_adaptive_merge_small_n", 2) or 2)))
+            merge_same_time_only = bool(CONFIG.get("submit_adaptive_merge_same_time_only", True))
+            if n_items > 0:
+                computed = (n_items + target_batches - 1) // target_batches
+                effective_initial_batch_size = max(adaptive_min, min(adaptive_max, computed))
+
+                can_merge_small_n = n_items <= merge_small_n
+                if can_merge_small_n and merge_same_time_only:
+                    unique_times = {str(it.get("time")) for it in submit_items if isinstance(it, dict)}
+                    can_merge_small_n = len(unique_times) <= 1
+                if can_merge_small_n:
+                    effective_initial_batch_size = n_items
+                    run_metric["adaptive_small_n_merge_applied"] = True
+
+            effective_initial_batch_size = min(effective_initial_batch_size, degrade_batch_size)
+
+        preblocked_items = []
+        multi_item_retry_balance_enabled = bool(CONFIG.get("multi_item_retry_balance_enabled", True))
+        multi_item_batch_retry_times_cap = max(0, min(3, int(CONFIG.get("multi_item_batch_retry_times_cap", 1) or 1)))
+        effective_batch_retry_times = batch_retry_times
+        if multi_item_retry_balance_enabled and len(submit_items) > 1 and batch_retry_times > multi_item_batch_retry_times_cap:
+            effective_batch_retry_times = multi_item_batch_retry_times_cap
+            print(
+                f"⚖️ [重试均衡] 多项目提交({len(submit_items)})，batch_retry_times: {batch_retry_times} -> {effective_batch_retry_times}"
+            )
+        run_metric["effective_batch_retry_times"] = int(effective_batch_retry_times)
+        run_metric["effective_initial_batch_size"] = int(effective_initial_batch_size)
+
+        retry_budget_total = 0
+        retry_budget_used = 0
+        if multi_item_retry_balance_enabled and len(submit_items) > 1:
+            retry_budget_total = max(0, min(20, int(CONFIG.get("multi_item_retry_total_budget", 3) or 3)))
+        run_metric["retry_budget_total"] = int(retry_budget_total)
+
+        def _can_consume_retry_budget():
+            nonlocal retry_budget_used
+            if retry_budget_total <= 0:
+                return False
+            if retry_budget_used >= retry_budget_total:
+                return False
+            retry_budget_used += 1
+            run_metric["retry_budget_used"] = int(retry_budget_used)
+            return True
+
         same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
         if same_time_limit > 0:
             try:
@@ -966,9 +1165,9 @@ class ApiClient:
                 print("⚡ [同时段上限预检] 已关闭（same_time_precheck_limit<=0）")
 
         # 首轮提交：按“本次选择数量”自适应分批
-        for i in range(0, len(submit_items), initial_batch_size):
-            batch = submit_items[i:i + initial_batch_size]
-            print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
+        for i in range(0, len(submit_items), effective_initial_batch_size):
+            batch = submit_items[i:i + effective_initial_batch_size]
+            print(f"📦 正在提交分批订单 ({i // effective_initial_batch_size + 1}): {batch}")
 
             field_info_list = []
             total_money = 0
@@ -1041,8 +1240,9 @@ class ApiClient:
             )
 
             final_result = None
-            for attempt in range(batch_retry_times + 1):
+            for attempt in range(effective_batch_retry_times + 1):
                 try:
+                    run_metric["submit_req_count"] += 1
                     resp = self.session.post(
                         url, headers=self.headers, data=body, timeout=submit_timeout_seconds, verify=False
                     )
@@ -1054,10 +1254,11 @@ class ApiClient:
 
                     if is_verbose_logs_enabled():
                         print(
-                            f"📨 [submit_order调试] 批次 {i // initial_batch_size + 1} 响应: {resp.text}"
+                            f"📨 [submit_order调试] 批次 {i // effective_initial_batch_size + 1} 响应: {resp.text}"
                         )
 
                     if resp_data and resp_data.get("msg") == "success":
+                        run_metric["submit_success_resp_count"] += 1
                         final_result = {"status": "success", "batch": batch}
                         break
 
@@ -1068,18 +1269,26 @@ class ApiClient:
                         fail_msg = resp.text
                     fail_msg = normalize_fail_message(fail_msg)
 
-                    if attempt < batch_retry_times and is_retryable_fail(fail_msg):
-                        sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
-                        print(
-                            f"⏳ 批次 {i // initial_batch_size + 1} 命中可重试错误，"
-                            f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{batch_retry_times})"
-                        )
-                        time.sleep(sleep_s)
-                        continue
+                    if attempt < effective_batch_retry_times and is_retryable_fail(fail_msg):
+                        can_retry = True
+                        if retry_budget_total > 0:
+                            can_retry = _can_consume_retry_budget()
+                        if can_retry:
+                            sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
+                        else:
+                            sleep_s = None
+                        if sleep_s is not None:
+                            print(
+                                f"⏳ 批次 {i // effective_initial_batch_size + 1} 命中可重试错误，"
+                                f"{round(sleep_s, 2)}s 后重试 ({attempt + 1}/{effective_batch_retry_times})"
+                            )
+                            run_metric["submit_retry_count"] += 1
+                            time.sleep(sleep_s)
+                            continue
 
                     # 命中“可重试/规则异常”时，按配置分批降级重提一次
                     if len(batch) > degrade_batch_size and should_degrade(fail_msg):
-                        print(f"↘️ 批次 {i // initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
+                        print(f"↘️ 批次 {i // effective_initial_batch_size + 1} 降级重提: size {len(batch)} -> {degrade_batch_size}")
                         degrade_fail = list(batch)
                         current = list(batch)
                         for split_round in range(submit_split_retry_times + 1):
@@ -1136,7 +1345,7 @@ class ApiClient:
                                         round_fail.extend(sub)
                                 except Exception:
                                     round_fail.extend(sub)
-                                time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+                                maybe_sleep_non_retryable(batch_min_interval)
                             degrade_fail = round_fail
                             if not degrade_fail:
                                 break
@@ -1154,24 +1363,34 @@ class ApiClient:
                     final_result = {"status": "fail", "msg": fail_msg, "batch": batch}
                     break
                 except Exception as e:
-                    if attempt < batch_retry_times:
-                        print(
-                            f"⏳ 批次 {i // initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
-                            f"({attempt + 1}/{batch_retry_times}): {e}"
-                        )
-                        time.sleep(batch_retry_interval)
-                        continue
+                    if attempt < effective_batch_retry_times:
+                        can_retry = True
+                        if retry_budget_total > 0:
+                            can_retry = _can_consume_retry_budget()
+                        if can_retry:
+                            print(
+                                f"⏳ 批次 {i // effective_initial_batch_size + 1} 异常，{batch_retry_interval}s 后重试 "
+                                f"({attempt + 1}/{effective_batch_retry_times}): {e}"
+                            )
+                            run_metric["submit_retry_count"] += 1
+                            time.sleep(batch_retry_interval)
+                            continue
                     final_result = {"status": "error", "msg": str(e), "batch": batch}
                     break
 
             results.append(final_result or {"status": "error", "msg": "未知错误", "batch": batch})
 
             # 批次间最小停顿，防止触发“操作过快”
-            time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+            maybe_sleep_non_retryable(batch_min_interval)
 
         # 对失败项做补提（窗口内仅补提仍 available 的项）
         try:
-            refill_deadline = time.time() + max(0.0, refill_window_seconds)
+            skip_refill_for_too_fast = bool(CONFIG.get("too_fast_skip_refill_in_same_request", True)) and any(
+                r.get("status") == "fail" and is_too_fast_fail(r.get("msg")) for r in results
+            )
+            if skip_refill_for_too_fast:
+                print("⏭️ [补提] 命中操作过快/频繁，按配置跳过同请求内补提，避免触发连续风控")
+            refill_deadline = time.time() if skip_refill_for_too_fast else (time.time() + max(0.0, refill_window_seconds))
             while time.time() < refill_deadline:
                 failed_items = []
                 for r in results:
@@ -1231,16 +1450,18 @@ class ApiClient:
                         f"cardIndex={CONFIG['auth']['card_index']}"
                     )
                     try:
-                        resp = self.session.post(url, headers=self.headers, data=body, timeout=10, verify=False)
+                        run_metric["submit_req_count"] += 1
+                        resp = self.session.post(url, headers=self.headers, data=body, timeout=submit_timeout_seconds, verify=False)
                         resp_data = resp.json() if resp.text else None
                         if isinstance(resp_data, dict) and resp_data.get("msg") == "success":
+                            run_metric["submit_success_resp_count"] += 1
                             results.append({"status": "success", "batch": batch})
                         else:
                             msg = resp_data.get("data") if isinstance(resp_data, dict) else resp.text
                             results.append({"status": "fail", "msg": msg, "batch": batch})
                     except Exception as e:
                         results.append({"status": "error", "msg": str(e), "batch": batch})
-                    time.sleep(max(batch_min_interval, CONFIG.get("retry_interval", 0.5)))
+                    maybe_sleep_non_retryable(batch_min_interval)
 
                 # 补提只做一轮，避免无限轰炸
                 break
@@ -1261,96 +1482,118 @@ class ApiClient:
         verify_failed_items = []
         orders_query_ok = False
         orders_query_error = ""
-        try:
-            verify = self.get_matrix(date_str, include_mine_overlay=False)
-            orders_res = {"error": "按配置跳过"}
-            order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
-            order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+        orders_res = {"error": "按配置跳过"}
+        confirm_started_ts = time.time()
+        if api_success_count <= 0:
+            verify = {"error": "无success响应，跳过提交后验证"}
+        else:
+            try:
+                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+                order_max_pages = max(1, min(10, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+                verify_matrix_timeout_s = max(0.3, float(CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8) or 0.8))
+                verify_matrix_recheck_times = max(0, min(8, int(CONFIG.get('post_submit_verify_matrix_recheck_times', 3) or 3)))
 
-            if isinstance(verify, dict) and not verify.get("error"):
-                v_matrix = verify["matrix"]
-                verify_states = []
+                verify = {"error": "未执行"}
+                for _ in range(verify_matrix_recheck_times + 1):
+                    run_metric["confirm_matrix_poll_count"] += 1
+                    verify = self.get_matrix(
+                        date_str,
+                        include_mine_overlay=False,
+                        request_timeout=verify_matrix_timeout_s,
+                    )
 
-                matrix_success_items = []
-                matrix_failed_items = []
-                for item in submit_items:
-                    p = str(item["place"])
-                    t = item["time"]
-                    status = v_matrix.get(p, {}).get(t, "N/A")
-                    if status in ("booked", "mine"):
-                        matrix_success_items.append({"place": p, "time": t})
-                    else:
-                        matrix_failed_items.append({"place": p, "time": t})
+                    if not (isinstance(verify, dict) and not verify.get("error")):
+                        continue
 
-                verify_orders_only_on_partial = bool(CONFIG.get('post_submit_verify_orders_on_matrix_partial_only', True))
-                needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
+                    v_matrix = verify.get("matrix") or {}
+                    current_success = []
+                    current_failed = []
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        if status in ("booked", "mine"):
+                            current_success.append({"place": p, "time": t})
+                        else:
+                            current_failed.append({"place": p, "time": t})
 
-                if needs_orders_query:
-                    skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
-                    if skip_sync_orders_query:
-                        orders_res = {"error": "按配置跳过同步订单查询"}
-                    else:
-                        orders_res = {"error": "未执行"}
+                    if not current_failed:
+                        verify_success_items = current_success
+                        verify_failed_items = []
+                        verify_success_count = len(current_success)
+                        break
 
-                        def _fetch_orders():
-                            nonlocal orders_res
-                            orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+                if verify_success_count is None and isinstance(verify, dict) and not verify.get("error"):
+                    v_matrix = verify.get("matrix") or {}
+                    verify_states = []
+                    matrix_failed_items = []
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        verify_states.append(f"{p}号{t}={status}")
+                        if status not in ("booked", "mine"):
+                            matrix_failed_items.append({"place": p, "time": t})
 
-                        t_orders = threading.Thread(target=_fetch_orders, daemon=True)
-                        t_orders.start()
-                        join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2) or 1.2))
-                        t_orders.join(timeout=join_timeout_s)
-                        if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
-                            orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
-                            if bool(CONFIG.get('post_submit_orders_sync_fallback', False)):
+                    verify_orders_only_on_partial = bool(CONFIG.get('post_submit_verify_orders_on_matrix_partial_only', True))
+                    needs_orders_query = bool(matrix_failed_items) if verify_orders_only_on_partial else True
+
+                    if needs_orders_query:
+                        skip_sync_orders_query = bool(CONFIG.get('post_submit_skip_sync_orders_query', True))
+                        if skip_sync_orders_query:
+                            orders_res = {"error": "按配置跳过同步订单查询"}
+                        else:
+                            orders_res = {"error": "未执行"}
+
+                            def _fetch_orders():
+                                nonlocal orders_res
                                 orders_res = self.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
 
-                mine_slots = set()
-                if "error" not in orders_res:
-                    mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
-                    orders_query_ok = True
-                else:
-                    orders_query_error = str(orders_res.get("error") or "")
-                    if orders_query_error == "按配置跳过同步订单查询":
-                        if is_verbose_logs_enabled():
-                            print("🧾 [提交后验证调试] 已按配置跳过同步订单查询，mine校验使用矩阵状态")
+                            t_orders = threading.Thread(target=_fetch_orders, daemon=True)
+                            t_orders.start()
+                            join_timeout_s = max(0.1, float(CONFIG.get('post_submit_orders_join_timeout_seconds', 0.3) or 0.3))
+                            t_orders.join(timeout=join_timeout_s)
+                            run_metric["confirm_orders_poll_count"] += 1
+                            if isinstance(orders_res, dict) and orders_res.get("error") == "未执行":
+                                orders_res = {"error": f"订单查询超时(>{join_timeout_s}s)"}
+
+                    mine_slots = set()
+                    if "error" not in orders_res:
+                        mine_slots = self._extract_mine_slots(orders_res.get("data", []), date_str)
+                        orders_query_ok = True
                     else:
-                        print(
-                            f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}"
-                        )
+                        orders_query_error = str(orders_res.get("error") or "")
+                        if orders_query_error not in ("按配置跳过同步订单查询", "按配置跳过"):
+                            print(f"🧾 [提交后验证调试] 订单拉取失败，mine校验降级为矩阵状态: {orders_query_error}")
 
-                for item in submit_items:
-                    p = str(item["place"])
-                    t = item["time"]
-                    status = v_matrix.get(p, {}).get(t, "N/A")
-                    mine_hit = (p, t) in mine_slots
-                    verify_states.append(f"{p}号{t}={status},mine={'Y' if mine_hit else 'N'}")
+                    verify_success_items = []
+                    verify_failed_items = []
+                    for item in submit_items:
+                        p = str(item.get("place"))
+                        t = item.get("time")
+                        status = v_matrix.get(p, {}).get(t, "N/A")
+                        mine_hit = (p, t) in mine_slots
+                        success = (mine_hit or status in ("booked", "mine")) if orders_query_ok else status in ("booked", "mine")
+                        if success:
+                            verify_success_items.append({"place": p, "time": t})
+                        else:
+                            verify_failed_items.append({"place": p, "time": t})
+                    verify_success_count = len(verify_success_items)
+                elif verify_success_count is None:
+                    print(
+                        f"🧾 [提交后验证调试] 获取矩阵失败: "
+                        f"{verify.get('error') if isinstance(verify, dict) else verify}"
+                    )
 
-                    # 若订单查询可用：优先用 mine 兜底；否则只用矩阵状态，保证验证链路尽快收敛。
-                    success = mine_hit or status in ("booked", "mine") if orders_query_ok else status in ("booked", "mine")
+                    if preblocked_items:
+                        verify_failed_items.extend(preblocked_items)
+            except Exception as e:
+                run_metric["verify_exception_count"] = int(run_metric.get("verify_exception_count") or 0) + 1
+                print(f"🧾 [提交后验证调试] 异常: {e}")
 
-                    if success:
-                        verify_success_items.append({"place": p, "time": t})
-                    else:
-                        verify_failed_items.append({"place": p, "time": t})
-
-                if preblocked_items:
-                    verify_failed_items.extend(preblocked_items)
-                    verify_states.extend([
-                        f"{str(it.get('place'))}号{it.get('time')}=preblocked"
-                        for it in preblocked_items
-                    ])
-
-                if is_verbose_logs_enabled():
-                    print(f"🧾 [提交后验证调试] 选中场次最新状态: {verify_states}")
-                verify_success_count = len(verify_success_items)
-            else:
-                print(
-                    f"🧾 [提交后验证调试] 获取矩阵失败: "
-                    f"{verify.get('error') if isinstance(verify, dict) else verify}"
-                )
-        except Exception as e:
-            print(f"🧾 [提交后验证调试] 异常: {e}")
+        run_metric["t_confirm_ms"] = int(max(0.0, time.time() - confirm_started_ts) * 1000)
+        if fast_lane_enabled:
+            run_metric["fast_lane_used_seconds"] = int(max(0.0, min(fast_lane_seconds, time.time() - (fast_lane_deadline_ts - fast_lane_seconds))) * 1000) / 1000.0
 
         # ---------- 汇总结果 ----------
         # 1) 接口返回层面的成功批次数
@@ -1372,7 +1615,7 @@ class ApiClient:
 
         if denominator == 0:
             msg = "没有生成任何下单项目，请检查配置或场地状态。"
-            return {"status": "fail", "msg": msg}
+            return {"status": "fail", "msg": msg, "run_metric": run_metric}
 
         cross_instance_suspected = verify_ok and api_success_count == 0 and success_count > 0
 
@@ -1382,6 +1625,7 @@ class ApiClient:
                 "msg": "全部下单成功",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
+                "run_metric": run_metric,
             }
         elif verify_ok and api_success_count > 0 and success_count > 0:
             return {
@@ -1389,32 +1633,48 @@ class ApiClient:
                 "msg": f"部分成功 ({success_count}/{denominator})",
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
+                "run_metric": run_metric,
             }
         else:
             # 未收到任何提交成功响应，但校验命中 mine，疑似并发实例下单导致的“归因串扰”
             if cross_instance_suspected:
                 msg = "检测到我的订单已占位，但本进程提交未收到 success，可能由并发实例下单导致；本任务按失败处理。"
-            # 验证失败时，宁可报失败也不误报成功
-            elif not verify_ok and api_success_count > 0:
-                msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
-            elif api_success_count > 0 and verify_success_count == 0:
+            elif api_success_count > 0 and (not verify_ok or verify_success_count == 0):
                 allow_verify_pending = bool(CONFIG.get("post_submit_treat_verify_timeout_as_retry", True))
-                if allow_verify_pending and (not orders_query_ok):
+                if allow_verify_pending and ((not orders_query_ok) or (not verify_ok)):
+                    pending_reason = orders_query_error or ("矩阵校验超时/失败" if not verify_ok else "订单校验未完成")
                     return {
                         "status": "verify_pending",
-                        "msg": f"提交已返回success，但验证尚未收敛({orders_query_error or '订单校验未完成'})，将快速复核。",
+                        "msg": f"提交已返回success，但验证尚未收敛({pending_reason})，将快速复核。",
                         "success_items": verify_success_items,
                         "failed_items": verify_failed_items,
+                        "run_metric": run_metric,
                     }
-                msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
+                if not verify_ok:
+                    msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
+                else:
+                    msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
             else:
-                first_fail = results[0] if results else {"msg": "无数据"}
-                msg = first_fail.get("msg")
+                fail_msgs = [str((r.get("msg") or "")).strip() for r in results if r.get("status") in ("fail", "error")]
+                fail_msgs = [m for m in fail_msgs if m]
+                if fail_msgs:
+                    priority_keywords = ["数据错误", "规则", "上限", "操作过快", "频繁", "超时", "timeout", "网关"]
+                    def _score(m):
+                        m_lower = m.lower()
+                        for idx, kw in enumerate(priority_keywords):
+                            if kw in m_lower or kw in m:
+                                return idx
+                        return len(priority_keywords)
+                    msg = sorted(fail_msgs, key=lambda x: (_score(x), len(x)))[0]
+                else:
+                    first_fail = results[0] if results else {"msg": "无数据"}
+                    msg = first_fail.get("msg")
             return {
                 "status": "fail",
                 "msg": msg,
                 "success_items": verify_success_items,
                 "failed_items": verify_failed_items,
+                "run_metric": run_metric,
             }
 
     def x_submit_order_old(self, date_str, selected_items):
@@ -1870,6 +2130,7 @@ class TaskManager:
         run_metrics = {
             "task_id": task.get('id'),
             "task_type": task.get('type', 'daily'),
+            "source": "auto",
             "started_at": int(run_started_ts * 1000),
             "active_started_at": int(run_started_ts * 1000),
             "prestart_wait_ms": 0,
@@ -1877,6 +2138,14 @@ class TaskManager:
             "first_matrix_ok_ms": None,
             "first_submit_ms": None,
             "submit_latencies_ms": [],
+            "submit_req_count": 0,
+            "submit_success_resp_count": 0,
+            "submit_retry_count": 0,
+            "fast_lane_used_seconds": 0.0,
+            "confirm_matrix_poll_count": 0,
+            "confirm_orders_poll_count": 0,
+            "confirm_latencies_ms": [],
+            "verify_exception_count": 0,
             "first_success_ms": None,
             "result_status": None,
             "result_msg": None,
@@ -1893,8 +2162,13 @@ class TaskManager:
                 "submit_timeout_seconds": float(CONFIG.get("submit_timeout_seconds", 4.0) or 4.0),
                 "submit_split_retry_times": int(CONFIG.get("submit_split_retry_times", 1) or 1),
                 "batch_min_interval": float(CONFIG.get("batch_min_interval", 0.8) or 0.8),
+                "fast_lane_enabled": bool(CONFIG.get("fast_lane_enabled", True)),
+                "fast_lane_seconds": float(CONFIG.get("fast_lane_seconds", 2.0) or 2.0),
                 "order_query_timeout_seconds": float(CONFIG.get("order_query_timeout_seconds", 2.5) or 2.5),
                 "order_query_max_pages": int(CONFIG.get("order_query_max_pages", 2) or 2),
+                "post_submit_orders_join_timeout_seconds": float(CONFIG.get("post_submit_orders_join_timeout_seconds", 0.3) or 0.3),
+                "post_submit_verify_matrix_timeout_seconds": float(CONFIG.get("post_submit_verify_matrix_timeout_seconds", 0.8) or 0.8),
+                "post_submit_verify_matrix_recheck_times": int(CONFIG.get("post_submit_verify_matrix_recheck_times", 3) or 3),
                 "locked_retry_interval": float(CONFIG.get("locked_retry_interval", 1.0) or 1.0),
                 "locked_max_seconds": float(CONFIG.get("locked_max_seconds", 60.0) or 60.0),
                 "open_retry_seconds": float(CONFIG.get("open_retry_seconds", 30.0) or 30.0),
@@ -1973,6 +2247,24 @@ class TaskManager:
             if (success or partial) and run_metrics.get("first_success_ms") is None:
                 run_metrics["first_success_ms"] = int(max(0.0, time.time() - active_started_ts) * 1000)
 
+        def merge_submit_metric(res):
+            submit_metric = res.get("run_metric") if isinstance(res, dict) else None
+            if not isinstance(submit_metric, dict):
+                return
+            run_metrics["submit_req_count"] += int(submit_metric.get("submit_req_count") or 0)
+            run_metrics["submit_success_resp_count"] += int(submit_metric.get("submit_success_resp_count") or 0)
+            run_metrics["submit_retry_count"] += int(submit_metric.get("submit_retry_count") or 0)
+            run_metrics["confirm_matrix_poll_count"] += int(submit_metric.get("confirm_matrix_poll_count") or 0)
+            run_metrics["confirm_orders_poll_count"] += int(submit_metric.get("confirm_orders_poll_count") or 0)
+            run_metrics["verify_exception_count"] += int(submit_metric.get("verify_exception_count") or 0)
+            run_metrics["fast_lane_used_seconds"] = max(
+                float(run_metrics.get("fast_lane_used_seconds") or 0.0),
+                float(submit_metric.get("fast_lane_used_seconds") or 0.0),
+            )
+            confirm_ms = submit_metric.get("t_confirm_ms")
+            if confirm_ms is not None:
+                run_metrics.setdefault("confirm_latencies_ms", []).append(int(confirm_ms))
+
         def finalize_run_metrics(date_str=None):
             try:
                 now_ts = time.time()
@@ -1984,6 +2276,9 @@ class TaskManager:
                 samples = sorted(int(x) for x in (run_metrics.get("submit_latencies_ms") or []) if x is not None)
                 run_metrics["submit_latency_p50_ms"] = int(_percentile(samples, 0.5)) if samples else None
                 run_metrics["submit_latency_p95_ms"] = int(_percentile(samples, 0.95)) if samples else None
+                confirm_samples = sorted(int(x) for x in (run_metrics.get("confirm_latencies_ms") or []) if x is not None)
+                run_metrics["confirm_latency_p50_ms"] = int(_percentile(confirm_samples, 0.5)) if confirm_samples else None
+                run_metrics["confirm_latency_p95_ms"] = int(_percentile(confirm_samples, 0.95)) if confirm_samples else None
                 run_metrics["success_within_60s"] = bool(
                     run_metrics.get("first_success_ms") is not None and int(run_metrics.get("first_success_ms") or 0) <= 60000
                 )
@@ -2065,6 +2360,7 @@ class TaskManager:
         # 3. 旧版兼容：没有新配置时走最早的 items 逻辑
         if not config and 'items' in task:
             res = client.submit_order(target_date, task['items'])
+            merge_submit_metric(res)
             status = res.get("status")
             if status == "success":
                 notify_task_result(True, "已预订", items=res.get('success_items') or task['items'], date_str=target_date)
@@ -2774,6 +3070,7 @@ class TaskManager:
                     run_metrics["first_submit_ms"] = int(max(0.0, submit_started_at - active_started_ts) * 1000)
                 log(f"正在提交分批订单: {final_items}")
                 res = client.submit_order(target_date, final_items)
+                merge_submit_metric(res)
                 has_submitted_once = True
                 submit_spent_s = max(0.0, time.time() - submit_started_at)
                 run_metrics.setdefault("submit_latencies_ms", []).append(int(submit_spent_s * 1000))
@@ -3204,7 +3501,150 @@ def api_book():
     date = data.get('date')
     items = data.get('items')
     res = client.submit_order(date, items)
-    
+
+    # 半自动场景：对 verify_pending 做轻量复核，先看矩阵，必要时做一次订单兜底。
+    if isinstance(res, dict) and res.get('status') == 'verify_pending':
+        run_metric = dict(res.get('run_metric') or {})
+        pending_items = list(res.get('failed_items') or items or [])
+        retry_s = max(0.05, float(CONFIG.get('manual_verify_pending_retry_seconds', 0.25) or 0.25))
+        recheck_times = max(0, min(8, int(CONFIG.get('manual_verify_pending_recheck_times', 3) or 3)))
+        verify_timeout_s = max(0.5, float(CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8) or 0.8))
+        orders_fallback_enabled = bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True))
+
+        reconcile_rounds = 0
+        reconcile_matrix_error_count = 0
+        reconcile_orders_fallback_used = False
+        reconcile_orders_fallback_hit_count = 0
+        recovered_items = []
+
+        for idx in range(recheck_times):
+            if not pending_items:
+                break
+            if idx > 0:
+                time.sleep(retry_s)
+            reconcile_rounds += 1
+            verify_res = client.get_matrix(date, include_mine_overlay=False, request_timeout=verify_timeout_s)
+            if not isinstance(verify_res, dict) or verify_res.get('error'):
+                reconcile_matrix_error_count += 1
+                continue
+            v_matrix = verify_res.get('matrix') or {}
+            still_pending = []
+            for it in pending_items:
+                p = str(it.get('place'))
+                t = str(it.get('time'))
+                state = v_matrix.get(p, {}).get(t)
+                if state in ('booked', 'mine'):
+                    recovered_items.append({'place': p, 'time': t})
+                else:
+                    still_pending.append({'place': p, 'time': t})
+            pending_items = still_pending
+
+        if pending_items and orders_fallback_enabled:
+            reconcile_orders_fallback_used = True
+            try:
+                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+                order_max_pages = max(1, min(3, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+                orders_res = client.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+                if isinstance(orders_res, dict) and not orders_res.get('error'):
+                    grouped = client.extract_mine_slots_by_date(orders_res.get('data') or [])
+                    mine_slots = {
+                        (str(it.get('place')), str(it.get('time')))
+                        for it in (grouped.get(str(date)) or [])
+                        if isinstance(it, dict)
+                    }
+                    still_pending = []
+                    for it in pending_items:
+                        p = str(it.get('place'))
+                        t = str(it.get('time'))
+                        if (p, t) in mine_slots:
+                            recovered_items.append({'place': p, 'time': t})
+                            reconcile_orders_fallback_hit_count += 1
+                        else:
+                            still_pending.append({'place': p, 'time': t})
+                    pending_items = still_pending
+            except Exception:
+                pass
+
+        run_metric['manual_reconcile_rounds'] = int(reconcile_rounds)
+        run_metric['manual_reconcile_matrix_error_count'] = int(reconcile_matrix_error_count)
+        run_metric['manual_reconcile_orders_fallback_used'] = bool(reconcile_orders_fallback_used)
+        run_metric['manual_reconcile_orders_fallback_hit_count'] = int(reconcile_orders_fallback_hit_count)
+
+        if items and len(recovered_items) >= len(items):
+            res = {
+                'status': 'success',
+                'msg': 'verify_pending 经半自动复核收敛为成功',
+                'success_items': recovered_items,
+                'failed_items': [],
+                'run_metric': run_metric,
+            }
+        elif recovered_items:
+            res = {
+                'status': 'partial',
+                'msg': f"verify_pending 复核后部分收敛({len(recovered_items)}/{len(items or [])})",
+                'success_items': recovered_items,
+                'failed_items': pending_items,
+                'run_metric': run_metric,
+            }
+        else:
+            res['run_metric'] = run_metric
+
+    try:
+        run_metric = res.get('run_metric') if isinstance(res, dict) else {}
+        if not isinstance(run_metric, dict):
+            run_metric = {}
+        manual_record = {
+            'source': 'manual',
+            'task_id': None,
+            'task_type': 'manual',
+            'started_at': int(time.time() * 1000),
+            'finished_at': int(time.time() * 1000),
+            'date': str(date or ''),
+            'status': str(res.get('status') if isinstance(res, dict) else 'unknown'),
+            'msg': str(res.get('msg') if isinstance(res, dict) else '')[:200],
+            'items_count': len(items or []),
+            'items': list(items or [])[:10],
+            'submit_req_count': int(run_metric.get('submit_req_count') or 0),
+            'submit_success_resp_count': int(run_metric.get('submit_success_resp_count') or 0),
+            'submit_retry_count': int(run_metric.get('submit_retry_count') or 0),
+            'effective_batch_retry_times': int(run_metric.get('effective_batch_retry_times') or 0),
+            'effective_initial_batch_size': int(run_metric.get('effective_initial_batch_size') or 0),
+            'submit_strategy_mode': str(run_metric.get('submit_strategy_mode') or ''),
+            'retry_budget_total': int(run_metric.get('retry_budget_total') or 0),
+            'retry_budget_used': int(run_metric.get('retry_budget_used') or 0),
+            'adaptive_small_n_merge_applied': bool(run_metric.get('adaptive_small_n_merge_applied', False)),
+            'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
+            'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
+            't_confirm_ms': run_metric.get('t_confirm_ms'),
+            'verify_exception_count': int(run_metric.get('verify_exception_count') or 0),
+            'manual_reconcile_rounds': int(run_metric.get('manual_reconcile_rounds') or 0),
+            'manual_reconcile_matrix_error_count': int(run_metric.get('manual_reconcile_matrix_error_count') or 0),
+            'manual_reconcile_orders_fallback_used': bool(run_metric.get('manual_reconcile_orders_fallback_used', False)),
+            'manual_reconcile_orders_fallback_hit_count': int(run_metric.get('manual_reconcile_orders_fallback_hit_count') or 0),
+            'config_snapshot': {
+                'submit_timeout_seconds': float(CONFIG.get('submit_timeout_seconds', 4.0) or 4.0),
+                'initial_submit_batch_size': int(CONFIG.get('initial_submit_batch_size', 1) or 1),
+                'submit_batch_size': int(CONFIG.get('submit_batch_size', 3) or 3),
+                'batch_retry_times': int(CONFIG.get('batch_retry_times', 2) or 2),
+                'batch_retry_interval': float(CONFIG.get('batch_retry_interval', 0.5) or 0.5),
+                'fast_lane_enabled': bool(CONFIG.get('fast_lane_enabled', True)),
+                'fast_lane_seconds': float(CONFIG.get('fast_lane_seconds', 2.0) or 2.0),
+                'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
+                'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
+                'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
+                'multi_item_retry_total_budget': int(CONFIG.get('multi_item_retry_total_budget', 3) or 3),
+                'submit_strategy_mode': str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive'),
+                'submit_adaptive_target_batches': int(CONFIG.get('submit_adaptive_target_batches', 2) or 2),
+                'submit_adaptive_min_batch_size': int(CONFIG.get('submit_adaptive_min_batch_size', 1) or 1),
+                'submit_adaptive_max_batch_size': int(CONFIG.get('submit_adaptive_max_batch_size', 3) or 3),
+                'submit_adaptive_merge_small_n': int(CONFIG.get('submit_adaptive_merge_small_n', 2) or 2),
+                'submit_adaptive_merge_same_time_only': bool(CONFIG.get('submit_adaptive_merge_same_time_only', True)),
+            },
+        }
+        append_task_run_metric(manual_record)
+    except Exception as e:
+        print(f"⚠️ [manual-metric] 写入失败: {e}")
+
     # 增加手动预订后的短信通知
     # 只要状态不是 fail，就发送通知（success 或 partial）
     if res.get('status') in ['success', 'partial']:
@@ -3256,7 +3696,15 @@ def update_config():
     - submit_timeout_seconds：下单接口超时(秒)
     - submit_split_retry_times：降级分段重试轮次
     - initial_submit_batch_size：首批提交上限
+    - submit_strategy_mode：首轮提交策略（adaptive/fixed）
+    - submit_adaptive_target_batches：自适应策略目标批次数
+    - submit_adaptive_min_batch_size：自适应策略最小首批大小
+    - submit_adaptive_max_batch_size：自适应策略最大首批大小
+    - submit_adaptive_merge_small_n：小目标数量时合批首击阈值（<=N 时可合批）
+    - submit_adaptive_merge_same_time_only：仅同时间目标是否允许小N合批
     - batch_min_interval：批次间最小间隔
+    - fast_lane_enabled：开抢快车道（仅必要时sleep）
+    - fast_lane_seconds：快车道持续时间(秒)
     - refill_window_seconds：失败后补提窗口
     - locked_retry_interval：锁定状态重试间隔
     - locked_max_seconds：锁定状态最多刷 N 秒
@@ -3265,11 +3713,20 @@ def update_config():
     - order_query_timeout_seconds：订单查询超时(秒)
     - order_query_max_pages：订单查询最大页数
     - post_submit_orders_join_timeout_seconds：提交后订单查询线程等待上限(秒)
+    - post_submit_verify_matrix_timeout_seconds：提交后矩阵验证超时(秒)
+    - post_submit_verify_matrix_recheck_times：提交后矩阵快速复核次数
     - post_submit_verify_orders_on_matrix_partial_only：仅在矩阵校验存在缺口时再查订单
     - post_submit_skip_sync_orders_query：提交后是否跳过同步订单查询(用矩阵快速确认)
     - post_submit_orders_sync_fallback：订单线程超时后是否同步兜底
     - post_submit_verify_pending_retry_seconds：验证未收敛时快速复核间隔(秒)
     - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
+    - manual_verify_pending_recheck_times：半自动verify_pending矩阵复核次数
+    - manual_verify_pending_retry_seconds：半自动verify_pending复核间隔(秒)
+    - manual_verify_pending_orders_fallback_enabled：半自动verify_pending是否启用一次订单兜底复核
+    - too_fast_skip_refill_in_same_request：命中“操作过快/频繁”时是否跳过同请求内补提
+    - multi_item_retry_balance_enabled：多项目提交时是否启用重试次数均衡
+    - multi_item_batch_retry_times_cap：多项目提交时每批最大重试次数上限
+    - multi_item_retry_total_budget：多项目提交时本次请求可消耗的总重试预算
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3288,6 +3745,8 @@ def update_config():
     - preselect_enabled：是否启用解锁前预选快照
     - preselect_ttl_seconds：预选快照有效期(秒)
     - preselect_only_before_first_submit：仅首提前启用预选快照
+    - metrics_keep_last：统一观测文件最大保留条数
+    - metrics_retention_days：统一观测文件保留天数
     """
     try:
         data = request.json or {}
@@ -3351,14 +3810,17 @@ def update_config():
         _update_float_field('batch_retry_interval', 0.1, CONFIG.get('batch_retry_interval', 0.5))
         _update_float_field('submit_timeout_seconds', 0.5, CONFIG.get('submit_timeout_seconds', 4.0))
         _update_float_field('batch_min_interval', 0.1, CONFIG.get('batch_min_interval', 0.8))
+        _update_float_field('fast_lane_seconds', 0.0, CONFIG.get('fast_lane_seconds', 2.0))
         _update_float_field('refill_window_seconds', 0.0, CONFIG.get('refill_window_seconds', 8.0))
         _update_float_field('locked_retry_interval', 0.1, CONFIG.get('locked_retry_interval', 1.0))
         _update_float_field('locked_max_seconds', 1.0, CONFIG.get('locked_max_seconds', 60.0))
         _update_float_field('open_retry_seconds', 0.0, CONFIG.get('open_retry_seconds', 30.0))
         _update_float_field('matrix_timeout_seconds', 0.5, CONFIG.get('matrix_timeout_seconds', 3.0))
         _update_float_field('order_query_timeout_seconds', 0.5, CONFIG.get('order_query_timeout_seconds', 2.5))
-        _update_float_field('post_submit_orders_join_timeout_seconds', 0.1, CONFIG.get('post_submit_orders_join_timeout_seconds', 1.2))
+        _update_float_field('post_submit_orders_join_timeout_seconds', 0.1, CONFIG.get('post_submit_orders_join_timeout_seconds', 0.3))
+        _update_float_field('post_submit_verify_matrix_timeout_seconds', 0.3, CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8))
         _update_float_field('post_submit_verify_pending_retry_seconds', 0.05, CONFIG.get('post_submit_verify_pending_retry_seconds', 0.35))
+        _update_float_field('manual_verify_pending_retry_seconds', 0.05, CONFIG.get('manual_verify_pending_retry_seconds', 0.25))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('biz_fail_cooldown_seconds', 1.0, CONFIG.get('biz_fail_cooldown_seconds', 15.0))
         _update_float_field('preselect_ttl_seconds', 0.2, CONFIG.get('preselect_ttl_seconds', 2.0))
@@ -3406,6 +3868,57 @@ def update_config():
                 enabled = bool(val)
             CONFIG['post_submit_treat_verify_timeout_as_retry'] = enabled
             saved['post_submit_treat_verify_timeout_as_retry'] = enabled
+
+        if 'manual_verify_pending_orders_fallback_enabled' in data:
+            val = data['manual_verify_pending_orders_fallback_enabled']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['manual_verify_pending_orders_fallback_enabled'] = enabled
+            saved['manual_verify_pending_orders_fallback_enabled'] = enabled
+
+        if 'too_fast_skip_refill_in_same_request' in data:
+            val = data['too_fast_skip_refill_in_same_request']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['too_fast_skip_refill_in_same_request'] = enabled
+            saved['too_fast_skip_refill_in_same_request'] = enabled
+
+        if 'multi_item_retry_balance_enabled' in data:
+            val = data['multi_item_retry_balance_enabled']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['multi_item_retry_balance_enabled'] = enabled
+            saved['multi_item_retry_balance_enabled'] = enabled
+
+        if 'multi_item_batch_retry_times_cap' in data:
+            try:
+                val = int(data['multi_item_batch_retry_times_cap'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('multi_item_batch_retry_times_cap', 1))
+            val = max(0, min(3, val))
+            CONFIG['multi_item_batch_retry_times_cap'] = val
+            saved['multi_item_batch_retry_times_cap'] = val
+
+        if 'multi_item_retry_total_budget' in data:
+            try:
+                val = int(data['multi_item_retry_total_budget'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('multi_item_retry_total_budget', 3))
+            val = max(0, min(20, val))
+            CONFIG['multi_item_retry_total_budget'] = val
+            saved['multi_item_retry_total_budget'] = val
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']
@@ -3513,6 +4026,62 @@ def update_config():
             CONFIG['submit_split_retry_times'] = val
             saved['submit_split_retry_times'] = val
 
+        if 'submit_strategy_mode' in data:
+            mode = str(data.get('submit_strategy_mode') or 'adaptive').strip().lower()
+            if mode not in ('adaptive', 'fixed'):
+                mode = str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive').strip().lower()
+                if mode not in ('adaptive', 'fixed'):
+                    mode = 'adaptive'
+            CONFIG['submit_strategy_mode'] = mode
+            saved['submit_strategy_mode'] = mode
+
+        if 'submit_adaptive_target_batches' in data:
+            try:
+                val = int(data['submit_adaptive_target_batches'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_target_batches', 2))
+            val = max(1, min(6, val))
+            CONFIG['submit_adaptive_target_batches'] = val
+            saved['submit_adaptive_target_batches'] = val
+
+        if 'submit_adaptive_min_batch_size' in data:
+            try:
+                val = int(data['submit_adaptive_min_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_min_batch_size', 1))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_min_batch_size'] = val
+            saved['submit_adaptive_min_batch_size'] = val
+
+        if 'submit_adaptive_max_batch_size' in data:
+            try:
+                val = int(data['submit_adaptive_max_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_max_batch_size', 3))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_max_batch_size'] = val
+            saved['submit_adaptive_max_batch_size'] = val
+
+        if 'submit_adaptive_merge_small_n' in data:
+            try:
+                val = int(data['submit_adaptive_merge_small_n'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_merge_small_n', 2))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_merge_small_n'] = val
+            saved['submit_adaptive_merge_small_n'] = val
+
+        if 'submit_adaptive_merge_same_time_only' in data:
+            val = data['submit_adaptive_merge_same_time_only']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['submit_adaptive_merge_same_time_only'] = enabled
+            saved['submit_adaptive_merge_same_time_only'] = enabled
+
         if 'pipeline_continuous_window_seconds' in data:
             try:
                 val = int(data['pipeline_continuous_window_seconds'])
@@ -3548,6 +4117,42 @@ def update_config():
             val = max(0.0, val)
             CONFIG['pipeline_greedy_end_before_hours'] = val
             saved['pipeline_greedy_end_before_hours'] = val
+
+        if 'post_submit_verify_matrix_recheck_times' in data:
+            try:
+                val = int(data['post_submit_verify_matrix_recheck_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('post_submit_verify_matrix_recheck_times', 3))
+            val = max(0, min(8, val))
+            CONFIG['post_submit_verify_matrix_recheck_times'] = val
+            saved['post_submit_verify_matrix_recheck_times'] = val
+
+        if 'metrics_keep_last' in data:
+            try:
+                val = int(data['metrics_keep_last'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('metrics_keep_last', 300))
+            val = max(50, min(5000, val))
+            CONFIG['metrics_keep_last'] = val
+            saved['metrics_keep_last'] = val
+
+        if 'metrics_retention_days' in data:
+            try:
+                val = int(data['metrics_retention_days'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('metrics_retention_days', 7))
+            val = max(1, min(30, val))
+            CONFIG['metrics_retention_days'] = val
+            saved['metrics_retention_days'] = val
+
+        if 'manual_verify_pending_recheck_times' in data:
+            try:
+                val = int(data['manual_verify_pending_recheck_times'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('manual_verify_pending_recheck_times', 3))
+            val = max(0, min(8, val))
+            CONFIG['manual_verify_pending_recheck_times'] = val
+            saved['manual_verify_pending_recheck_times'] = val
 
         if 'post_submit_verify_pending_matrix_recheck_times' in data:
             try:
@@ -3599,6 +4204,17 @@ def update_config():
             saved['health_check_enabled'] = enabled
 
         # 3.1) 高频调试日志开关
+        if 'fast_lane_enabled' in data:
+            val = data['fast_lane_enabled']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['fast_lane_enabled'] = enabled
+            saved['fast_lane_enabled'] = enabled
+
         if 'verbose_logs' in data:
             val = data['verbose_logs']
             if isinstance(val, bool):
@@ -3910,6 +4526,7 @@ def get_logs():
 @app.route('/api/run-metrics', methods=['GET'])
 def get_run_metrics():
     task_id = request.args.get('task_id')
+    source = str(request.args.get('source', 'all') or 'all').strip().lower()
     unlock_only = str(request.args.get('unlock_only', '1')).lower() in ('1', 'true', 'yes', 'on')
     limit = request.args.get('limit', default=50, type=int)
     limit = max(1, min(500, int(limit or 50)))
@@ -3924,7 +4541,9 @@ def get_run_metrics():
         records = []
     if task_id:
         records = [r for r in records if str(r.get('task_id')) == str(task_id)]
-    if unlock_only:
+    if source in ('auto', 'manual'):
+        records = [r for r in records if str(r.get('source') or 'auto').lower() == source]
+    if unlock_only and source != 'manual':
         records = [
             r for r in records
             if bool(r.get('saw_locked')) and bool(r.get('unlocked_after_locked'))
@@ -3937,6 +4556,7 @@ def get_run_metrics():
     summary = {
         'total_runs': len(records),
         'unlock_only': unlock_only,
+        'source': source,
         'focus_scope': 'locked_to_unlocked_only' if unlock_only else 'all_runs',
         'success_within_60_rate': round(len(success_within_60) / len(records), 4) if records else None,
         'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
