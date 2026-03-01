@@ -206,6 +206,10 @@ CONFIG = {
     "batch_retry_interval": 0.5,
     "submit_batch_size": 3,
     "initial_submit_batch_size": 2,
+    "submit_strategy_mode": "adaptive",
+    "submit_adaptive_target_batches": 2,
+    "submit_adaptive_min_batch_size": 1,
+    "submit_adaptive_max_batch_size": 3,
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
@@ -350,6 +354,24 @@ if os.path.exists(CONFIG_FILE):
             if 'initial_submit_batch_size' in saved:
                 try:
                     CONFIG['initial_submit_batch_size'] = max(1, min(9, int(saved['initial_submit_batch_size'])))
+                except Exception:
+                    pass
+            if 'submit_strategy_mode' in saved:
+                mode = str(saved.get('submit_strategy_mode') or 'adaptive').strip().lower()
+                CONFIG['submit_strategy_mode'] = mode if mode in ('adaptive', 'fixed') else 'adaptive'
+            if 'submit_adaptive_target_batches' in saved:
+                try:
+                    CONFIG['submit_adaptive_target_batches'] = max(1, min(6, int(saved['submit_adaptive_target_batches'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_min_batch_size' in saved:
+                try:
+                    CONFIG['submit_adaptive_min_batch_size'] = max(1, min(9, int(saved['submit_adaptive_min_batch_size'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_max_batch_size' in saved:
+                try:
+                    CONFIG['submit_adaptive_max_batch_size'] = max(1, min(9, int(saved['submit_adaptive_max_batch_size'])))
                 except Exception:
                     pass
             if 'submit_timeout_seconds' in saved:
@@ -938,6 +960,9 @@ class ApiClient:
         degrade_batch_size = max(1, min(9, degrade_batch_size))
         configured_initial_batch_size = int(CONFIG.get("initial_submit_batch_size", CONFIG.get("submit_batch_size", 3)) or 3)
         initial_batch_size = max(1, min(9, configured_initial_batch_size))
+        submit_strategy_mode = str(CONFIG.get("submit_strategy_mode", "adaptive") or "adaptive").strip().lower()
+        if submit_strategy_mode not in ("adaptive", "fixed"):
+            submit_strategy_mode = "adaptive"
         batch_retry_times = int(CONFIG.get("batch_retry_times", 2))
         batch_retry_interval = float(CONFIG.get("batch_retry_interval", CONFIG.get("retry_interval", 0.5)))
         batch_min_interval = float(CONFIG.get("batch_min_interval", 0.8))
@@ -956,11 +981,13 @@ class ApiClient:
             "confirm_orders_poll_count": 0,
             "t_confirm_ms": None,
             "verify_exception_count": 0,
+            "effective_initial_batch_size": 0,
+            "submit_strategy_mode": submit_strategy_mode,
         }
 
         print(
             f"🧭 [批次策略] 首批=按配置 initial_submit_batch_size→{initial_batch_size}；"
-            f"降级=按配置 submit_batch_size→{degrade_batch_size}；本次选择={len(selected_items)}"
+            f"降级=按配置 submit_batch_size→{degrade_batch_size}；策略={submit_strategy_mode}；本次选择={len(selected_items)}"
         )
         print(
             f"⏱️ [提交超时] submit_timeout={submit_timeout_seconds}s, split_retry_times={submit_split_retry_times}"
@@ -1030,6 +1057,19 @@ class ApiClient:
 
         submit_items = list(selected_items or [])
         preblocked_items = []
+
+        effective_initial_batch_size = initial_batch_size
+        if submit_strategy_mode == "adaptive":
+            n_items = len(submit_items)
+            target_batches = max(1, min(6, int(CONFIG.get("submit_adaptive_target_batches", 2) or 2)))
+            adaptive_min = max(1, min(9, int(CONFIG.get("submit_adaptive_min_batch_size", 1) or 1)))
+            adaptive_max = max(adaptive_min, min(9, int(CONFIG.get("submit_adaptive_max_batch_size", 3) or 3)))
+            if n_items > 0:
+                computed = (n_items + target_batches - 1) // target_batches
+                effective_initial_batch_size = max(adaptive_min, min(adaptive_max, computed))
+            effective_initial_batch_size = min(effective_initial_batch_size, degrade_batch_size)
+
+        preblocked_items = []
         multi_item_retry_balance_enabled = bool(CONFIG.get("multi_item_retry_balance_enabled", True))
         multi_item_batch_retry_times_cap = max(0, min(3, int(CONFIG.get("multi_item_batch_retry_times_cap", 1) or 1)))
         effective_batch_retry_times = batch_retry_times
@@ -1039,6 +1079,7 @@ class ApiClient:
                 f"⚖️ [重试均衡] 多项目提交({len(submit_items)})，batch_retry_times: {batch_retry_times} -> {effective_batch_retry_times}"
             )
         run_metric["effective_batch_retry_times"] = int(effective_batch_retry_times)
+        run_metric["effective_initial_batch_size"] = int(effective_initial_batch_size)
         same_time_limit = int(CONFIG.get("same_time_precheck_limit", 0) or 0)
         if same_time_limit > 0:
             try:
@@ -1078,8 +1119,8 @@ class ApiClient:
                 print("⚡ [同时段上限预检] 已关闭（same_time_precheck_limit<=0）")
 
         # 首轮提交：按“本次选择数量”自适应分批
-        for i in range(0, len(submit_items), initial_batch_size):
-            batch = submit_items[i:i + initial_batch_size]
+        for i in range(0, len(submit_items), effective_initial_batch_size):
+            batch = submit_items[i:i + effective_initial_batch_size]
             print(f"📦 正在提交分批订单 ({i // initial_batch_size + 1}): {batch}")
 
             field_info_list = []
@@ -3510,6 +3551,8 @@ def api_book():
             'submit_success_resp_count': int(run_metric.get('submit_success_resp_count') or 0),
             'submit_retry_count': int(run_metric.get('submit_retry_count') or 0),
             'effective_batch_retry_times': int(run_metric.get('effective_batch_retry_times') or 0),
+            'effective_initial_batch_size': int(run_metric.get('effective_initial_batch_size') or 0),
+            'submit_strategy_mode': str(run_metric.get('submit_strategy_mode') or ''),
             'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
@@ -3529,6 +3572,10 @@ def api_book():
                 'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
                 'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
                 'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
+                'submit_strategy_mode': str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive'),
+                'submit_adaptive_target_batches': int(CONFIG.get('submit_adaptive_target_batches', 2) or 2),
+                'submit_adaptive_min_batch_size': int(CONFIG.get('submit_adaptive_min_batch_size', 1) or 1),
+                'submit_adaptive_max_batch_size': int(CONFIG.get('submit_adaptive_max_batch_size', 3) or 3),
             },
         }
         append_task_run_metric(manual_record)
@@ -3586,6 +3633,10 @@ def update_config():
     - submit_timeout_seconds：下单接口超时(秒)
     - submit_split_retry_times：降级分段重试轮次
     - initial_submit_batch_size：首批提交上限
+    - submit_strategy_mode：首轮提交策略（adaptive/fixed）
+    - submit_adaptive_target_batches：自适应策略目标批次数
+    - submit_adaptive_min_batch_size：自适应策略最小首批大小
+    - submit_adaptive_max_batch_size：自适应策略最大首批大小
     - batch_min_interval：批次间最小间隔
     - fast_lane_enabled：开抢快车道（仅必要时sleep）
     - fast_lane_seconds：快车道持续时间(秒)
@@ -3899,6 +3950,42 @@ def update_config():
             val = max(0, min(3, val))
             CONFIG['submit_split_retry_times'] = val
             saved['submit_split_retry_times'] = val
+
+        if 'submit_strategy_mode' in data:
+            mode = str(data.get('submit_strategy_mode') or 'adaptive').strip().lower()
+            if mode not in ('adaptive', 'fixed'):
+                mode = str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive').strip().lower()
+                if mode not in ('adaptive', 'fixed'):
+                    mode = 'adaptive'
+            CONFIG['submit_strategy_mode'] = mode
+            saved['submit_strategy_mode'] = mode
+
+        if 'submit_adaptive_target_batches' in data:
+            try:
+                val = int(data['submit_adaptive_target_batches'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_target_batches', 2))
+            val = max(1, min(6, val))
+            CONFIG['submit_adaptive_target_batches'] = val
+            saved['submit_adaptive_target_batches'] = val
+
+        if 'submit_adaptive_min_batch_size' in data:
+            try:
+                val = int(data['submit_adaptive_min_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_min_batch_size', 1))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_min_batch_size'] = val
+            saved['submit_adaptive_min_batch_size'] = val
+
+        if 'submit_adaptive_max_batch_size' in data:
+            try:
+                val = int(data['submit_adaptive_max_batch_size'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_max_batch_size', 3))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_max_batch_size'] = val
+            saved['submit_adaptive_max_batch_size'] = val
 
         if 'pipeline_continuous_window_seconds' in data:
             try:
