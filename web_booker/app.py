@@ -1104,6 +1104,79 @@ class ApiClient:
 
             effective_initial_batch_size = min(effective_initial_batch_size, degrade_batch_size)
 
+        def prioritize_items_by_place_completeness(items):
+            """
+            以“完整场地优先”重排提交项：
+            - 同一场地覆盖目标时段越完整，优先级越高；
+            - 完整度相同则保持用户在本次选择中的场地先后；
+            - 场地内按用户选择的时间先后提交。
+            该规则适用于 2x2、3x3 等“整场优先”场景。
+            """
+            normalized = [
+                {"place": str(it.get("place")), "time": str(it.get("time"))}
+                for it in (items or [])
+                if isinstance(it, dict) and it.get("place") and it.get("time")
+            ]
+            if len(normalized) <= 1:
+                return normalized
+
+            place_order = []
+            time_order = []
+            by_place = {}
+            for it in normalized:
+                p = it["place"]
+                t = it["time"]
+                if p not in by_place:
+                    by_place[p] = set()
+                    place_order.append(p)
+                by_place[p].add(t)
+                if t not in time_order:
+                    time_order.append(t)
+
+            if len(place_order) <= 1 or len(time_order) <= 1:
+                return normalized
+
+            full_time_set = set(time_order)
+            place_rank = []
+            for idx, p in enumerate(place_order):
+                covered = by_place.get(p, set())
+                complete = 1 if covered >= full_time_set else 0
+                coverage = len(covered)
+                # complete(1) > partial(0), coverage 越多越靠前，最后按用户选择顺序稳定排序
+                place_rank.append((p, complete, coverage, idx))
+
+            place_rank.sort(key=lambda x: (-x[1], -x[2], x[3]))
+            ranked_places = [x[0] for x in place_rank]
+            ranked_place_set = set(ranked_places)
+
+            rebuilt = []
+            seen = set()
+            for p in ranked_places:
+                for t in time_order:
+                    key = (p, t)
+                    if key in seen:
+                        continue
+                    if t in by_place.get(p, set()):
+                        rebuilt.append({"place": p, "time": t})
+                        seen.add(key)
+
+            # 兜底：理论上不会命中，防止异常输入导致条目丢失
+            if len(rebuilt) < len(normalized):
+                for it in normalized:
+                    key = (it["place"], it["time"])
+                    if key not in seen:
+                        rebuilt.append({"place": it["place"], "time": it["time"]})
+                        seen.add(key)
+
+            if is_verbose_logs_enabled() and ranked_places and ranked_place_set:
+                print(
+                    f"🧩 [完整场优先] 场地优先级: {ranked_places}; "
+                    f"目标时段: {time_order}"
+                )
+            return rebuilt
+
+        submit_items = prioritize_items_by_place_completeness(submit_items)
+
         submit_grouping_mode = str(CONFIG.get("submit_grouping_mode", "smart") or "smart").strip().lower()
         if submit_grouping_mode not in ("smart", "place", "timeslot"):
             submit_grouping_mode = "smart"
