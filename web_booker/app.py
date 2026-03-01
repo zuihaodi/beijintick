@@ -277,6 +277,8 @@ CONFIG = {
             "fast_lane_seconds": 0.0,
             "batch_min_interval": 1.1,
             "too_fast_skip_refill_in_same_request": False,
+            "too_fast_cooldown_seconds": 2.2,
+            "too_fast_force_single_item_on_batch_fail": True,
             "multi_item_batch_retry_times_cap": 2,
             "submit_grouping_mode": "place",
             "submit_strategy_mode": "adaptive",
@@ -1039,6 +1041,8 @@ class ApiClient:
         submit_split_retry_times = max(0, min(3, int(cfg_get("submit_split_retry_times", 1) or 1)))
         fast_lane_enabled = bool(cfg_get("fast_lane_enabled", True))
         fast_lane_seconds = max(0.0, float(cfg_get("fast_lane_seconds", 2.0) or 2.0))
+        too_fast_cooldown_seconds = max(0.3, float(cfg_get("too_fast_cooldown_seconds", 1.4) or 1.4))
+        too_fast_force_single_item_on_batch_fail = bool(cfg_get("too_fast_force_single_item_on_batch_fail", False))
         fast_lane_deadline_ts = time.time() + fast_lane_seconds if fast_lane_enabled else 0.0
         run_metric = {
             "submit_req_count": 0,
@@ -1057,6 +1061,10 @@ class ApiClient:
             "submit_grouping_mode": str(cfg_get("submit_grouping_mode", "smart") or "smart"),
             "place_first_grouping_applied": False,
             "submit_profile": profile_name or "default",
+            "effective_fast_lane_enabled": bool(fast_lane_enabled),
+            "effective_fast_lane_seconds": float(fast_lane_seconds),
+            "effective_batch_min_interval": float(batch_min_interval),
+            "effective_too_fast_cooldown_seconds": float(too_fast_cooldown_seconds),
         }
 
         print(
@@ -1429,6 +1437,8 @@ class ApiClient:
                             can_retry = _can_consume_retry_budget()
                         if can_retry:
                             sleep_s = batch_retry_interval * (2 ** attempt) + random.uniform(0, 0.25)
+                            if is_too_fast_fail(fail_msg):
+                                sleep_s = max(sleep_s, too_fast_cooldown_seconds + random.uniform(0.05, 0.35))
                         else:
                             sleep_s = None
                         if sleep_s is not None:
@@ -1439,6 +1449,75 @@ class ApiClient:
                             run_metric["submit_retry_count"] += 1
                             time.sleep(sleep_s)
                             continue
+
+                    if is_too_fast_fail(fail_msg) and too_fast_force_single_item_on_batch_fail and len(batch) > 1:
+                        print(
+                            f"🧯 [too-fast降级] 批次 {i // effective_initial_batch_size + 1} 命中操作过快，"
+                            f"切换单项重提，冷却{round(too_fast_cooldown_seconds, 2)}s"
+                        )
+                        single_fail = []
+                        for idx_item, one in enumerate(batch):
+                            if idx_item > 0:
+                                time.sleep(too_fast_cooldown_seconds + random.uniform(0.05, 0.35))
+                            try:
+                                one_field_info = []
+                                one_total = 0
+                                p_num = one["place"]
+                                start = one["time"]
+                                try:
+                                    st_obj = datetime.strptime(start, "%H:%M")
+                                    et_obj = st_obj + timedelta(hours=1)
+                                    end = et_obj.strftime("%H:%M")
+                                    price = 80 if st_obj.hour < 14 else 100
+                                except Exception:
+                                    end = "22:00"
+                                    price = 100
+                                try:
+                                    p_int = int(p_num)
+                                except (TypeError, ValueError):
+                                    p_int = None
+                                if p_int is not None and p_int >= 15:
+                                    place_short = f"mdb{p_num}"
+                                    place_name = f"木地板{p_num}"
+                                else:
+                                    place_short = f"ymq{p_num}"
+                                    place_name = f"羽毛球{p_num}"
+
+                                one_field_info.append({
+                                    "day": date_str,
+                                    "oldMoney": price,
+                                    "startTime": start,
+                                    "endTime": end,
+                                    "placeShortName": place_short,
+                                    "name": place_name,
+                                    "stageTypeShortName": "ymq",
+                                    "newMoney": price,
+                                })
+                                one_total += price
+
+                                one_info_str = urllib.parse.quote(json.dumps(one_field_info, separators=(",", ":"), ensure_ascii=False))
+                                one_type_encoded = urllib.parse.quote("羽毛球")
+                                one_body = (
+                                    f"token={self.token}&shopNum={CONFIG['auth']['shop_num']}&fieldinfo={one_info_str}&"
+                                    f"cardStId={CONFIG['auth']['card_st_id']}&oldTotal={one_total}.00&cardPayType=0&"
+                                    f"type={one_type_encoded}&offerId=&offerType=&total={one_total}.00&premerother=&"
+                                    f"cardIndex={CONFIG['auth']['card_index']}"
+                                )
+                                run_metric["submit_req_count"] += 1
+                                one_resp = self.session.post(url, headers=self.headers, data=one_body, timeout=submit_timeout_seconds, verify=False)
+                                one_data = one_resp.json() if one_resp.text else None
+                                if not (isinstance(one_data, dict) and one_data.get("msg") == "success"):
+                                    single_fail.append(one)
+                                else:
+                                    run_metric["submit_success_resp_count"] += 1
+                            except Exception:
+                                single_fail.append(one)
+
+                        if not single_fail:
+                            final_result = {"status": "success", "batch": batch}
+                        else:
+                            final_result = {"status": "fail", "msg": fail_msg, "batch": single_fail}
+                        break
 
                     # 命中“可重试/规则异常”时，按配置分批降级重提一次
                     if len(batch) > degrade_batch_size and should_degrade(fail_msg):
@@ -3777,25 +3856,28 @@ def api_book():
             'manual_reconcile_matrix_error_count': int(run_metric.get('manual_reconcile_matrix_error_count') or 0),
             'manual_reconcile_orders_fallback_used': bool(run_metric.get('manual_reconcile_orders_fallback_used', False)),
             'manual_reconcile_orders_fallback_hit_count': int(run_metric.get('manual_reconcile_orders_fallback_hit_count') or 0),
+            'submit_profile': str(run_metric.get('submit_profile') or CONFIG.get('manual_submit_profile', 'manual_stable')),
             'config_snapshot': {
-                'submit_timeout_seconds': float(CONFIG.get('submit_timeout_seconds', 4.0) or 4.0),
-                'initial_submit_batch_size': int(CONFIG.get('initial_submit_batch_size', 1) or 1),
-                'submit_batch_size': int(CONFIG.get('submit_batch_size', 3) or 3),
-                'batch_retry_times': int(CONFIG.get('batch_retry_times', 2) or 2),
-                'batch_retry_interval': float(CONFIG.get('batch_retry_interval', 0.5) or 0.5),
-                'fast_lane_enabled': bool(CONFIG.get('fast_lane_enabled', True)),
-                'fast_lane_seconds': float(CONFIG.get('fast_lane_seconds', 2.0) or 2.0),
+                'submit_timeout_seconds': float(cfg_get('submit_timeout_seconds', CONFIG.get('submit_timeout_seconds', 4.0)) or 4.0),
+                'initial_submit_batch_size': int(run_metric.get('effective_initial_batch_size') or cfg_get('initial_submit_batch_size', CONFIG.get('initial_submit_batch_size', 1)) or 1),
+                'submit_batch_size': int(cfg_get('submit_batch_size', CONFIG.get('submit_batch_size', 3)) or 3),
+                'batch_retry_times': int(run_metric.get('effective_batch_retry_times') or cfg_get('batch_retry_times', CONFIG.get('batch_retry_times', 2)) or 2),
+                'batch_retry_interval': float(cfg_get('batch_retry_interval', CONFIG.get('batch_retry_interval', 0.5)) or 0.5),
+                'fast_lane_enabled': bool(run_metric.get('effective_fast_lane_enabled', CONFIG.get('fast_lane_enabled', True))),
+                'fast_lane_seconds': float(run_metric.get('effective_fast_lane_seconds', CONFIG.get('fast_lane_seconds', 2.0)) or 0.0),
                 'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
                 'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
                 'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
                 'multi_item_retry_total_budget': int(CONFIG.get('multi_item_retry_total_budget', 3) or 3),
-                'submit_strategy_mode': str(CONFIG.get('submit_strategy_mode', 'adaptive') or 'adaptive'),
+                'submit_strategy_mode': str(run_metric.get('submit_strategy_mode') or cfg_get('submit_strategy_mode', CONFIG.get('submit_strategy_mode', 'adaptive')) or 'adaptive'),
                 'submit_adaptive_target_batches': int(CONFIG.get('submit_adaptive_target_batches', 2) or 2),
                 'submit_adaptive_min_batch_size': int(CONFIG.get('submit_adaptive_min_batch_size', 1) or 1),
                 'submit_adaptive_max_batch_size': int(CONFIG.get('submit_adaptive_max_batch_size', 3) or 3),
                 'submit_adaptive_merge_small_n': int(CONFIG.get('submit_adaptive_merge_small_n', 2) or 2),
                 'submit_adaptive_merge_same_time_only': bool(CONFIG.get('submit_adaptive_merge_same_time_only', True)),
-                'submit_grouping_mode': str(CONFIG.get('submit_grouping_mode', 'smart') or 'smart'),
+                'submit_grouping_mode': str(run_metric.get('submit_grouping_mode') or CONFIG.get('submit_grouping_mode', 'smart') or 'smart'),
+                'batch_min_interval': float(run_metric.get('effective_batch_min_interval', CONFIG.get('batch_min_interval', 0.8)) or 0.8),
+                'too_fast_cooldown_seconds': float(run_metric.get('effective_too_fast_cooldown_seconds', 1.4) or 1.4),
             },
         }
         append_task_run_metric(manual_record)
