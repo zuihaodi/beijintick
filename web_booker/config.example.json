@@ -57,5 +57,6 @@
   "metrics_keep_last": 300,
   "metrics_retention_days": 7,
   "manual_verify_pending_recheck_times": 3,
-  "manual_verify_pending_retry_seconds": 0.25
+  "manual_verify_pending_retry_seconds": 0.25,
+  "manual_verify_pending_orders_fallback_enabled": true
 }

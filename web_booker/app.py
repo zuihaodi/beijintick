@@ -223,6 +223,7 @@ CONFIG = {
     "post_submit_verify_pending_matrix_recheck_times": 4,
     "manual_verify_pending_recheck_times": 3,
     "manual_verify_pending_retry_seconds": 0.25,
+    "manual_verify_pending_orders_fallback_enabled": True,
     "post_submit_treat_verify_timeout_as_retry": True,
     "refill_window_seconds": 8.0,
     "locked_retry_interval": 1.0,  # ✅ 新增：锁定状态重试间隔(秒)
@@ -418,6 +419,8 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['manual_verify_pending_retry_seconds'] = max(0.05, min(2.0, float(saved['manual_verify_pending_retry_seconds'])))
                 except Exception:
                     pass
+            if 'manual_verify_pending_orders_fallback_enabled' in saved:
+                CONFIG['manual_verify_pending_orders_fallback_enabled'] = bool(saved['manual_verify_pending_orders_fallback_enabled'])
             if 'post_submit_treat_verify_timeout_as_retry' in saved:
                 CONFIG['post_submit_treat_verify_timeout_as_retry'] = bool(saved['post_submit_treat_verify_timeout_as_retry'])
             if 'refill_window_seconds' in saved:
@@ -3355,19 +3358,30 @@ def api_book():
     items = data.get('items')
     res = client.submit_order(date, items)
 
-    # 半自动场景：对 verify_pending 做轻量矩阵复核，减少“实际成功但展示待确认/失败”的误差。
+    # 半自动场景：对 verify_pending 做轻量复核，先看矩阵，必要时做一次订单兜底。
     if isinstance(res, dict) and res.get('status') == 'verify_pending':
+        run_metric = dict(res.get('run_metric') or {})
         pending_items = list(res.get('failed_items') or items or [])
         retry_s = max(0.05, float(CONFIG.get('manual_verify_pending_retry_seconds', 0.25) or 0.25))
         recheck_times = max(0, min(8, int(CONFIG.get('manual_verify_pending_recheck_times', 3) or 3)))
+        verify_timeout_s = max(0.5, float(CONFIG.get('post_submit_verify_matrix_timeout_seconds', 0.8) or 0.8))
+        orders_fallback_enabled = bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True))
+
+        reconcile_rounds = 0
+        reconcile_matrix_error_count = 0
+        reconcile_orders_fallback_used = False
+        reconcile_orders_fallback_hit_count = 0
         recovered_items = []
+
         for idx in range(recheck_times):
             if not pending_items:
                 break
             if idx > 0:
                 time.sleep(retry_s)
-            verify_res = client.get_matrix(date, include_mine_overlay=False)
+            reconcile_rounds += 1
+            verify_res = client.get_matrix(date, include_mine_overlay=False, request_timeout=verify_timeout_s)
             if not isinstance(verify_res, dict) or verify_res.get('error'):
+                reconcile_matrix_error_count += 1
                 continue
             v_matrix = verify_res.get('matrix') or {}
             still_pending = []
@@ -3380,13 +3394,45 @@ def api_book():
                 else:
                     still_pending.append({'place': p, 'time': t})
             pending_items = still_pending
+
+        if pending_items and orders_fallback_enabled:
+            reconcile_orders_fallback_used = True
+            try:
+                order_timeout_s = max(0.5, float(CONFIG.get('order_query_timeout_seconds', 2.5) or 2.5))
+                order_max_pages = max(1, min(3, int(CONFIG.get('order_query_max_pages', 2) or 2)))
+                orders_res = client.get_place_orders(max_pages=order_max_pages, timeout_s=order_timeout_s)
+                if isinstance(orders_res, dict) and not orders_res.get('error'):
+                    grouped = client.extract_mine_slots_by_date(orders_res.get('data') or [])
+                    mine_slots = {
+                        (str(it.get('place')), str(it.get('time')))
+                        for it in (grouped.get(str(date)) or [])
+                        if isinstance(it, dict)
+                    }
+                    still_pending = []
+                    for it in pending_items:
+                        p = str(it.get('place'))
+                        t = str(it.get('time'))
+                        if (p, t) in mine_slots:
+                            recovered_items.append({'place': p, 'time': t})
+                            reconcile_orders_fallback_hit_count += 1
+                        else:
+                            still_pending.append({'place': p, 'time': t})
+                    pending_items = still_pending
+            except Exception:
+                pass
+
+        run_metric['manual_reconcile_rounds'] = int(reconcile_rounds)
+        run_metric['manual_reconcile_matrix_error_count'] = int(reconcile_matrix_error_count)
+        run_metric['manual_reconcile_orders_fallback_used'] = bool(reconcile_orders_fallback_used)
+        run_metric['manual_reconcile_orders_fallback_hit_count'] = int(reconcile_orders_fallback_hit_count)
+
         if items and len(recovered_items) >= len(items):
             res = {
                 'status': 'success',
-                'msg': 'verify_pending 经半自动矩阵复核收敛为成功',
+                'msg': 'verify_pending 经半自动复核收敛为成功',
                 'success_items': recovered_items,
                 'failed_items': [],
-                'run_metric': dict(res.get('run_metric') or {}),
+                'run_metric': run_metric,
             }
         elif recovered_items:
             res = {
@@ -3394,8 +3440,10 @@ def api_book():
                 'msg': f"verify_pending 复核后部分收敛({len(recovered_items)}/{len(items or [])})",
                 'success_items': recovered_items,
                 'failed_items': pending_items,
-                'run_metric': dict(res.get('run_metric') or {}),
+                'run_metric': run_metric,
             }
+        else:
+            res['run_metric'] = run_metric
 
     try:
         run_metric = res.get('run_metric') if isinstance(res, dict) else {}
@@ -3419,6 +3467,10 @@ def api_book():
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
             'verify_exception_count': int(run_metric.get('verify_exception_count') or 0),
+            'manual_reconcile_rounds': int(run_metric.get('manual_reconcile_rounds') or 0),
+            'manual_reconcile_matrix_error_count': int(run_metric.get('manual_reconcile_matrix_error_count') or 0),
+            'manual_reconcile_orders_fallback_used': bool(run_metric.get('manual_reconcile_orders_fallback_used', False)),
+            'manual_reconcile_orders_fallback_hit_count': int(run_metric.get('manual_reconcile_orders_fallback_hit_count') or 0),
             'config_snapshot': {
                 'submit_timeout_seconds': float(CONFIG.get('submit_timeout_seconds', 4.0) or 4.0),
                 'initial_submit_batch_size': int(CONFIG.get('initial_submit_batch_size', 1) or 1),
@@ -3427,6 +3479,7 @@ def api_book():
                 'batch_retry_interval': float(CONFIG.get('batch_retry_interval', 0.5) or 0.5),
                 'fast_lane_enabled': bool(CONFIG.get('fast_lane_enabled', True)),
                 'fast_lane_seconds': float(CONFIG.get('fast_lane_seconds', 2.0) or 2.0),
+                'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
             },
         }
         append_task_run_metric(manual_record)
@@ -3504,6 +3557,7 @@ def update_config():
     - post_submit_verify_pending_matrix_recheck_times：verify_pending后仅做矩阵复核次数
     - manual_verify_pending_recheck_times：半自动verify_pending矩阵复核次数
     - manual_verify_pending_retry_seconds：半自动verify_pending复核间隔(秒)
+    - manual_verify_pending_orders_fallback_enabled：半自动verify_pending是否启用一次订单兜底复核
     - post_submit_treat_verify_timeout_as_retry：验证超时是否走快速复核而非直接失败
     - stop_on_none_stage_without_refill：pipeline 阶段结束且无 refill 时立即结束
     - pipeline_continuous_window_seconds：pipeline 连号阶段窗口(秒, 系统级)
@@ -3645,6 +3699,17 @@ def update_config():
                 enabled = bool(val)
             CONFIG['post_submit_treat_verify_timeout_as_retry'] = enabled
             saved['post_submit_treat_verify_timeout_as_retry'] = enabled
+
+        if 'manual_verify_pending_orders_fallback_enabled' in data:
+            val = data['manual_verify_pending_orders_fallback_enabled']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['manual_verify_pending_orders_fallback_enabled'] = enabled
+            saved['manual_verify_pending_orders_fallback_enabled'] = enabled
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']
