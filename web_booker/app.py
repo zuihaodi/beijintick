@@ -1492,20 +1492,21 @@ class ApiClient:
             # 未收到任何提交成功响应，但校验命中 mine，疑似并发实例下单导致的“归因串扰”
             if cross_instance_suspected:
                 msg = "检测到我的订单已占位，但本进程提交未收到 success，可能由并发实例下单导致；本任务按失败处理。"
-            # 验证失败时，宁可报失败也不误报成功
-            elif not verify_ok and api_success_count > 0:
-                msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
-            elif api_success_count > 0 and verify_success_count == 0:
+            elif api_success_count > 0 and (not verify_ok or verify_success_count == 0):
                 allow_verify_pending = bool(CONFIG.get("post_submit_treat_verify_timeout_as_retry", True))
-                if allow_verify_pending and (not orders_query_ok):
+                if allow_verify_pending and ((not orders_query_ok) or (not verify_ok)):
+                    pending_reason = orders_query_error or ("矩阵校验超时/失败" if not verify_ok else "订单校验未完成")
                     return {
                         "status": "verify_pending",
-                        "msg": f"提交已返回success，但验证尚未收敛({orders_query_error or '订单校验未完成'})，将快速复核。",
+                        "msg": f"提交已返回success，但验证尚未收敛({pending_reason})，将快速复核。",
                         "success_items": verify_success_items,
                         "failed_items": verify_failed_items,
                         "run_metric": run_metric,
                     }
-                msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
+                if not verify_ok:
+                    msg = "下单接口返回 success，但提交后状态验证失败（网络/服务波动），请以官方系统为准。"
+                else:
+                    msg = "接口返回 success，但场地状态未变化，请在微信小程序确认或检查参数。"
             else:
                 first_fail = results[0] if results else {"msg": "无数据"}
                 msg = first_fail.get("msg")
