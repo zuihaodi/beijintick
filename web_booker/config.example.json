@@ -22,6 +22,8 @@
   "submit_adaptive_target_batches": 2,
   "submit_adaptive_min_batch_size": 1,
   "submit_adaptive_max_batch_size": 3,
+  "submit_adaptive_merge_small_n": 2,
+  "submit_adaptive_merge_same_time_only": true,
   "batch_min_interval": 0.8,
   "refill_window_seconds": 8.0,
   "locked_retry_interval": 1.0,

@@ -210,6 +210,8 @@ CONFIG = {
     "submit_adaptive_target_batches": 2,
     "submit_adaptive_min_batch_size": 1,
     "submit_adaptive_max_batch_size": 3,
+    "submit_adaptive_merge_small_n": 2,
+    "submit_adaptive_merge_same_time_only": True,
     "submit_timeout_seconds": 4.0,
     "submit_split_retry_times": 1,
     "batch_min_interval": 0.8,
@@ -375,6 +377,13 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['submit_adaptive_max_batch_size'] = max(1, min(9, int(saved['submit_adaptive_max_batch_size'])))
                 except Exception:
                     pass
+            if 'submit_adaptive_merge_small_n' in saved:
+                try:
+                    CONFIG['submit_adaptive_merge_small_n'] = max(1, min(9, int(saved['submit_adaptive_merge_small_n'])))
+                except Exception:
+                    pass
+            if 'submit_adaptive_merge_same_time_only' in saved:
+                CONFIG['submit_adaptive_merge_same_time_only'] = bool(saved['submit_adaptive_merge_same_time_only'])
             if 'submit_timeout_seconds' in saved:
                 try:
                     CONFIG['submit_timeout_seconds'] = max(0.5, float(saved['submit_timeout_seconds']))
@@ -991,6 +1000,7 @@ class ApiClient:
             "submit_strategy_mode": submit_strategy_mode,
             "retry_budget_total": 0,
             "retry_budget_used": 0,
+            "adaptive_small_n_merge_applied": False,
         }
 
         print(
@@ -1072,9 +1082,20 @@ class ApiClient:
             target_batches = max(1, min(6, int(CONFIG.get("submit_adaptive_target_batches", 2) or 2)))
             adaptive_min = max(1, min(9, int(CONFIG.get("submit_adaptive_min_batch_size", 1) or 1)))
             adaptive_max = max(adaptive_min, min(9, int(CONFIG.get("submit_adaptive_max_batch_size", 3) or 3)))
+            merge_small_n = max(1, min(9, int(CONFIG.get("submit_adaptive_merge_small_n", 2) or 2)))
+            merge_same_time_only = bool(CONFIG.get("submit_adaptive_merge_same_time_only", True))
             if n_items > 0:
                 computed = (n_items + target_batches - 1) // target_batches
                 effective_initial_batch_size = max(adaptive_min, min(adaptive_max, computed))
+
+                can_merge_small_n = n_items <= merge_small_n
+                if can_merge_small_n and merge_same_time_only:
+                    unique_times = {str(it.get("time")) for it in submit_items if isinstance(it, dict)}
+                    can_merge_small_n = len(unique_times) <= 1
+                if can_merge_small_n:
+                    effective_initial_batch_size = n_items
+                    run_metric["adaptive_small_n_merge_applied"] = True
+
             effective_initial_batch_size = min(effective_initial_batch_size, degrade_batch_size)
 
         preblocked_items = []
@@ -3591,6 +3612,7 @@ def api_book():
             'submit_strategy_mode': str(run_metric.get('submit_strategy_mode') or ''),
             'retry_budget_total': int(run_metric.get('retry_budget_total') or 0),
             'retry_budget_used': int(run_metric.get('retry_budget_used') or 0),
+            'adaptive_small_n_merge_applied': bool(run_metric.get('adaptive_small_n_merge_applied', False)),
             'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
             'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
             't_confirm_ms': run_metric.get('t_confirm_ms'),
@@ -3615,6 +3637,8 @@ def api_book():
                 'submit_adaptive_target_batches': int(CONFIG.get('submit_adaptive_target_batches', 2) or 2),
                 'submit_adaptive_min_batch_size': int(CONFIG.get('submit_adaptive_min_batch_size', 1) or 1),
                 'submit_adaptive_max_batch_size': int(CONFIG.get('submit_adaptive_max_batch_size', 3) or 3),
+                'submit_adaptive_merge_small_n': int(CONFIG.get('submit_adaptive_merge_small_n', 2) or 2),
+                'submit_adaptive_merge_same_time_only': bool(CONFIG.get('submit_adaptive_merge_same_time_only', True)),
             },
         }
         append_task_run_metric(manual_record)
@@ -3676,6 +3700,8 @@ def update_config():
     - submit_adaptive_target_batches：自适应策略目标批次数
     - submit_adaptive_min_batch_size：自适应策略最小首批大小
     - submit_adaptive_max_batch_size：自适应策略最大首批大小
+    - submit_adaptive_merge_small_n：小目标数量时合批首击阈值（<=N 时可合批）
+    - submit_adaptive_merge_same_time_only：仅同时间目标是否允许小N合批
     - batch_min_interval：批次间最小间隔
     - fast_lane_enabled：开抢快车道（仅必要时sleep）
     - fast_lane_seconds：快车道持续时间(秒)
@@ -4035,6 +4061,26 @@ def update_config():
             val = max(1, min(9, val))
             CONFIG['submit_adaptive_max_batch_size'] = val
             saved['submit_adaptive_max_batch_size'] = val
+
+        if 'submit_adaptive_merge_small_n' in data:
+            try:
+                val = int(data['submit_adaptive_merge_small_n'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('submit_adaptive_merge_small_n', 2))
+            val = max(1, min(9, val))
+            CONFIG['submit_adaptive_merge_small_n'] = val
+            saved['submit_adaptive_merge_small_n'] = val
+
+        if 'submit_adaptive_merge_same_time_only' in data:
+            val = data['submit_adaptive_merge_same_time_only']
+            if isinstance(val, bool):
+                enabled = val
+            elif isinstance(val, str):
+                enabled = val.lower() in ('1', 'true', 'yes', 'on')
+            else:
+                enabled = bool(val)
+            CONFIG['submit_adaptive_merge_same_time_only'] = enabled
+            saved['submit_adaptive_merge_same_time_only'] = enabled
 
         if 'pipeline_continuous_window_seconds' in data:
             try:
