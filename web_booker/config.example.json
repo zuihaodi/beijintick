@@ -53,5 +53,7 @@
   "fast_lane_enabled": true,
   "fast_lane_seconds": 2.0,
   "post_submit_verify_matrix_timeout_seconds": 0.8,
-  "post_submit_verify_matrix_recheck_times": 3
+  "post_submit_verify_matrix_recheck_times": 3,
+  "metrics_keep_last": 300,
+  "metrics_retention_days": 7
 }

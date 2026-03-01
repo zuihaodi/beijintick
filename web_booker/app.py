@@ -241,6 +241,8 @@ CONFIG = {
     "health_check_interval_min": 30.0, # 检查间隔（分钟）
     "health_check_start_time": "00:00", # 起始时间 (HH:MM)
     "verbose_logs": False,  # 是否打印高频调试日志
+    "metrics_keep_last": 300,  # 统一观测文件最大保留条数
+    "metrics_retention_days": 7,  # 统一观测文件保留天数
     "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
     "biz_fail_cooldown_seconds": 15.0,  # pipeline 中业务失败组合冷却时间
     "preselect_enabled": True,
@@ -270,7 +272,7 @@ def _percentile(sorted_values, p):
     return float(sorted_values[idx])
 
 
-def append_task_run_metric(record, keep_last=200):
+def append_task_run_metric(record, keep_last=None, retention_days=None):
     try:
         with _TASK_RUN_METRICS_LOCK:
             old = []
@@ -282,8 +284,28 @@ def append_task_run_metric(record, keep_last=200):
                     old = []
             if not isinstance(old, list):
                 old = []
+
             old.append(record)
-            old = old[-max(10, int(keep_last or 200)):]
+
+            keep_last_val = max(50, min(5000, int(keep_last if keep_last is not None else CONFIG.get('metrics_keep_last', 300) or 300)))
+            retention_days_val = max(1, min(30, int(retention_days if retention_days is not None else CONFIG.get('metrics_retention_days', 7) or 7)))
+            cutoff_ms = int((time.time() - retention_days_val * 24 * 3600) * 1000)
+
+            def _ts_ms(rec):
+                if not isinstance(rec, dict):
+                    return 0
+                for k in ('finished_at', 'started_at', 'ts'):
+                    v = rec.get(k)
+                    if v is None:
+                        continue
+                    try:
+                        return int(v)
+                    except Exception:
+                        continue
+                return 0
+
+            old = [r for r in old if _ts_ms(r) >= cutoff_ms]
+            old = old[-keep_last_val:]
             with open(TASK_RUN_METRICS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(old, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -446,6 +468,16 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['health_check_start_time'] = normalize_time_str(saved['health_check_start_time']) or CONFIG['health_check_start_time']
             if 'verbose_logs' in saved:
                 CONFIG['verbose_logs'] = bool(saved['verbose_logs'])
+            if 'metrics_keep_last' in saved:
+                try:
+                    CONFIG['metrics_keep_last'] = max(50, min(5000, int(saved['metrics_keep_last'])))
+                except Exception:
+                    pass
+            if 'metrics_retention_days' in saved:
+                try:
+                    CONFIG['metrics_retention_days'] = max(1, min(30, int(saved['metrics_retention_days'])))
+                except Exception:
+                    pass
             if 'preselect_enabled' in saved:
                 CONFIG['preselect_enabled'] = bool(saved['preselect_enabled'])
             if 'preselect_ttl_seconds' in saved:
@@ -1938,6 +1970,7 @@ class TaskManager:
         run_metrics = {
             "task_id": task.get('id'),
             "task_type": task.get('type', 'daily'),
+            "source": "auto",
             "started_at": int(run_started_ts * 1000),
             "active_started_at": int(run_started_ts * 1000),
             "prestart_wait_ms": 0,
@@ -3308,7 +3341,43 @@ def api_book():
     date = data.get('date')
     items = data.get('items')
     res = client.submit_order(date, items)
-    
+
+    try:
+        run_metric = res.get('run_metric') if isinstance(res, dict) else {}
+        if not isinstance(run_metric, dict):
+            run_metric = {}
+        manual_record = {
+            'source': 'manual',
+            'task_id': None,
+            'task_type': 'manual',
+            'started_at': int(time.time() * 1000),
+            'finished_at': int(time.time() * 1000),
+            'date': str(date or ''),
+            'status': str(res.get('status') if isinstance(res, dict) else 'unknown'),
+            'msg': str(res.get('msg') if isinstance(res, dict) else '')[:200],
+            'items_count': len(items or []),
+            'items': list(items or [])[:10],
+            'submit_req_count': int(run_metric.get('submit_req_count') or 0),
+            'submit_success_resp_count': int(run_metric.get('submit_success_resp_count') or 0),
+            'submit_retry_count': int(run_metric.get('submit_retry_count') or 0),
+            'confirm_matrix_poll_count': int(run_metric.get('confirm_matrix_poll_count') or 0),
+            'confirm_orders_poll_count': int(run_metric.get('confirm_orders_poll_count') or 0),
+            't_confirm_ms': run_metric.get('t_confirm_ms'),
+            'verify_exception_count': int(run_metric.get('verify_exception_count') or 0),
+            'config_snapshot': {
+                'submit_timeout_seconds': float(CONFIG.get('submit_timeout_seconds', 4.0) or 4.0),
+                'initial_submit_batch_size': int(CONFIG.get('initial_submit_batch_size', 1) or 1),
+                'submit_batch_size': int(CONFIG.get('submit_batch_size', 3) or 3),
+                'batch_retry_times': int(CONFIG.get('batch_retry_times', 2) or 2),
+                'batch_retry_interval': float(CONFIG.get('batch_retry_interval', 0.5) or 0.5),
+                'fast_lane_enabled': bool(CONFIG.get('fast_lane_enabled', True)),
+                'fast_lane_seconds': float(CONFIG.get('fast_lane_seconds', 2.0) or 2.0),
+            },
+        }
+        append_task_run_metric(manual_record)
+    except Exception as e:
+        print(f"⚠️ [manual-metric] 写入失败: {e}")
+
     # 增加手动预订后的短信通知
     # 只要状态不是 fail，就发送通知（success 或 partial）
     if res.get('status') in ['success', 'partial']:
@@ -3396,6 +3465,8 @@ def update_config():
     - preselect_enabled：是否启用解锁前预选快照
     - preselect_ttl_seconds：预选快照有效期(秒)
     - preselect_only_before_first_submit：仅首提前启用预选快照
+    - metrics_keep_last：统一观测文件最大保留条数
+    - metrics_retention_days：统一观测文件保留天数
     """
     try:
         data = request.json or {}
@@ -3667,6 +3738,24 @@ def update_config():
             val = max(0, min(8, val))
             CONFIG['post_submit_verify_matrix_recheck_times'] = val
             saved['post_submit_verify_matrix_recheck_times'] = val
+
+        if 'metrics_keep_last' in data:
+            try:
+                val = int(data['metrics_keep_last'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('metrics_keep_last', 300))
+            val = max(50, min(5000, val))
+            CONFIG['metrics_keep_last'] = val
+            saved['metrics_keep_last'] = val
+
+        if 'metrics_retention_days' in data:
+            try:
+                val = int(data['metrics_retention_days'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('metrics_retention_days', 7))
+            val = max(1, min(30, val))
+            CONFIG['metrics_retention_days'] = val
+            saved['metrics_retention_days'] = val
 
         if 'post_submit_verify_pending_matrix_recheck_times' in data:
             try:
@@ -4040,6 +4129,7 @@ def get_logs():
 @app.route('/api/run-metrics', methods=['GET'])
 def get_run_metrics():
     task_id = request.args.get('task_id')
+    source = str(request.args.get('source', 'all') or 'all').strip().lower()
     unlock_only = str(request.args.get('unlock_only', '1')).lower() in ('1', 'true', 'yes', 'on')
     limit = request.args.get('limit', default=50, type=int)
     limit = max(1, min(500, int(limit or 50)))
@@ -4054,7 +4144,9 @@ def get_run_metrics():
         records = []
     if task_id:
         records = [r for r in records if str(r.get('task_id')) == str(task_id)]
-    if unlock_only:
+    if source in ('auto', 'manual'):
+        records = [r for r in records if str(r.get('source') or 'auto').lower() == source]
+    if unlock_only and source != 'manual':
         records = [
             r for r in records
             if bool(r.get('saw_locked')) and bool(r.get('unlocked_after_locked'))
@@ -4067,6 +4159,7 @@ def get_run_metrics():
     summary = {
         'total_runs': len(records),
         'unlock_only': unlock_only,
+        'source': source,
         'focus_scope': 'locked_to_unlocked_only' if unlock_only else 'all_runs',
         'success_within_60_rate': round(len(success_within_60) / len(records), 4) if records else None,
         'first_success_p50_ms': int(_percentile(first_success_samples, 0.5)) if first_success_samples else None,
