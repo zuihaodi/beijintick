@@ -1510,6 +1510,8 @@ class ApiClient:
 
                         if not single_fail:
                             final_result = {"status": "success", "batch": batch}
+                        elif len(single_fail) < len(batch):
+                            final_result = {"status": "partial", "msg": fail_msg, "batch": single_fail}
                         else:
                             final_result = {"status": "fail", "msg": fail_msg, "batch": single_fail}
                         break
@@ -1710,7 +1712,7 @@ class ApiClient:
             while time.time() < refill_deadline:
                 failed_items = []
                 for r in results:
-                    if r.get("status") in ("fail", "error"):
+                    if r.get("status") in ("fail", "error", "partial"):
                         failed_items.extend(r.get("batch") or [])
                 if not failed_items:
                     break
@@ -1792,7 +1794,7 @@ class ApiClient:
             })
 
         # ---------- 下单后验证 ----------
-        api_success_count = sum(1 for r in results if r.get("status") == "success")
+        api_success_count = sum(1 for r in results if r.get("status") in ("success", "partial"))
         verify_success_count = None
         verify_success_items = []
         verify_failed_items = []
