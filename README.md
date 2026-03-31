@@ -1,76 +1,56 @@
 # 羽毛球场地抢票助手
 
-这是一个用于自动抢定羽毛球场地的工具集合。
-
-## 迁移与安装说明
-
-如果你将本项目复制到了新的电脑上，请按照以下步骤配置环境：
-
-1.  **安装 Python**
-    - 请确保电脑上安装了 Python 3.8 或以上版本。
-
-2.  **安装依赖库**
-    - 打开终端（Terminal 或 CMD），进入本项目文件夹。
-    - 运行以下命令安装所需库：
-      ```bash
-      pip install -r requirements.txt
-      ```
-
-3.  **准备配置文件（必做）**
-    - 将 `web_booker/config.example.json` 复制为 `web_booker/config.json`。
-    - 填入你自己的 Token（必填）以及 Cookie（可选，建议保留）。
-    - 运行时读取 `web_booker/config.json`。
-
-4.  **准备任务文件（可选）**
-    - 将 `web_booker/tasks.example.json` 复制为 `web_booker/tasks.json`。
-    - 运行时读取 `web_booker/tasks.json`。
-
-## 如何运行
-
-本项目包含多个脚本，主要使用 Web 界面版：
-
-### Web 界面版 (推荐)
-启动 Web 服务后，可以在浏览器中图形化操作。
-```bash
-python web_booker/app.py
-```
-启动后访问：http://127.0.0.1:5000
-
-### 命令行工具
-- **自动抢票脚本**: `python auto_badminton.py`
-- **智能策略脚本**: `python smart_booker.py`
-- **分步向导脚本**: `python step_by_step_booker.py`
+核心目标：在高峰期抢指定日期、指定时间段的场地。尽量按「同一时段连号场地」来选格；若矩阵里凑不出连号，应退而求其次用「同一时段多块散场」把缺口补上，绝对禁止有场地但不提交请求。每次拉矩阵，只要包含符合需求的，必须至少拿1块。
 
 ## 注意事项
-- 健康检查当前主要验证“查询链路”（能否获取场地状态）；查询正常不等于下单一定成功。
-- 下单失败除了 Token/Cookie 外，还可能受风控、并发抢占、时间窗口、参数配置影响。
-- 抢票参数较多时，建议先用一组“稳妥起点”：`retry_interval=1.0`、`aggressive_retry_interval=1.0`、`batch_retry_times=2`、`batch_retry_interval=0.5`、`locked_retry_interval=0.5~1.0`、`locked_max_seconds=60`、`open_retry_seconds=20`，再根据实际成功率微调。
-- 请确保 `web_booker/config.json` 中 Token 是最新有效值；Cookie 可选。
-- 建议将 `web_booker/config.json` / `web_booker/tasks.json` 视为本地运行数据文件（默认已被 `.gitignore` 忽略）。
-- 不要在仓库里提交真实的 Token、Cookie、手机号或短信 API Key。
 
-- 新增状态采样接口 `GET /api/state-sampler`：按秒聚合场地 `state` 计数并给出 `recommended_locked_states` 建议（仅统计数量，不记录个人敏感数据）。
-- 新增独立补订任务接口：`/api/refill-tasks`（GET/POST/DELETE）与 `/api/refill-tasks/<id>/run`（POST）。补订任务会落盘到 `web_booker/refill_tasks.json`，服务重启后仍可继续。
-- 任务中心已增加「🧩 独立 Refill 补订」前端入口，可直接创建/运行/删除补订任务（兼容手机端布局）。
-- Refill 列表日期显示包含周几，便于按周周期排班。
-- Refill 编辑弹层支持“保存并启动”，用于改完参数后立即恢复轮询。
-- Refill 面板中「立即执行1轮」是一次性手动触发；持续补订依赖任务本身启用状态 + interval 自动轮询。
-- 若点击后“看起来没反应”，优先查看任务条目中的“最近结果/最近执行时间”与后台 `[refill#任务ID|manual]` 日志。
-- Refill 任务支持：编辑弹层、复制、启用/停用、截止时间（到点自动停用）、最近 10 次执行记录（环形保留）。
-- 截止时间支持两种模式：固定时间（absolute）与开场前N小时（before_start）。
-- Refill 每次补订成功（success/partial 且存在成功项）会发送通知（短信/PushPlus，按已有配置），并做同任务同分钟节流避免短信风暴。
-- Refill 到达截止时间自动停用时也会发送通知，避免任务静默停止。
-- `/api/logs` 支持按 `refill_id`、`status_kw` 与 `window_min` 组合过滤（示例：`/api/logs?refill_id=1772...&status_kw=success&window_min=15`）。
-- `window_min` 过滤已兼容跨天边界（如 00:03 查询最近15分钟可包含前一日 23:5x 日志）。
-- 运行复盘接口 `/api/run-metrics` 默认仅统计“锁定→解锁”样本（`unlock_only=1`），聚焦真正抢票窗口；仅在排查时再切换全样本。
-- `/api/run-metrics` 的 `recommendation` 为“建议值，不自动写回配置”，并附带 `confidence/sample_size/min_sample_size` 便于判断建议可信度。
-- 建议将“持续补齐”主要交给独立 Refill 任务；任务模式默认选中 Pipeline（推荐），同时保留普通稳定模式与智能连号作为兜底；其中 pipeline 内 refill 仅保留实验开关，默认不建议启用，以降低双路径并发干扰。
-- 主任务增加“任务锁”：同一任务执行中再次触发会自动跳过并记录日志，避免重复并发抢占。
-- Pipeline 新增轻量事件切换：连续多轮缺口未改善时可提前从 continuous 切换到 random。
-- “达标后立即停止”建议开启：达到目标数量后立即结束，减少无效并发。
-- 新增 `biz_fail_cooldown_seconds`：pipeline 中业务失败组合冷却秒数，短时间内优先避开业务失败组合、优先重放网络失败组合。
-- 如果遇到 SSL 报错，`app.py` 中已配置自动跳过验证。
+用户需求目标：满足「指定块数 + 指定时段 + 偏好区间」即可，不要求必须固定场号，优先连续号码。
 
+代码不要搞的复杂，要简单清晰，直接实现功能。避免弄很多分支，弄很多开关。
+---
+
+## 订场核心规则与经验教训（避免反复犯同样错误）
+
+以下为根据多次 12 点抢场实战复盘归纳的**规则、经验与教训**，供配置与排错时对照。
+
+1. **「too fast操作过快」的本质**  
+   直接进行提交订单 submit 就可能被直接判为「操作过快」并拒绝。必须在提交订单前几秒钟有一个查询矩阵get_matrix的请求，一次查询矩阵后，可以分多批提交，批次之间的时间间隔应为5s左右，不得过短，否则会引发“数据错误，请重试”。过长也不可以，但目前未测最大时间是多少。
+
+2. **批次post格式要求**  
+   同一批的记录数量必须小于等于账号最大可预订场地数（一般是1块、2块、3块）
+   单条记录支持1个场地+连续时间段的格式，比如 10号 开始时间20点 结束时间22点。
+   假如当前账号支持2块场地，则提交的数据如下，一批即可。如果把场地拆成独立小块为一条记录，则会有4条记录，只能2块一批，发两批。
+   fieldinfo（URL 解码后的 JSON 字面量）:
+[
+  {
+    "day": "2026-04-05",
+    "oldMoney": 200,
+    "startTime": "18:00",
+    "endTime": "20:00",
+    "placeShortName": "mdb15",
+    "name": "木地板15",
+    "stageTypeShortName": "ymq",
+    "newMoney": 200
+  },
+  {
+    "day": "2026-04-05",
+    "oldMoney": 200,
+    "startTime": "18:00",
+    "endTime": "20:00",
+    "placeShortName": "mdb16",
+    "name": "木地板16",
+    "stageTypeShortName": "ymq",
+    "newMoney": 200
+  }
+]
+
+3. **首矩阵要尽早拿到，拿到后立即发订单**  
+   黄金窗口只有几十秒，拿到矩阵是最重要的，期间网络的延时比较严重，程序应该设计足够的超时时间，避免自己过早放弃，拿到矩阵后立即发订单。
+
+4. **“接口已 success”基本上99%成功**  
+   只有接口明确返回错误意义：操作过快是缺少前置的get_matrix，数据错误是选型错误，日期错误大多是已经被预订了。永远不要用mine覆盖（include_mine_overlay）判断是否被我预订。
+
+矩阵状态：1-available；2-mine；4-booked；6-locked
 
 ## 发布前自检（推荐）
 
@@ -85,90 +65,319 @@ print('template syntax ok')
 PY
 ```
 
-这样可以在启动前尽早发现 `if/endif` 配对错误。
-
-## 多 PR 冲突处理（推荐流程）
-
-当存在多个未合并 PR 且改动重叠时，建议先在集成分支处理，不要直接在主分支逐个硬合。
-
-**最简 5 步（可直接照做）**：
-
-1. 检查工作区干净：`git status --short`
-2. 创建集成分支：`git checkout -b integration/conflict-resolve-$(date +%Y%m%d) origin/main`
-3. 生成重叠矩阵：`bash scripts/pr_diff_matrix.sh 101 111 114 115 122`
-4. 以覆盖最全 PR 为主线（常见是 #122），其它 PR 仅摘取增量提交。
-5. 每一批冲突解决后都执行语法检查与关键链路回归，再继续下一批。
-
-详细作战手册（含预期输出、故障处理、回滚步骤）见：`docs/PR_CONFLICT_RESOLUTION_PLAYBOOK.md`。
 
 
 ## 抢订成功率提升计划（窗口 30-60 秒）
 
-### 需求本质
-在开票/解锁瞬间，用最短关键路径完成「完整场地（如 2 块 * 2 小时）」下单，并避免重试风暴导致的自我拥塞。
 
-### 关键瓶颈假设
-- 首批提交仍是串行批次循环，后批次天然晚于前批次。
-- 提交路径内存在可前置的 JSON 编码/时间解析，抢票窗口内有 CPU 抖动。
-- 遇到“操作过快”等可重试错误时，固定重试会造成同相位碰撞。
-- 提交后立即高频矩阵/订单确认会挤占连接和服务端配额。
+接口网络数据参考：
+【获取卡信息by场地id】
+GET /easyserpClient/place/getInfStCardByStId?id=2&shopNum=1001&token=oy9Aj1eCxLy5xnWwRmc5eK_7GDRU HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254173b) XWEB/19027 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=051Zp2ll24Wlqh4uWBnl2pDzcc4Zp2l3&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+priority: u=1, i
 
-### 可量化目标（建议基线后 2 周内）
-- 抢订窗口前 3 秒：首个 POST 发出时间（first_submit_ms）下降 40%+
-- 抢订窗口前 10 秒：完整场地达成率提升 15%+
-- 高峰期：提交链路 p99 下降 30%，可重试错误占比下降 20%
 
-### 方案分层
 
-#### 快速止血（本周，低风险）
-1. 并发首发：首批分片并发发送，不再等待上一批返回。
-2. 预计算请求体：将 fieldinfo/body 预构造放到解锁前预热阶段。
-3. 验证降载：提交成功后采用“乐观成功 + 延后确认”，减少前 5 秒查询。
-4. 重试加抖动：对“操作过快/限流”使用指数退避+抖动，避免同时重试。
+HTTP/2 200
+server: nginx
+date: Thu, 26 Mar 2026 04:10:52 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
 
-#### 中期优化（1-2 周）
-1. 多账号并发编排：账号隔离队列，避免单账号串扰。
-2. 目标扩池：候选场地从 2 个扩到 6-8 个，先保“完整场地”成功率。
-3. 参数自适应：根据最近 7 天错误画像动态调整 batch/timeout。
+{"msg":"success","data":{"id":291,"cardShortName":"xwtk5q","lineNumber":1,"infstId":2,"cardName":"校外通卡5q"}}
 
-#### 长期架构（2-4 周）
-1. 触发精度体系：NTP 偏移校准、连接池预热、定点发射。
-2. 统一调度层：优先级队列 + 幂等键 + 熔断/降级策略。
-3. 观测闭环：指标、日志、回放、A/B 试验平台化。
 
-### 建议参数（先灰度）
-```json
-{
-  "initial_submit_batch_size": 2,
-  "batch_min_interval": 1.0,
-  "submit_timeout_seconds": 1.5,
-  "post_submit_skip_sync_orders_query": true,
-  "preselect_enabled": true,
-  "preselect_ttl_seconds": 5.0
-}
-```
+【拉矩阵-已解锁】
+GET /easyserpClient/place/getPlaceInfoByShortName?shopNum=1001&dateymd=2026-03-22&shortName=ymq&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254173b) XWEB/19027 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=051uPrFa1yf9pL0DypHa1mUq5C1uPrFc&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+priority: u=1, i
 
-### 风险与回滚
-- 风险1：并发首发触发风控/封禁；
-  - 失败信号：4xx/风控文案显著上升。
-  - 回滚：关闭并发首发开关，退回串行+更大抖动。
-- 风险2：乐观成功造成“假成功”；
-  - 失败信号：成功回执与最终订单不一致率升高。
-  - 回滚：恢复“成功后单次轻量确认”，禁用高频确认。
-- 风险3：超时过短导致误杀慢成功；
-  - 失败信号：timeout 比例高但最终成功率下降。
-  - 回滚：timeout 从 1.5 回调至 2.0/2.2。
+返回数据
 
-### 评估结论（必要性 / 可行性 / 优先级）
-- A 并发首发：必要性高，可行性高，优先级 P0。
-- B 预计算 Body：必要性中高，可行性高，优先级 P0。
-- C 增大首批 batch：必要性高（若接口支持多场合单），可行性中高，优先级 P1。
-- D 验证由重变轻：必要性高，可行性高，优先级 P0。
-- E “2块2小时”专项配置：必要性高，可行性高，优先级 P0（配置先行）。
+HTTP/2 200
+server: nginx
+date: Sun, 22 Mar 2026 14:43:55 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
 
-### 实施清单（待确认后执行）
-1. 增加 `concurrent_initial_submit_enabled` 与线程池并发首发（可开关）。
-2. 增加提交体预构造缓存（按日期+组合键）。
-3. 增加 `post_submit_verify_delay_seconds`，将确认后置。
-4. 新增指标：first_submit_ms / first_success_ms / retryable_fail_rate / final_complete_rate。
-5. 小流量灰度（20%任务）+ 一键回滚配置。
+{"msg":"success","data":{"times":["10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00"],"placeArray":[{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":3,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq1","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":1,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球1","stagetypeshortname":"ymq","maxUserCount":1,"id":68,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":201,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq2","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":2,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球2","stagetypeshortname":"ymq","maxUserCount":1,"id":69,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":2},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":2},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":399,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq3","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":3,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球3","stagetypeshortname":"ymq","maxUserCount":1,"id":70,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":597,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq4","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":4,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球4","stagetypeshortname":"ymq","maxUserCount":1,"id":71,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":795,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq5","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":5,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球5","stagetypeshortname":"ymq","maxUserCount":1,"id":72,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":993,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq6","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":6,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球6","stagetypeshortname":"ymq","maxUserCount":1,"id":73,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":1191,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq7","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":7,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球7","stagetypeshortname":"ymq","maxUserCount":1,"id":74,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":1192,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq8","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":8,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球8","stagetypeshortname":"ymq","maxUserCount":1,"id":75,"state":"下线","vValue":125}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":992,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq9","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":9,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球9","stagetypeshortname":"ymq","maxUserCount":1,"id":76,"state":"下线","vValue":129}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":798,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq10","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":10,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球10","stagetypeshortname":"ymq","maxUserCount":1,"id":77,"state":"下线","vValue":127}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":597,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq11","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":11,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球11","stagetypeshortname":"ymq","maxUserCount":1,"id":78,"state":"下线","vValue":131}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":402,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq12","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":12,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球12","stagetypeshortname":"ymq","maxUserCount":1,"id":79,"state":"下线","vValue":133}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":198,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq13","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":13,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球13","stagetypeshortname":"ymq","maxUserCount":1,"id":80,"state":"下线","vValue":136}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":2},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":2},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":4,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq14","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":14,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球14","stagetypeshortname":"ymq","maxUserCount":1,"id":81,"state":"下线","vValue":136}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":2,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb15","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":15,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板15","stagetypeshortname":"ymq","maxUserCount":1,"id":82,"state":"下线","doorId":"","vValue":247}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":200,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb16","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":16,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板16","stagetypeshortname":"ymq","maxUserCount":1,"id":83,"state":"下线","doorId":"","vValue":246}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":398,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb17","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":17,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板17","stagetypeshortname":"ymq","maxUserCount":1,"id":84,"state":"下线","doorId":"","vValue":248}}],"dayType":"nonVacations","size":0,"maxsize":0,"isContinuous":null,"continuousSize":"3","tbAppointConfigs":[{"refundPercentage":100,"shopnum":"1001","canceltime":24,"cancleTimeType":1,"appointmenttime":6,"id":2,"lastDayOpenTime":"12:00:00","timetype":0,"type":"1","ifApprove":"0","shortname":"ymq"}]}}
+
+
+【拉矩阵-锁定】
+
+GET /easyserpClient/place/getPlaceInfoByShortName?shopNum=1001&dateymd=2026-03-31&shortName=ymq&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254173b) XWEB/19027 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=051uPrFa1yf9pL0DypHa1mUq5C1uPrFc&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+priority: u=1, i
+
+返回数据
+HTTP/2 200
+server: nginx
+date: Sun, 22 Mar 2026 14:45:28 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":{"times":["10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00","22:00"],"placeArray":[{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":3,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq1","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":1,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球1","stagetypeshortname":"ymq","maxUserCount":1,"id":68,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":201,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq2","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":2,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球2","stagetypeshortname":"ymq","maxUserCount":1,"id":69,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":399,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq3","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":3,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球3","stagetypeshortname":"ymq","maxUserCount":1,"id":70,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":597,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq4","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":4,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球4","stagetypeshortname":"ymq","maxUserCount":1,"id":71,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":795,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq5","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":5,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球5","stagetypeshortname":"ymq","maxUserCount":1,"id":72,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":993,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq6","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":6,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球6","stagetypeshortname":"ymq","maxUserCount":1,"id":73,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":1191,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq7","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":7,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球7","stagetypeshortname":"ymq","maxUserCount":1,"id":74,"state":"下线","vValue":30}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":1192,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq8","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":8,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球8","stagetypeshortname":"ymq","maxUserCount":1,"id":75,"state":"下线","vValue":125}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":992,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq9","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":9,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球9","stagetypeshortname":"ymq","maxUserCount":1,"id":76,"state":"下线","vValue":129}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":798,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq10","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":10,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球10","stagetypeshortname":"ymq","maxUserCount":1,"id":77,"state":"下线","vValue":127}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":597,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq11","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":11,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球11","stagetypeshortname":"ymq","maxUserCount":1,"id":78,"state":"下线","vValue":131}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":402,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq12","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":12,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球12","stagetypeshortname":"ymq","maxUserCount":1,"id":79,"state":"下线","vValue":133}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":198,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq13","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":13,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球13","stagetypeshortname":"ymq","maxUserCount":1,"id":80,"state":"下线","vValue":136}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":6},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":6},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":6}],"projectName":{"shopNum":"1001","hValue":4,"aAtype":0,"curUserCount":1,"stagestate":"0","tipState":0,"billNum":"","shortname":"ymq14","tipCount":0,"isHorizontal":1,"stagetype":"羽毛球","hardwareId":14,"price":0.0,"stayTime":"0","isWeb":1,"name":"羽毛球14","stagetypeshortname":"ymq","maxUserCount":1,"id":81,"state":"下线","vValue":136}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":2,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb15","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":15,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板15","stagetypeshortname":"ymq","maxUserCount":1,"id":82,"state":"下线","doorId":"","vValue":247}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":200,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb16","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":16,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板16","stagetypeshortname":"ymq","maxUserCount":1,"id":83,"state":"下线","doorId":"","vValue":246}},{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"12:00","starttime":"11:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"13:00","starttime":"12:00","state":4},{"oldMoney":80.0,"money":80.0,"endtime":"14:00","starttime":"13:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"15:00","starttime":"14:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"16:00","starttime":"15:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"17:00","starttime":"16:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"18:00","starttime":"17:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"19:00","starttime":"18:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"20:00","starttime":"19:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"21:00","starttime":"20:00","state":4},{"oldMoney":100.0,"money":100.0,"endtime":"22:00","starttime":"21:00","state":4}],"projectName":{"shopNum":"1001","hValue":398,"aAtype":0,"curUserCount":0,"stagestate":"0","tipState":0,"billNum":"","shortname":"mdb17","tipCount":0,"isHorizontal":1,"masterId":"","stagetype":"羽毛球","hardwareId":17,"price":0.0,"stayTime":"0","isWeb":1,"name":"木地板17","stagetypeshortname":"ymq","maxUserCount":1,"id":84,"state":"下线","doorId":"","vValue":248}}],"dayType":"nonVacations","size":0,"maxsize":0,"isContinuous":null,"continuousSize":"3","tbAppointConfigs":[{"refundPercentage":100,"shopnum":"1001","canceltime":24,"cancleTimeType":1,"appointmenttime":6,"id":2,"lastDayOpenTime":"12:00:00","timetype":0,"type":"1","ifApprove":"0","shortname":"ymq"}]}}
+
+
+
+
+
+
+【getInfPmHistoryByUser】
+GET /easyserpClient/place/getInfPmHistoryByUser?id=2&shopNum=1001&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc&day=2026-03-10 HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:40:17 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":[{"stageCount":0,"preType":0,"shopNum":"1001","personnum":0,"premerother":"无","billNum":"0002202603051616192278540740118","prestatus":"等待","payType":"会员卡支付","stagenum":"ymq8/羽毛球8","preCloseType":"","itemorgoodname":"羽毛球","readycashnum":80.0,"readydate":"2026-03-10","readystarttime":"12:00:00","id":167367,"jsonArray":[],"preMount":0.0,"serialnumber":"xscd1001225965276","asscardnum":"0873612446","preTime":"2026-03-05 16:16:19.0","noAssDealnum":0,"readyendtime":"13:00:00","itemorgoodshortname":"ymq","phone":"13910424189","itemorgoodnum":"1.0","name":"史栋梁3W","shortName":"bjwgy10429","payStatus":0}]}
+
+【getInfStCardByStId】
+GET /easyserpClient/place/getInfStCardByStId?id=2&shopNum=1001&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:40:17 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":null}
+
+【getOfferInfo获取请求】
+POST /easyserpClient/common/getOfferInfo HTTP/2
+host: gymvip.bfsu.edu.cn
+content-length: 595
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+content-type: application/x-www-form-urlencoded
+origin: https://gymvip.bfsu.edu.cn
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc&payMoney=200.00&shopNum=1001&projectType=3&projectInfo=%5B%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq4%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%834%22%2C%22stageTypeShortName%22%3A%22ymq%22%7D%2C%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq6%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%836%22%2C%22stageTypeShortName%22%3A%22ymq%22%7D%5D
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:55:44 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+access-control-allow-origin: https://gymvip.bfsu.edu.cn
+vary: Origin
+access-control-allow-credentials: true
+content-encoding: gzip
+
+{"msg":"success","data":{"memberOffer":0.0,"xianshi":[{"oldMoney":100.0,"placeShortName":"ymq4","newMoney":100.0,"startTime":"21:00","endTime":"22:00","day":"2026-03-09"},{"oldMoney":100.0,"placeShortName":"ymq6","newMoney":100.0,"startTime":"21:00","endTime":"22:00","day":"2026-03-09"}],"memberOfferIds":[],"neibu":[{"oldMoney":100.0,"placeShortName":"ymq4","newMoney":100.0,"startTime":"21:00","endTime":"22:00","day":"2026-03-09"},{"oldMoney":100.0,"placeShortName":"ymq6","newMoney":100.0,"startTime":"21:00","endTime":"22:00","day":"2026-03-09"}],"disCounts":[],"cardsOffer":[],"dateDiscount":0.0,"dateDiscountIds":[]}}
+
+【getUseCardInfo获取用户卡信息】
+POST /easyserpClient/common/getUseCardInfo HTTP/2
+host: gymvip.bfsu.edu.cn
+content-length: 579
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+content-type: application/x-www-form-urlencoded
+origin: https://gymvip.bfsu.edu.cn
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc&shopNum=1001&projectType=3&projectInfo=%5B%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq4%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%834%22%2C%22stageTypeShortName%22%3A%22ymq%22%7D%2C%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq6%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%836%22%2C%22stageTypeShortName%22%3A%22ymq%22%7D%5D
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:55:44 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+access-control-allow-origin: https://gymvip.bfsu.edu.cn
+vary: Origin
+access-control-allow-credentials: true
+content-encoding: gzip
+
+{"msg":"success","data":{"koci":[],"universal":[{"delaypay":0.0,"vacaTimes":0,"weChatPriceEx":0.0,"shortcardname":"xwcw3w","vacLeftDays":0,"kafei":0.0,"cardcash":3920.0,"presentMoney":0.0,"cardindex":"0873612446","cardtime":"","shortname":"bjwgy10429","zengsongdian":0.0,"money":0.0,"cardname":"校外单位3w","identity":0,"name":"史栋梁3W","id":5759,"piliangfakaguazhang":0.0,"transLeft":0.0,"shouChuJinE":0.0}]}}
+
+【预约场地reservationPlace】
+POST /easyserpClient/place/reservationPlace HTTP/2
+host: gymvip.bfsu.edu.cn
+content-length: 752
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+content-type: application/x-www-form-urlencoded
+origin: https://gymvip.bfsu.edu.cn
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc&shopNum=1001&fieldinfo=%5B%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq4%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%834%22%2C%22stageTypeShortName%22%3A%22ymq%22%2C%22newMoney%22%3A100%7D%2C%7B%22day%22%3A%222026-03-09%22%2C%22oldMoney%22%3A100%2C%22startTime%22%3A%2221%3A00%22%2C%22endTime%22%3A%2222%3A00%22%2C%22placeShortName%22%3A%22ymq6%22%2C%22name%22%3A%22%E7%BE%BD%E6%AF%9B%E7%90%836%22%2C%22stageTypeShortName%22%3A%22ymq%22%2C%22newMoney%22%3A100%7D%5D&cardStId=289&oldTotal=200.00&cardPayType=0&type=%E7%BE%BD%E6%AF%9B%E7%90%83&offerId=&offerType=&total=200.00&premerother=&cardIndex=0873612446
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:55:50 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+access-control-allow-origin: https://gymvip.bfsu.edu.cn
+vary: Origin
+access-control-allow-credentials: true
+content-encoding: gzip
+
+{"msg":"success","data":{"times":2,"type":"cardTimes"}}
+
+【拉取订单getPlaceOrde】
+GET /easyserpClient/place/getPlaceOrder?pageNo=0&pageSize=4&shopNum=1001&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:50:43 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":[{"stageCount":0,"preType":0,"shopNum":"1001","personnum":0,"premerother":"无","billNum":"0002202603080917431214758136400","prestatus":"等待","payType":"会员卡支付","stagenum":"羽毛球4","preCloseType":"","itemorgoodname":"羽毛球","readycashnum":200.0,"readydate":"2026-03-09","readystarttime":"21:00:00","infSt":{"continuousSize":"3","setPre":"羽毛球黄.jpg","shopNum":"1001","yfyj":0.0,"num":17,"businessHours":12.0,"picSizeW":100.0,"fieldimg":"beiwai2/place/badminton.jpg","shortname":"ymq","setUsed":"羽毛球绿.jpg","showUnit":1,"setFix":"羽毛球红.jpg","size":0,"price":0.0,"isWeb":1,"name":"羽毛球","picSizeH":100.0,"delayTime":"","id":2,"state":"上线","maxsize":0,"setIdle":"羽毛球绿.jpg","workStartTime":"10:00:00"},"id":167734,"jsonArray":[{"start":"21:00:00","reversionDate":"2026-03-09","siteName":"羽毛球4","end":"22:00:00"},{"start":"21:00:00","reversionDate":"2026-03-09","siteName":"羽毛球6","end":"22:00:00"}],"preMount":0.0,"serialnumber":"xscd1001475983818","asscardnum":"0873612446","preTime":"2026-03-08 09:17:43","showStatus":"0","noAssDealnum":0,"readyendtime":"22:00:00","itemorgoodshortname":"ymq","phone":"13910424189","itemorgoodnum":"2","name":"史栋梁3W","shortName":"bjwgy10429","payStatus":0},{"stageCount":0,"preType":0,"shopNum":"1001","personnum":0,"premerother":"无","billNum":"0002202603080911045636635684573","prestatus":"取消","payType":"会员卡支付","stagenum":"羽毛球4","preCloseType":"","itemorgoodname":"羽毛球","readycashnum":200.0,"readydate":"2026-03-09","readystarttime":"21:00:00","infSt":{"continuousSize":"3","setPre":"羽毛球黄.jpg","shopNum":"1001","yfyj":0.0,"num":17,"businessHours":12.0,"picSizeW":100.0,"fieldimg":"beiwai2/place/badminton.jpg","shortname":"ymq","setUsed":"羽毛球绿.jpg","showUnit":1,"setFix":"羽毛球红.jpg","size":0,"price":0.0,"isWeb":1,"name":"羽毛球","picSizeH":100.0,"delayTime":"","id":2,"state":"上线","maxsize":0,"setIdle":"羽毛球绿.jpg","workStartTime":"10:00:00"},"id":167732,"jsonArray":[{"start":"21:00:00","reversionDate":"2026-03-09","siteName":"羽毛球4","end":"22:00:00"}],"preMount":0.0,"serialnumber":"xscd1000509454220","asscardnum":"0873612446","preTime":"2026-03-08 09:11:04","showStatus":"1","noAssDealnum":0,"readyendtime":"22:00:00","itemorgoodshortname":"ymq","phone":"13910424189","itemorgoodnum":"2","name":"史栋梁3W","shortName":"bjwgy10429","payStatus":0},{"stageCount":0,"preType":0,"shopNum":"1001","personnum":0,"premerother":"无","billNum":"0002202603080154233852707049055","prestatus":"取消","payType":"会员卡支付","stagenum":"羽毛球6","preCloseType":"","itemorgoodname":"羽毛球","readycashnum":100.0,"readydate":"2026-03-09","readystarttime":"21:00:00","infSt":{"continuousSize":"3","setPre":"羽毛球黄.jpg","shopNum":"1001","yfyj":0.0,"num":17,"businessHours":12.0,"picSizeW":100.0,"fieldimg":"beiwai2/place/badminton.jpg","shortname":"ymq","setUsed":"羽毛球绿.jpg","showUnit":1,"setFix":"羽毛球红.jpg","size":0,"price":0.0,"isWeb":1,"name":"羽毛球","picSizeH":100.0,"delayTime":"","id":2,"state":"上线","maxsize":0,"setIdle":"羽毛球绿.jpg","workStartTime":"10:00:00"},"id":167731,"jsonArray":[{"start":"21:00:00","reversionDate":"2026-03-09","siteName":"羽毛球6","end":"22:00:00"}],"preMount":0.0,"serialnumber":"xscd1001778175697","asscardnum":"0873612446","preTime":"2026-03-08 01:54:23","showStatus":"1","noAssDealnum":0,"readyendtime":"22:00:00","itemorgoodshortname":"ymq","phone":"13910424189","itemorgoodnum":"1","name":"史栋梁3W","shortName":"bjwgy10429","payStatus":0},{"stageCount":0,"preType":0,"shopNum":"1001","personnum":0,"premerother":"无","billNum":"0002202603080147095287233073085","prestatus":"取消","payType":"会员卡支付","stagenum":"羽毛球4","preCloseType":"","itemorgoodname":"羽毛球","readycashnum":100.0,"readydate":"2026-03-09","readystarttime":"21:00:00","infSt":{"continuousSize":"3","setPre":"羽毛球黄.jpg","shopNum":"1001","yfyj":0.0,"num":17,"businessHours":12.0,"picSizeW":100.0,"fieldimg":"beiwai2/place/badminton.jpg","shortname":"ymq","setUsed":"羽毛球绿.jpg","showUnit":1,"setFix":"羽毛球红.jpg","size":0,"price":0.0,"isWeb":1,"name":"羽毛球","picSizeH":100.0,"delayTime":"","id":2,"state":"上线","maxsize":0,"setIdle":"羽毛球绿.jpg","workStartTime":"10:00:00"},"id":167730,"jsonArray":[{"start":"21:00:00","reversionDate":"2026-03-09","siteName":"羽毛球4","end":"22:00:00"}],"preMount":0.0,"serialnumber":"xscd1001596014973","asscardnum":"0873612446","preTime":"2026-03-08 01:47:09","showStatus":"1","noAssDealnum":0,"readyendtime":"22:00:00","itemorgoodshortname":"ymq","phone":"13910424189","itemorgoodnum":"1","name":"史栋梁3W","shortName":"bjwgy10429","payStatus":0}]}
+
+
+【取消订单详情】
+GET /easyserpClient/place/getCanclePlaceMoney?billNum=0002202603080917431214758136400&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+HTTP/2 200
+server: nginx
+date: Sun, 08 Mar 2026 01:51:53 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":{"payMoney":200.0,"reFundMoney":200.0}}
+
+【canclePlaceAppointmen取消预约】
+POST /easyserpClient/place/canclePlaceAppointment HTTP/2
+host: gymvip.bfsu.edu.cn
+content-length: 121
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf2541739) XWEB/18955 Flue
+accept: application/json, text/plain, */*
+content-type: application/x-www-form-urlencoded
+origin: https://gymvip.bfsu.edu.cn
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=031fl30w34wfE63VJP3w3RqbEj3fl30v&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+cookie: JSESSIONID=44A44BE982492EA91F81E5FCA12BCAE0
+priority: u=1, i
+
+outtradeno=0002202603080917431214758136400&token=oy9Aj1Y7gmOS31lnOQgkXiEvgoyc&reason=%E5%A4%A9%E6%B0%94%E5%8E%9F%E5%9B%A0
+
+
+【获取卡片信息gsq】
+
+GET /easyserpClient/card/getCardByUser?shopNum=1001&token=oy9Aj1eCxLy5xnWwRmc5eK_7GDRU HTTP/2
+host: gymvip.bfsu.edu.cn
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254173b) XWEB/19027 Flue
+accept: application/json, text/plain, */*
+sec-fetch-site: same-origin
+sec-fetch-mode: cors
+sec-fetch-dest: empty
+referer: https://gymvip.bfsu.edu.cn/easyserp/index.html?code=051Zp2ll24Wlqh4uWBnl2pDzcc4Zp2l3&state=123
+accept-encoding: gzip, deflate, br
+accept-language: zh-CN,zh;q=0.9
+priority: u=1, i
+
+
+HTTP/2 200
+server: nginx
+date: Thu, 26 Mar 2026 05:14:29 GMT
+content-type: application/json;charset=UTF-8
+x-application-context: easyserpClient:81
+content-encoding: gzip
+
+{"msg":"success","data":[{"vacaTimes":0,"vacLeftDays":0,"shopNum":"1001","infCs":{"cardvactiondays":0,"cardconsumfield":"0/1/2/3/4/5/6","conTimeOneWeek":0,"reduCardInte":0,"limiNum":"","cardconsumtimefield":"00:00/00:00","vacaCard":"否","cardalarmcash":0.0,"changePswSendMsg":"0","id":49,"cashfortime":0.0,"scoreValue":0.0,"vactiontime":0,"warnNum":"","cardconsumnum":0,"conTimeOneMonth":0,"ifreturncard":"否","presentMoney":0.0,"shortname":"xwtk5q","integralType":0,"cardneedcash":0.0,"enddate":0,"infC":[],"name":"校外通卡5q","useStoreInte":0.0,"isAvailable":"是","transSet":"否","sametimeconnum":0,"ifhastime":"否","cardcash":5000.0,"maxAvailableDays":0,"needValue":0,"overdueAction":0,"payBillSendMsg":"0","cardtype":"储值次卡","cardcashrate":0.0,"cardalarmtime":0.0,"kafei":0.0,"cardprice":5010.0,"minConsum":0.0,"transdate":1598544000000,"noMoneyNoRebate":"否","preSale":"0","needMoneyOne":0,"consumInteValue":0.0,"cardleveltype":"","ifAllShop":"否","addCashSendMsg":"0","ifdirect":"否"},"masterCardNum":"","cardcash":10015.0,"cardtime":"","operator":"","preActiveDate":1246464000000,"array":[],"cardstatus":"激活","cardname":"校外通卡5q","shouChuCiShu":"","identity":0,"vin":"","id":1626,"piliangfakaguazhang":0.0,"cardtype":"储值次卡","casher":"","weiXinNum":"","shouChuJinE":5000.0,"direction":"","weChatPriceEx":0.0,"delaypay":0.0,"isLabel":"","shortcardname":"xwtk5q","kafei":0.0,"batchNum":"","presentMoney":0.0,"transdate":"2009-07-02","cardindex":"2820770876","shortname":"bjwgy2043","zengsongdian":0.0,"armIp":"","activedate":"2009-07-02","cardtimePrice":"","cardfaceindex":"","money":0.0,"name":"郭素芹","transLeft":0.0,"remarks":"","cardpassword":"","formerCardNum":""}]}
+

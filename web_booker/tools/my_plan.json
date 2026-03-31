@@ -1,0 +1,13 @@
+{
+  "_comment": "复制为 my_plan.json 后改 date / place / time；场地时段须与矩阵可约一致。",
+  "date": "2026-04-05",
+  "batches": [
+    [
+      { "place": "15", "time": "20:00" },
+      { "place": "15", "time": "21:00" }
+    ],
+    [{ "place": "16", "time": "20:00" }],
+    [{ "place": "8", "time": "21:00" }],
+    [{ "place": "17", "time": "21:00" }]
+  ]
+}

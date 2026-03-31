@@ -1,0 +1,96 @@
+{
+  "phase": "phase0_server_multi_post",
+  "generated_at_utc": "2026-03-30T06:26:53.682896+00:00",
+  "date": "2026-04-05",
+  "dry_run": false,
+  "delivery_min_post_interval_seconds": 4.0,
+  "warmup_matrix": {
+    "elapsed_ms": 1208,
+    "error": null,
+    "meta": {
+      "mine_overlay_ok": false,
+      "mine_slots_count": 0,
+      "mine_overlay_error": "首轮加速模式：跳过mine覆盖",
+      "date_booking_scope": "unlocked",
+      "last_day_open_time": "12:00:00"
+    },
+    "matrix_keys_sample": [
+      "1",
+      "10",
+      "11",
+      "12",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ]
+  },
+  "posts": [
+    {
+      "batch_index": 0,
+      "items": [
+        {
+          "place": "15",
+          "time": "20:00"
+        },
+        {
+          "place": "15",
+          "time": "21:00"
+        }
+      ],
+      "field_info_count": 2,
+      "total_money": 200,
+      "elapsed_ms": 415,
+      "ok": true,
+      "status_code": 200,
+      "raw_message": "{'times': 2, 'type': 'cardTimes'}",
+      "raw_text_snippet": "{\"msg\":\"success\",\"data\":{\"times\":2,\"type\":\"cardTimes\"}}",
+      "classified_action": "stop_success",
+      "classified_bucket": "success",
+      "terminal_reason": "business_success"
+    },
+    {
+      "batch_index": 1,
+      "items": [
+        {
+          "place": "16",
+          "time": "20:00"
+        }
+      ],
+      "field_info_count": 1,
+      "total_money": 100,
+      "elapsed_ms": 533,
+      "ok": true,
+      "status_code": 200,
+      "raw_message": "{'times': 1, 'type': 'cardTimes'}",
+      "raw_text_snippet": "{\"msg\":\"success\",\"data\":{\"times\":1,\"type\":\"cardTimes\"}}",
+      "classified_action": "stop_success",
+      "classified_bucket": "success",
+      "terminal_reason": "business_success"
+    },
+    {
+      "batch_index": 2,
+      "items": [
+        {
+          "place": "17",
+          "time": "21:00"
+        }
+      ],
+      "field_info_count": 1,
+      "total_money": 100,
+      "elapsed_ms": 418,
+      "ok": true,
+      "status_code": 200,
+      "raw_message": "{'times': 1, 'type': 'cardTimes'}",
+      "raw_text_snippet": "{\"msg\":\"success\",\"data\":{\"times\":1,\"type\":\"cardTimes\"}}",
+      "classified_action": "stop_success",
+      "classified_bucket": "success",
+      "terminal_reason": "business_success"
+    }
+  ],
+  "conclusion_hint": "各批均为 stop_success：同会话多批 POST 均被服务端接受（请以订单页复核）。"
+}

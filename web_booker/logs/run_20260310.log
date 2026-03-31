@@ -1,0 +1,557 @@
+[13:06:30] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=13:08:00
+[13:08:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[13:08:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[13:08:00] 🕒 [时间对齐] server_offset=1.893s, base_run=2026-03-10 13:08:00, target_date=2026-03-14
+[13:08:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[13:08:00] [极速订场] 使用新建 session, worker_pool_size=2
+[13:08:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=False workers=2 burst_win=1.0s round_interval=0.25s rate_limit_backoff=1.7s budget=20.0s
+[13:08:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[13:08:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[13:08:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[13:08:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[13:08:01] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '16', 'time': '21:00'}]
+[13:08:01] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[13:08:01] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:08:01] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[13:08:02] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[13:08:03] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:08:03] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['min_backoff_continue']
+[13:08:04] [极速订场] 第4轮 lane=rate_limit 本轮发送1个请求 (累计已发3次)
+[13:08:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:08:04] [极速订场] 第4轮 完成 总请求数=4 本轮结果: ['min_backoff_continue']
+[13:08:06] [极速订场] 第5轮 lane=rate_limit 本轮发送1个请求 (累计已发4次)
+[13:08:06] [极速订场] 第5轮 完成 总请求数=5 本轮结果: ['switch_backup']
+[13:08:06] [极速订场] 结束 status=fail(payload_fail) 总请求数=5 服务端原文: '数据错误，请重试'
+[13:08:06] 📧 正在发送短信通知给: ['13910424189']
+[13:08:07] 📧 短信接口返回: [0] 发送成功
+[13:08:07] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[13:08:07] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=5883ms
+[13:08:07] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[13:08:52] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[13:23:35] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=13:25:00
+[13:25:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[13:25:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[13:25:00] 🕒 [时间对齐] server_offset=2.439s, base_run=2026-03-10 13:25:00, target_date=2026-03-14
+[13:25:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[13:25:00] [极速订场] 使用主 session, worker_pool_size=1
+[13:25:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.25s rate_limit_backoff=1.7s budget=20.0s
+[13:25:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[13:25:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[13:25:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[13:25:00] [极速订场] 结束 status=success 总请求数=1 group=primary
+[13:25:00] 📧 正在发送短信通知给: ['13910424189']
+[13:25:01] 📧 短信接口返回: [0] 发送成功
+[13:25:01] 📩 PushPlus 发送成功
+[13:25:01] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=1225ms p95=565ms
+[13:25:01] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[13:25:46] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[13:27:56] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=13:29:00
+[13:29:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[13:29:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[13:29:00] 🕒 [时间对齐] server_offset=2.281s, base_run=2026-03-10 13:29:00, target_date=2026-03-14
+[13:29:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[13:29:00] [极速订场] 使用主 session, worker_pool_size=1
+[13:29:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.25s rate_limit_backoff=1.7s budget=20.0s
+[13:29:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[13:29:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[13:29:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[13:29:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[13:29:01] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[13:29:01] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[13:29:01] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:29:01] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[13:29:02] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[13:29:02] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:29:02] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['min_backoff_continue']
+[13:29:04] [极速订场] 第4轮 lane=rate_limit 本轮发送1个请求 (累计已发3次)
+[13:29:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:29:04] [极速订场] 第4轮 完成 总请求数=4 本轮结果: ['min_backoff_continue']
+[13:29:06] [极速订场] 第5轮 lane=rate_limit 本轮发送1个请求 (累计已发4次)
+[13:29:06] [极速订场] 第5轮 完成 总请求数=5 本轮结果: ['switch_backup']
+[13:29:06] [极速订场] 结束 status=fail(payload_fail) 总请求数=5 服务端原文: '预定失败,请返回重新选择日期'
+[13:29:06] 📧 正在发送短信通知给: ['13910424189']
+[13:29:07] 📧 短信接口返回: [0] 发送成功
+[13:29:07] 📩 PushPlus 发送成功
+[13:29:07] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=6143ms
+[13:29:07] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[13:29:52] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[13:34:20] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=13:35:00
+[13:35:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[13:35:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[13:35:00] 🕒 [时间对齐] server_offset=2.321s, base_run=2026-03-10 13:35:00, target_date=2026-03-14
+[13:35:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[13:35:00] [极速订场] 使用主 session, worker_pool_size=1
+[13:35:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s budget=20.0s
+[13:35:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[13:35:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[13:35:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[13:35:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[13:35:00] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[13:35:00] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[13:35:00] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:35:00] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[13:35:02] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[13:35:02] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:35:02] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['min_backoff_continue']
+[13:35:04] [极速订场] 第4轮 lane=rate_limit 本轮发送1个请求 (累计已发3次)
+[13:35:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:35:04] [极速订场] 第4轮 完成 总请求数=4 本轮结果: ['min_backoff_continue']
+[13:35:06] [极速订场] 第5轮 lane=rate_limit 本轮发送1个请求 (累计已发4次)
+[13:35:06] [极速订场] 第5轮 完成 总请求数=5 本轮结果: ['stop_success']
+[13:35:06] [极速订场] 结束 status=success 总请求数=5 group=backup_1
+[13:35:06] 📧 正在发送短信通知给: ['13910424189']
+[13:35:06] 📧 短信接口返回: [0] 发送成功
+[13:35:07] 📩 PushPlus 发送成功
+[13:35:07] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=6605ms p95=6027ms
+[13:35:07] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[13:35:52] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[13:58:23] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=13:59:00
+[13:59:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[13:59:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[13:59:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-10 13:59:00, target_date=2026-03-14
+[13:59:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[13:59:00] [极速订场] 使用主 session, worker_pool_size=1
+[13:59:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=2.0s budget=20.0s
+[13:59:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[13:59:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[13:59:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[13:59:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[13:59:02] [极速订场] 切组后等待 2.0s 再发下一组
+[13:59:02] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[13:59:02] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[13:59:02] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[13:59:02] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[13:59:04] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[13:59:05] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['stop_success']
+[13:59:05] [极速订场] 结束 status=success 总请求数=3 group=backup_1
+[13:59:05] 📧 正在发送短信通知给: ['13910424189']
+[13:59:05] 📧 短信接口返回: [0] 发送成功
+[13:59:05] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[13:59:05] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=5112ms p95=4508ms
+[13:59:05] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[13:59:50] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:15:18] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:17:00
+[14:17:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:17:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:17:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-10 14:17:00, target_date=2026-03-14
+[14:17:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:17:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:17:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=2.2s budget=20.0s
+[14:17:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:17:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:17:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:17:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:17:02] [极速订场] 切组后等待 2.2s 再发下一组
+[14:17:02] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:17:02] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:17:02] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[14:17:02] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[14:17:04] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[14:17:05] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['stop_success']
+[14:17:05] [极速订场] 结束 status=success 总请求数=3 group=backup_1
+[14:17:05] 📧 正在发送短信通知给: ['13910424189']
+[14:17:05] 📧 短信接口返回: [0] 发送成功
+[14:17:05] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[14:17:05] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=5655ms p95=4853ms
+[14:17:05] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:17:50] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:26:16] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:28:00
+[14:28:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:28:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:28:00] 🕒 [时间对齐] server_offset=2.096s, base_run=2026-03-10 14:28:00, target_date=2026-03-14
+[14:28:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:28:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:28:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=2.5s budget=20.0s
+[14:28:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:28:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:28:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:28:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:28:03] [极速订场] 切组后等待 2.5s 再发下一组
+[14:28:03] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:28:03] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:28:03] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[14:28:03] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[14:28:05] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[14:28:05] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['stop_success']
+[14:28:05] [极速订场] 结束 status=success 总请求数=3 group=backup_1
+[14:28:05] 📧 正在发送短信通知给: ['13910424189']
+[14:28:06] 📧 短信接口返回: [0] 发送成功
+[14:28:06] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[14:28:06] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=6004ms p95=5184ms
+[14:28:06] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:28:51] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:33:47] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:34:00
+[14:34:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:34:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:34:00] 🕒 [时间对齐] server_offset=1.705s, base_run=2026-03-10 14:34:00, target_date=2026-03-14
+[14:34:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:34:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:34:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=3.0s budget=20.0s
+[14:34:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:34:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:34:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:34:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:34:04] [极速订场] 切组后等待 3.0s 再发下一组
+[14:34:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:34:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:34:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[14:34:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[14:34:06] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[14:34:06] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[14:34:06] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '预定失败,请返回重新选择日期'
+[14:34:06] 📧 正在发送短信通知给: ['13910424189']
+[14:34:06] 📧 短信接口返回: [0] 发送成功
+[14:34:06] 📩 PushPlus 发送成功
+[14:34:06] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=5546ms
+[14:34:06] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:34:51] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:35:19] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:36:00
+[14:36:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:36:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:36:00] 🕒 [时间对齐] server_offset=1.904s, base_run=2026-03-10 14:36:00, target_date=2026-03-14
+[14:36:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:36:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:36:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=3.0s budget=20.0s
+[14:36:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:36:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:36:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:36:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:36:04] [极速订场] 切组后等待 3.0s 再发下一组
+[14:36:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:36:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:36:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[14:36:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[14:36:05] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[14:36:06] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['stop_success']
+[14:36:06] [极速订场] 结束 status=success 总请求数=3 group=backup_1
+[14:36:06] 📧 正在发送短信通知给: ['13910424189']
+[14:36:07] 📧 短信接口返回: [0] 发送成功
+[14:36:07] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[14:36:07] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=6231ms p95=5522ms
+[14:36:07] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:36:52] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:39:31] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:40:00
+[14:40:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:40:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:40:00] 🕒 [时间对齐] server_offset=1.845s, base_run=2026-03-10 14:40:00, target_date=2026-03-14
+[14:40:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:40:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:40:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=3.5s budget=20.0s
+[14:40:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:40:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:40:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:40:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:40:04] [极速订场] 切组后等待 3.5s 再发下一组
+[14:40:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:40:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:40:04] [极速订场] too_fast 服务端原文: '操作过快,请稍后重试。'
+[14:40:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['min_backoff_continue']
+[14:40:05] [极速订场] 第3轮 lane=rate_limit 本轮发送1个请求 (累计已发2次)
+[14:40:06] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['stop_success']
+[14:40:06] [极速订场] 结束 status=success 总请求数=3 group=backup_1
+[14:40:06] 📧 正在发送短信通知给: ['13910424189']
+[14:40:07] 📧 短信接口返回: [0] 发送成功
+[14:40:07] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[14:40:07] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=7320ms p95=6007ms
+[14:40:07] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:40:52] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[14:41:47] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=14:42:00
+[14:42:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[14:42:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[14:42:00] 🕒 [时间对齐] server_offset=1.873s, base_run=2026-03-10 14:42:00, target_date=2026-03-14
+[14:42:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[14:42:00] [极速订场] 使用主 session, worker_pool_size=1
+[14:42:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[14:42:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[14:42:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[14:42:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[14:42:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[14:42:04] [极速订场] 切组后等待 4.0s 再发下一组
+[14:42:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[14:42:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[14:42:05] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['stop_success']
+[14:42:05] [极速订场] 结束 status=success 总请求数=2 group=backup_1
+[14:42:05] 📧 正在发送短信通知给: ['13910424189']
+[14:42:06] 📧 短信接口返回: [0] 发送成功
+[14:42:06] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[14:42:06] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=5550ms p95=4631ms
+[14:42:06] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[14:42:51] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[15:23:41] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=15:24:00
+[15:24:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[15:24:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[15:24:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-10 15:24:00, target_date=2026-03-14
+[15:24:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[15:24:00] [极速订场] 使用主 session, worker_pool_size=1
+[15:24:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[15:24:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[15:24:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:24:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[15:24:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:24:05] [极速订场] 切组后等待 4.0s 再发下一组
+[15:24:05] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}, {'place': '16', 'time': '21:00'}]
+[15:24:05] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[15:24:05] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[15:24:05] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:24:09] [极速订场] 切组后等待 4.0s 再发下一组
+[15:24:09] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[15:24:09] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[15:24:09] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[15:24:09] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[15:24:09] 📧 正在发送短信通知给: ['13910424189']
+[15:24:09] 📧 短信接口返回: [0] 发送成功
+[15:24:10] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[15:24:10] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=1ms first_post=1ms first_success=Nonems p95=8529ms
+[15:24:10] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[15:24:55] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[15:33:49] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=15:35:00
+[15:35:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[15:35:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[15:35:00] 🕒 [时间对齐] server_offset=1.566s, base_run=2026-03-10 15:35:00, target_date=2026-03-14
+[15:35:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[15:35:00] [极速订场] 使用主 session, worker_pool_size=1
+[15:35:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[15:35:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[15:35:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:35:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[15:35:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:35:04] [极速订场] 切组后等待 4.0s 再发下一组
+[15:35:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '15', 'time': '21:00'}]
+[15:35:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[15:35:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[15:35:04] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:35:08] [极速订场] 切组后等待 4.0s 再发下一组
+[15:35:08] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[15:35:08] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[15:35:08] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[15:35:08] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[15:35:09] 📧 正在发送短信通知给: ['13910424189']
+[15:35:09] 📧 短信接口返回: [0] 发送成功
+[15:35:09] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[15:35:09] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=8441ms
+[15:35:09] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[15:35:54] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[15:39:19] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=15:41:00
+[15:41:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[15:41:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[15:41:00] 🕒 [时间对齐] server_offset=1.09s, base_run=2026-03-10 15:41:00, target_date=2026-03-14
+[15:41:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '16', 'time': '21:00'}]
+[15:41:00] [极速订场] 使用主 session, worker_pool_size=1
+[15:41:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[15:41:00] [极速订场] 组合 group=primary (主组) items=[{'place': '16', 'time': '21:00'}]
+[15:41:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:41:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[15:41:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:41:05] [极速订场] 切组后等待 4.0s 再发下一组
+[15:41:05] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[15:41:05] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[15:41:05] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[15:41:05] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:41:09] [极速订场] 切组后等待 4.0s 再发下一组
+[15:41:09] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[15:41:09] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[15:41:09] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[15:41:09] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[15:41:09] 📧 正在发送短信通知给: ['13910424189']
+[15:41:09] 📧 短信接口返回: [0] 发送成功
+[15:41:10] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[15:41:10] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=8450ms
+[15:41:10] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[15:41:55] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[15:42:56] [极速订场] 使用主 session, worker_pool_size=1
+[15:42:56] [极速订场] 开始 date=2026-03-14 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.35s rate_limit_backoff=1.8s switch_delay=4.0s budget=15.0s
+[15:42:56] [极速订场] 组合 group=primary (主组合) items=[{'place': '17', 'time': '21:00'}]
+[15:42:56] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:42:56] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[15:42:56] [极速订场] 结束 status=success 总请求数=1 group=primary
+[15:42:56] 📧 正在发送短信通知给: ['13910424189']
+[15:42:57] 📧 短信接口返回: [0] 发送成功
+[15:42:57] 📩 PushPlus 发送成功
+[15:51:05] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=15:53:00
+[15:53:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[15:53:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[15:53:00] 🕒 [时间对齐] server_offset=1.933s, base_run=2026-03-10 15:53:00, target_date=2026-03-14
+[15:53:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[15:53:00] [极速订场] 使用主 session, worker_pool_size=1
+[15:53:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[15:53:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[15:53:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:53:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[15:53:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:53:04] [极速订场] 切组后等待 4.0s 再发下一组
+[15:53:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[15:53:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[15:53:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[15:53:04] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:53:08] [极速订场] 切组后等待 4.0s 再发下一组
+[15:53:08] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[15:53:08] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[15:53:08] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[15:53:08] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[15:53:08] 📧 正在发送短信通知给: ['13910424189']
+[15:53:09] 📧 短信接口返回: [0] 发送成功
+[15:53:09] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[15:53:09] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=8442ms
+[15:53:09] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[15:53:54] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[15:57:29] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=15:59:00
+[15:59:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[15:59:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[15:59:00] 🕒 [时间对齐] server_offset=1.081s, base_run=2026-03-10 15:59:00, target_date=2026-03-14
+[15:59:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[15:59:00] [极速订场] 使用主 session, worker_pool_size=1
+[15:59:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[15:59:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[15:59:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[15:59:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[15:59:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:59:05] [极速订场] 切组后等待 4.0s 再发下一组
+[15:59:05] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[15:59:05] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[15:59:05] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[15:59:05] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[15:59:09] [极速订场] 切组后等待 4.0s 再发下一组
+[15:59:09] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[15:59:09] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[15:59:09] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[15:59:09] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[15:59:09] 📧 正在发送短信通知给: ['13910424189']
+[15:59:09] 📧 短信接口返回: [0] 发送成功
+[15:59:09] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[15:59:09] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=8438ms
+[15:59:09] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[15:59:54] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:01:30] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=16:02:00
+[16:02:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[16:02:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[16:02:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-10 16:02:00, target_date=2026-03-14
+[16:02:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[16:02:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:02:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:02:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[16:02:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[16:02:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[16:02:01] [极速订场] 结束 status=success 总请求数=1 group=primary
+[16:02:01] 📧 正在发送短信通知给: ['13910424189']
+[16:02:01] 📧 短信接口返回: [0] 发送成功
+[16:02:01] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[16:02:01] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=1416ms p95=701ms
+[16:02:01] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[16:02:46] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:13:05] [极速订场] 使用主 session, worker_pool_size=1
+[16:13:05] [极速订场] 开始 date=2026-03-14 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.35s rate_limit_backoff=1.8s switch_delay=4.0s budget=15.0s
+[16:13:05] [极速订场] 组合 group=primary (主组合) items=[{'place': '17', 'time': '21:00'}]
+[16:13:05] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[16:13:05] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[16:13:05] [极速订场] 结束 status=success 总请求数=1 group=primary
+[16:13:05] 📧 正在发送短信通知给: ['13910424189']
+[16:13:06] 📧 短信接口返回: [0] 发送成功
+[16:13:06] 📩 PushPlus 发送成功
+[16:13:42] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=16:14:00
+[16:14:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[16:14:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[16:14:00] 🕒 [时间对齐] server_offset=1.265s, base_run=2026-03-10 16:14:00, target_date=2026-03-14
+[16:14:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[16:14:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:14:00] [极速订场] 开始 date=2026-03-14 组数=3 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:14:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[16:14:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[16:14:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[16:14:00] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[16:14:04] [极速订场] 切组后等待 4.0s 再发下一组
+[16:14:04] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '17', 'time': '21:00'}]
+[16:14:04] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[16:14:04] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[16:14:04] [极速订场] 本组payload_fail 切下一组 服务端原文: '数据错误，请重试'
+[16:14:08] [极速订场] 切组后等待 4.0s 再发下一组
+[16:14:08] [极速订场] 组合 group=backup_2 (备用2) items=[{'place': '17', 'time': '21:00'}]
+[16:14:08] [极速订场] 第3轮 lane=burst 本轮发送1个请求 (累计已发2次)
+[16:14:08] [极速订场] 第3轮 完成 总请求数=3 本轮结果: ['switch_backup']
+[16:14:08] [极速订场] 结束 status=fail(payload_fail) 总请求数=3 服务端原文: '数据错误，请重试'
+[16:14:08] 📧 正在发送短信通知给: ['13910424189']
+[16:14:09] 📧 短信接口返回: [0] 发送成功
+[16:14:09] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[16:14:09] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=8324ms
+[16:14:09] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[16:14:54] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:19:16] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=16:20:00
+[16:20:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[16:20:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[16:20:00] 🕒 [时间对齐] server_offset=1.344s, base_run=2026-03-10 16:20:00, target_date=2026-03-14
+[16:20:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '17', 'time': '21:00'}]
+[16:20:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:20:00] [极速订场] 开始 date=2026-03-14 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:20:00] [极速订场] 组合 group=primary (主组) items=[{'place': '17', 'time': '21:00'}]
+[16:20:00] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[16:20:00] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[16:20:00] [极速订场] 结束 status=fail(payload_fail) 总请求数=1 服务端原文: '数据错误，请重试'
+[16:20:00] 📧 正在发送短信通知给: ['13910424189']
+[16:20:01] 📧 短信接口返回: [0] 发送成功
+[16:20:01] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[16:20:01] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=101ms
+[16:20:01] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[16:20:46] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[20:34:41] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=20:36:00
+[20:36:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[20:36:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[20:36:00] 🕒 [时间对齐] server_offset=1.091s, base_run=2026-03-10 20:36:00, target_date=2026-03-14
+[20:36:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '21:00'}]
+[20:36:00] [极速订场] 使用主 session, worker_pool_size=1
+[20:36:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[20:36:01] [极速订场] 拉活成功，开始递送
+[20:36:01] [极速订场] 组合 group=primary (主组) items=[{'place': '4', 'time': '21:00'}]
+[20:36:01] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[20:36:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[20:36:01] [极速订场] 结束 status=success 总请求数=1 group=primary
+[20:36:01] 📧 正在发送短信通知给: ['13910424189']
+[20:36:01] 📧 短信接口返回: [0] 发送成功
+[20:36:02] 📩 PushPlus 发送成功
+[20:36:02] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=1902ms p95=1274ms
+[20:36:02] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[20:36:47] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[20:39:31] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=20:41:00
+[20:41:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[20:41:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[20:41:00] 🕒 [时间对齐] server_offset=0.755s, base_run=2026-03-10 20:41:00, target_date=2026-03-14
+[20:41:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '21:00'}]
+[20:41:00] [极速订场] 使用主 session, worker_pool_size=1
+[20:41:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[20:41:01] [极速订场] 拉活成功，开始递送
+[20:41:01] [极速订场] 组合 group=primary (主组) items=[{'place': '6', 'time': '21:00'}]
+[20:41:01] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[20:41:01] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[20:41:01] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[20:41:05] [极速订场] 切组后等待 4.0s 再发下一组
+[20:41:05] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '5', 'time': '21:00'}]
+[20:41:05] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[20:41:05] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[20:41:05] [极速订场] 结束 status=fail(payload_fail) 总请求数=2 服务端原文: '预定失败,请返回重新选择日期'
+[20:41:05] 📧 正在发送短信通知给: ['13910424189']
+[20:41:06] 📧 短信接口返回: [0] 发送成功
+[20:41:06] 📩 PushPlus 发送成功
+[20:41:06] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=5640ms
+[20:41:06] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[20:41:51] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[20:52:00] 🔇 [quiet-window] 进入 pre_quiet，owner=1772630208932，fire_at=20:53:00
+[20:53:00] 🔫 [quiet-window] 进入 fire_window，owner=1772630208932
+[20:53:00] ⏰ [自动任务] 开始执行任务: 1772630208932
+[20:53:00] 🕒 [时间对齐] server_offset=0.153s, base_run=2026-03-10 20:53:00, target_date=2026-03-14
+[20:53:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '21:00'}]
+[20:53:00] [极速订场] 使用主 session, worker_pool_size=1
+[20:53:00] [极速订场] 开始 date=2026-03-14 组数=2 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[20:53:04] [极速订场] 拉活成功，开始递送
+[20:53:04] [极速订场] 组合 group=primary (主组) items=[{'place': '6', 'time': '21:00'}]
+[20:53:04] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[20:53:05] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['switch_backup']
+[20:53:05] [极速订场] 本组payload_fail 切下一组 服务端原文: '预定失败,请返回重新选择日期'
+[20:53:09] [极速订场] 切组后等待 4.0s 再发下一组
+[20:53:09] [极速订场] 组合 group=backup_1 (备用1) items=[{'place': '4', 'time': '21:00'}]
+[20:53:09] [极速订场] 第2轮 lane=burst 本轮发送1个请求 (累计已发1次)
+[20:53:10] [极速订场] 第2轮 完成 总请求数=2 本轮结果: ['switch_backup']
+[20:53:10] [极速订场] 结束 status=fail(payload_fail) 总请求数=2 服务端原文: '数据错误，请重试'
+[20:53:10] 📧 正在发送短信通知给: ['13910424189']
+[20:53:10] 📧 短信接口返回: [0] 发送成功
+[20:53:10] 📩 PushPlus 发送成功
+[20:53:10] 📊 [run-metric] task=1772630208932 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=9187ms
+[20:53:10] 🔄 [quiet-window] 进入 recovering，owner=1772630208932，reason=task-finally
+[20:53:55] 🔓 [quiet-window] 已释放，reason=recovering-finished

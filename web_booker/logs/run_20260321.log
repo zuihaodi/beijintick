@@ -1,0 +1,308 @@
+[10:37:11] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=10:38:00
+[10:38:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[10:38:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[10:38:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 10:38:00, target_date=2026-03-22
+[10:38:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[10:38:00] [极速订场] 开始 date=2026-03-22 单路递送+refill round_interval=0.8s refill_poll=0.35s budget=600.0s
+[10:38:01] [极速订场] 拉活成功，开始递送
+[10:38:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '18:00'}]
+[10:38:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '18:00'}]
+[10:38:02] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '18:00'}]
+[10:38:02] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[10:38:03] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:05] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:07] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:09] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:10] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:12] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:14] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:16] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:17] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:19] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:21] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:23] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:25] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:26] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:28] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:30] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:32] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:33] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:35] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:37] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:39] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:40] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:42] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:44] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:45] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:47] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:49] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:50] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:52] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:54] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:56] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:57] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:38:59] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:01] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:02] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:04] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:06] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:08] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:09] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:11] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:13] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:15] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:17] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:18] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:20] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:22] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[10:39:24] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1}，短等待后重拉
+[13:04:00] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=13:05:00
+[13:05:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[13:05:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[13:05:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 13:05:00, target_date=2026-03-23
+[13:05:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[13:05:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s budget=600.0s
+[13:05:01] [极速订场] 拉活成功，开始递送
+[13:05:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[13:05:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[13:05:01] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[13:05:01] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[13:05:03] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:03] [极速订场] refill 第2次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:03] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:03] [极速订场] refill 第3次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:04] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:04] [极速订场] refill 第4次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:04] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:04] [极速订场] refill 第5次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:04] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:04] [极速订场] refill 第6次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:05] [极速订场] refill 第7次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:05] [极速订场] refill 第8次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:05] [极速订场] refill 第9次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[13:05:05] [极速订场] refill 第10次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[13:05:06] [极速订场] refill 第11次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[13:05:06] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[13:05:08] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[13:05:08] [极速订场] 结束 status=success 总请求数=11 group=primary
+[13:05:08] 📧 正在发送短信通知给: ['13910424189']
+[13:05:09] 📧 短信接口返回: [0] 发送成功
+[13:05:09] 📩 PushPlus 发送成功
+[13:05:09] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=9201ms p95=8578ms
+[13:05:09] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[13:05:24] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[13:08:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.35s refill_poll=0.35s budget=600.0s
+[13:08:01] [极速订场] 拉活成功，开始递送
+[13:08:01] [极速订场] 未配置首组目标时段，首组按主组原样递送
+[13:08:01] [极速订场] 首单批次 group=primary (主组合) items=[{'place': '3', 'time': '21:00'}, {'place': '8', 'time': '21:00'}]
+[13:08:02] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}, {'place': '8', 'time': '21:00'}]
+[13:08:02] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[13:08:03] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[13:08:03] [极速订场] 结束 status=success 总请求数=1 group=primary
+[13:08:03] 📧 正在发送短信通知给: ['13910424189']
+[13:08:03] 📧 短信接口返回: [0] 发送成功
+[13:08:03] 📩 PushPlus 发送成功
+[15:29:18] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=15:30:00
+[15:30:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[15:30:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[15:30:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 15:30:00, target_date=2026-03-23
+[15:30:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[15:30:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s budget=600.0s
+[15:30:01] [极速订场] 拉活成功，开始递送
+[15:30:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[15:30:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[15:30:01] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[15:30:01] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[15:30:03] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[15:30:03] [极速订场] refill 第2次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[15:30:04] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[15:30:04] [极速订场] refill 第3次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[15:30:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[15:30:05] [极速订场] refill 第4次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[15:30:06] [极速订场] refill 第5次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[15:30:06] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[15:30:08] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[15:30:08] [极速订场] 结束 status=success 总请求数=5 group=primary
+[15:30:08] 📧 正在发送短信通知给: ['13910424189']
+[15:30:09] 📧 短信接口返回: [0] 发送成功
+[15:30:09] 📩 PushPlus 发送成功
+[15:30:09] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=8914ms p95=8405ms
+[15:30:09] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[15:30:24] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:22:07] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=16:22:30
+[16:22:30] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[16:22:30] ⏰ [自动任务] 开始执行任务: 1771732252398
+[16:22:30] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 16:22:30, target_date=2026-03-23
+[16:22:30] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[16:22:30] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s budget=600.0s
+[16:22:32] [极速订场] 拉活成功，开始递送
+[16:22:32] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[16:22:32] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[16:22:32] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[16:22:32] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[16:22:33] [极速订场] refill 矩阵完成 fetch_n=1 wall=16:22:33.408 elapsed_ms=945
+[16:22:33] [极速订场] refill POST发送 wall=16:22:33.409 campaign_ms=2893 items=[{'place': '8', 'time': '21:00'}]
+[16:22:33] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[16:22:33] [极速订场] refill 第2次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[16:22:34] [极速订场] refill 矩阵完成 fetch_n=2 wall=16:22:34.515 elapsed_ms=1082
+[16:22:34] [极速订场] refill POST发送 wall=16:22:34.517 campaign_ms=4001 items=[{'place': '8', 'time': '21:00'}]
+[16:22:34] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[16:22:34] [极速订场] refill 第3次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[16:22:35] [极速订场] refill 矩阵完成 fetch_n=3 wall=16:22:35.539 elapsed_ms=997
+[16:22:35] [极速订场] refill POST发送 wall=16:22:35.541 campaign_ms=5025 items=[{'place': '8', 'time': '21:00'}]
+[16:22:35] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[16:22:35] [极速订场] refill 第4次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[16:22:36] [极速订场] refill 矩阵完成 fetch_n=4 wall=16:22:36.689 elapsed_ms=1072
+[16:22:36] [极速订场] refill POST发送 wall=16:22:36.691 campaign_ms=6175 items=[{'place': '8', 'time': '21:00'}]
+[16:22:37] [极速订场] refill 第5次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[16:22:37] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[16:22:38] [极速订场] refill 矩阵完成 fetch_n=5 wall=16:22:38.884 elapsed_ms=944
+[16:22:38] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[16:22:38] [极速订场] 结束 status=success 总请求数=5 group=primary
+[16:22:38] 📧 正在发送短信通知给: ['13910424189']
+[16:22:39] 📧 短信接口返回: [0] 发送成功
+[16:22:39] 📩 PushPlus 发送成功
+[16:22:39] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=8915ms p95=8373ms
+[16:22:39] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[16:22:54] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[17:18:39] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=17:19:00
+[17:19:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[17:19:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[17:19:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 17:19:00, target_date=2026-03-23
+[17:19:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[17:19:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s min_post_interval=2.2s budget=600.0s
+[17:19:01] [极速订场] 拉活成功，开始递送
+[17:19:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[17:19:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[17:19:02] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[17:19:02] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[17:19:03] [极速订场] refill 矩阵完成 fetch_n=1 wall=17:19:03.442 elapsed_ms=1109
+[17:19:04] [极速订场] refill POST发送 wall=17:19:04.531 campaign_ms=4180 items=[{'place': '8', 'time': '21:00'}]
+[17:19:04] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[17:19:04] [极速订场] refill 第2次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[17:19:05] [极速订场] refill 矩阵完成 fetch_n=2 wall=17:19:05.707 elapsed_ms=1132
+[17:19:06] [极速订场] refill POST发送 wall=17:19:06.773 campaign_ms=6423 items=[{'place': '8', 'time': '21:00'}]
+[17:19:07] [极速订场] refill 第3次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[17:19:07] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[17:19:09] [极速订场] refill 矩阵完成 fetch_n=3 wall=17:19:09.130 elapsed_ms=1048
+[17:19:09] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[17:19:09] [极速订场] 结束 status=success 总请求数=3 group=primary
+[17:19:09] 📧 正在发送短信通知给: ['13910424189']
+[17:19:09] 📧 短信接口返回: [0] 发送成功
+[17:19:09] 📩 PushPlus 发送成功
+[17:19:09] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=9271ms p95=8784ms
+[17:19:09] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[17:19:24] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[17:24:07] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=17:25:00
+[17:25:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[17:25:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[17:25:00] 🕒 [时间对齐] server_offset=8.395s, base_run=2026-03-21 17:25:00, target_date=2026-03-23
+[17:25:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[17:25:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s min_post_interval=3.0s budget=600.0s
+[17:25:01] [极速订场] 拉活成功，开始递送
+[17:25:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[17:25:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[17:25:02] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[17:25:02] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[17:25:03] [极速订场] refill 矩阵完成 fetch_n=1 wall=17:25:03.408 elapsed_ms=983
+[17:25:05] [极速订场] refill POST发送 wall=17:25:05.422 campaign_ms=4536 items=[{'place': '8', 'time': '21:00'}]
+[17:25:05] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[17:25:05] [极速订场] refill 第2次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[17:25:06] [极速订场] refill 矩阵完成 fetch_n=2 wall=17:25:06.702 elapsed_ms=1252
+[17:25:08] [极速订场] refill POST发送 wall=17:25:08.448 campaign_ms=7562 items=[{'place': '8', 'time': '21:00'}]
+[17:25:08] [极速订场] refill 第3次提交 action=switch_backup items=[{'place': '8', 'time': '21:00'}]
+[17:25:08] [极速订场] refill 业务可重试/冲突类响应，下轮重拉矩阵: '数据错误，请重试'
+[17:25:09] [极速订场] refill 矩阵完成 fetch_n=3 wall=17:25:09.743 elapsed_ms=1197
+[17:25:11] [极速订场] refill POST发送 wall=17:25:11.543 campaign_ms=10657 items=[{'place': '8', 'time': '21:00'}]
+[17:25:11] [极速订场] refill too_fast: '操作过快,请稍后重试。'
+[17:25:11] [极速订场] refill 第4次提交 action=min_backoff_continue items=[{'place': '8', 'time': '21:00'}]
+[17:25:12] [极速订场] refill 矩阵完成 fetch_n=4 wall=17:25:12.897 elapsed_ms=1328
+[17:25:14] [极速订场] refill POST发送 wall=17:25:14.568 campaign_ms=13682 items=[{'place': '8', 'time': '21:00'}]
+[17:25:14] [极速订场] refill 第5次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[17:25:14] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[17:25:16] [极速订场] refill 矩阵完成 fetch_n=5 wall=17:25:16.597 elapsed_ms=925
+[17:25:16] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[17:25:16] [极速订场] 结束 status=success 总请求数=5 group=primary
+[17:25:16] 📧 正在发送短信通知给: ['13910424189']
+[17:25:16] 📧 短信接口返回: [0] 发送成功
+[17:25:17] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[17:25:17] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=16194ms p95=15715ms
+[17:25:17] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[17:25:32] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[17:32:19] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=17:33:00
+[17:33:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[17:33:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[17:33:00] 🕒 [时间对齐] server_offset=8.866s, base_run=2026-03-21 17:33:00, target_date=2026-03-23
+[17:33:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[17:33:00] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s min_post_interval=4.0s budget=600.0s
+[17:33:01] [极速订场] 拉活成功，开始递送
+[17:33:01] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[17:33:01] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[17:33:01] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[17:33:01] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[17:33:03] [极速订场] refill 矩阵完成 fetch_n=1 wall=17:33:03.375 elapsed_ms=1468
+[17:33:05] [极速订场] refill POST发送 wall=17:33:05.903 campaign_ms=5536 items=[{'place': '8', 'time': '21:00'}]
+[17:33:06] [极速订场] refill 第2次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[17:33:06] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[17:33:08] [极速订场] refill 矩阵完成 fetch_n=2 wall=17:33:08.066 elapsed_ms=864
+[17:33:08] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[17:33:08] [极速订场] 结束 status=success 总请求数=2 group=primary
+[17:33:08] 📧 正在发送短信通知给: ['13910424189']
+[17:33:08] 📧 短信接口返回: [0] 发送成功
+[17:33:08] ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[17:33:08] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=8162ms p95=7705ms
+[17:33:08] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[17:33:23] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[17:38:49] 🧩 [refill#1772093525261|auto] 开始执行: date=2026-03-23, target_count=2, times=['21:00'], places=14
+[17:38:52] 📦 [refill#1772093525261|auto] 本轮提交: [{'place': '3', 'time': '21:00'}, {'place': '8', 'time': '21:00'}]
+[17:38:54] 🧾 [refill#1772093525261|auto] 本轮结果: success - 全部下单成功
+[17:38:54] 📧 正在发送短信通知给: ['13910424189']
+[17:38:55] 📧 短信接口返回: [0] 发送成功
+[17:38:55] 📩 PushPlus 发送成功
+[17:39:00] 🧩 [refill#1772093525261|auto] 开始执行: date=2026-03-23, target_count=2, times=['21:00'], places=14
+[17:39:01] ✅ [refill#1772093525261|auto] refill目标已满足
+[17:39:01] 📧 正在发送短信通知给: ['13910424189']
+[17:39:01] 📧 短信接口返回: [0] 发送成功
+[17:39:01] 📩 PushPlus 发送成功
+[20:42:00] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=20:43:00
+[20:43:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[20:43:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[20:43:01] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-21 20:43:00, target_date=2026-03-23
+[20:43:01] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '20:00'}, {'place': '4', 'time': '21:00'}, {'place': '5', 'time': '20:00'}, {'place': '5', 'time': '21:00'}]
+[20:43:01] [极速订场] 开始 date=2026-03-23 单路递送+refill round_interval=0.8s refill_poll=0.35s min_post_interval=4.0s budget=600.0s
+[20:43:03] [极速订场] 拉活成功，开始递送
+[20:43:03] [极速订场] 第一组由 matrix 算出 level=1 items=[{'place': '3', 'time': '21:00'}]
+[20:43:03] [极速订场] 首单批次 group=primary (主组) items=[{'place': '3', 'time': '21:00'}]
+[20:43:04] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '3', 'time': '21:00'}]
+[20:43:04] [极速订场] 首单被接受但目标约束未满足，进入refill继续重算
+[20:43:05] [极速订场] refill 矩阵完成 fetch_n=1 wall=20:43:05.196 elapsed_ms=1052
+[20:43:05] [极速订场] refill 分层求解 tier=连号满 used_need={'21:00': 1} 原缺口={'21:00': 1}
+[20:43:08] [极速订场] refill POST发送 wall=20:43:08.141 campaign_ms=7135 items=[{'place': '8', 'time': '21:00'}]
+[20:43:08] [极速订场] refill 第2次提交 action=stop_success items=[{'place': '8', 'time': '21:00'}]
+[20:43:08] [极速订场] refill 请求被接受但目标约束未满足，继续下一轮重算
+[20:43:10] [极速订场] refill 矩阵完成 fetch_n=2 wall=20:43:10.856 elapsed_ms=1469
+[20:43:10] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[20:43:10] [极速订场] 结束 status=success 总请求数=2 group=primary
+[20:43:10] 📧 正在发送短信通知给: ['13910424189']
+[20:43:11] 📧 短信接口返回: [0] 发送成功
+[20:43:11] 📩 PushPlus 发送成功
+[20:43:11] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=10341ms p95=9854ms
+[20:43:11] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[20:43:26] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[21:33:31] 🧩 [refill#1772093525261|auto] 开始执行: date=2026-03-23, target_count=2, times=['21:00'], places=14
+[21:33:35] 🧩 [refill#1772093525261|manual] 开始执行: date=2026-03-23, target_count=2, times=['21:00'], places=14
+[21:33:40] 📦 [refill#1772093525261|manual] 分层 tier=散号满 used_need={'21:00': 2} 本轮提交: [{'place': '3', 'time': '21:00'}, {'place': '8', 'time': '21:00'}]
+[21:33:43] 🙈 [refill#1772093525261|auto] 当前无可补订组合，缺口: {'21:00': 2}
+[21:33:44] 🧩 [refill#1772093525261|auto] 开始执行: date=2026-03-23, target_count=2, times=['21:00'], places=14
+[21:33:46] 🧾 [refill#1772093525261|manual] 本轮结果: success - 全部下单成功
+[21:33:46] 📧 正在发送短信通知给: ['13910424189']
+[21:33:46] ✅ [refill#1772093525261|auto] refill目标已满足
+[21:33:46] 📧 正在发送短信通知给: ['13910424189']
+[21:33:46] 📧 短信接口返回: [0] 发送成功
+[21:33:46] 📧 短信接口返回: [0] 发送成功
+[21:33:46] 📩 PushPlus 发送成功
+[21:33:46] 📩 PushPlus 发送成功

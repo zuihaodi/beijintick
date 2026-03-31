@@ -1,0 +1,49 @@
+[16:00:22] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=16:02:00
+[16:02:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[16:02:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[16:02:00] 🕒 [时间对齐] server_offset=2.972s, base_run=2026-03-11 16:02:00, target_date=2026-03-16
+[16:02:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '21:00'}, {'place': '6', 'time': '21:00'}]
+[16:02:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:02:00] [极速订场] 开始 date=2026-03-16 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:02:01] [极速订场] 拉活成功，开始递送
+[16:02:01] [极速订场] 第一组无可用组合(矩阵降级全无解)，未发送预订请求
+[16:02:01] 📧 正在发送短信通知给: ['13910424189']
+[16:02:02] 📧 短信接口返回: [0] 发送成功
+[16:02:02] 📩 PushPlus 发送成功
+[16:02:02] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=1545ms
+[16:02:02] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[16:02:47] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:34:00] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=16:36:00
+[16:36:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[16:36:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[16:36:00] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-11 16:36:00, target_date=2026-03-16
+[16:36:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '21:00'}, {'place': '6', 'time': '21:00'}]
+[16:36:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:36:00] [极速订场] 开始 date=2026-03-16 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:36:02] [极速订场] 拉活成功，开始递送
+[16:36:02] [极速订场] 第一组无可用组合(矩阵降级全无解)，未发送预订请求
+[16:36:02] 📧 正在发送短信通知给: ['13910424189']
+[16:36:02] 📧 短信接口返回: [0] 发送成功
+[16:36:03] 📩 PushPlus 发送成功
+[16:36:03] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=1713ms
+[16:36:03] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[16:36:48] 🔓 [quiet-window] 已释放，reason=recovering-finished
+[16:40:27] 🔇 [quiet-window] 进入 pre_quiet，owner=1771732252398，fire_at=16:41:00
+[16:41:00] 🔫 [quiet-window] 进入 fire_window，owner=1771732252398
+[16:41:00] ⏰ [自动任务] 开始执行任务: 1771732252398
+[16:41:00] 🕒 [时间对齐] server_offset=2.694s, base_run=2026-03-11 16:41:00, target_date=2026-03-17
+[16:41:00] 🚀 [终极递送器] 启动主组合递送: [{'place': '4', 'time': '21:00'}, {'place': '6', 'time': '21:00'}]
+[16:41:00] [极速订场] 使用主 session, worker_pool_size=1
+[16:41:00] [极速订场] 开始 date=2026-03-17 组数=1 主session=True workers=1 burst_win=1.0s round_interval=0.8s rate_limit_backoff=1.7s switch_delay=4.0s budget=20.0s
+[16:41:01] [极速订场] 拉活成功，开始递送
+[16:41:01] [极速订场] 第一组由 matrix 算出 level=3 items=[{'place': '11', 'time': '12:00'}]
+[16:41:01] [极速订场] 组合 group=primary (主组) items=[{'place': '11', 'time': '12:00'}]
+[16:41:01] [极速订场] 第1轮 lane=burst 本轮发送1个请求 (累计已发0次)
+[16:41:02] [极速订场] 第1轮 完成 总请求数=1 本轮结果: ['stop_success']
+[16:41:02] [极速订场] 结束 status=success 总请求数=1 group=primary
+[16:41:02] 📧 正在发送短信通知给: ['13910424189']
+[16:41:02] 📧 短信接口返回: [0] 发送成功
+[16:41:02] 📩 PushPlus 发送成功
+[16:41:02] 📊 [run-metric] task=1771732252398 attempts=1 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=2662ms p95=1951ms
+[16:41:02] 🔄 [quiet-window] 进入 recovering，owner=1771732252398，reason=task-finally
+[16:41:47] 🔓 [quiet-window] 已释放，reason=recovering-finished

@@ -1,0 +1,151 @@
+[00:10:57] [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.5s min_post_interval=5.0s budget=360.0s
+[00:10:57] [极速订场] 拉活成功，开始递送
+[00:10:57] [极速订场] 首单 group=primary (主组合) items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}]
+[00:10:57] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}]
+[00:10:57] [极速订场] 首单2 group=primary (主组合) items=[{'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[00:11:03] [极速订场] 首单2 第2次提交 action=stop_success items=[{'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[00:11:04] [极速订场] refill 矩阵完成 fetch_n=1 wall=00:10:58.640 elapsed_ms=911
+[00:11:04] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[00:11:04] [极速订场] 结束 status=success 总请求数=2 group=primary
+[09:56:47] 🧩 [refill#1772093525261|auto|acc_1] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[09:56:48] 🙈 [refill#1772093525261|auto|acc_1] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 1}
+[09:57:40] 🔇 [quiet-window] 进入 pre_quiet，owner=1774789889122，account_key=1001:90821bae3fb9，fire_at=09:58:00
+[09:57:46] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=09:58:05
+[09:57:47] 🔇 [refill#1772093525261] 已跳过：静默窗口中，已阻止Refill 轮询访问馆方接口。
+[09:58:05] 🔫 [quiet-window] 进入 fire_window，owner=1774789889122，account_key=1001:90821bae3fb9
+[09:58:05] ⏰ [自动任务] 开始执行任务: 1774789889122 account=acc_1
+[09:58:05] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-31 09:58:00, target_date=2026-04-05
+[09:58:05] 🚀 [终极递送器] 启动主组合递送: [{'place': '3', 'time': '18:00'}, {'place': '3', 'time': '19:00'}, {'place': '4', 'time': '18:00'}, {'place': '4', 'time': '19:00'}]
+[09:58:05] [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.5s min_post_interval=5.0s budget=360.0s
+[09:58:06] [极速订场] 拉活成功，开始递送
+[09:58:06] [极速订场] 第一组由 matrix 算出 level=0 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[09:58:06] [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[09:58:10] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[09:58:11] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:2c279fe795b5
+[09:58:11] ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_2
+[09:58:11] 🕒 [时间对齐] server_offset=0.0s, base_run=2026-03-31 09:58:05, target_date=2026-04-05
+[09:58:11] 🚀 [终极递送器] 启动主组合递送: [{'place': '3', 'time': '18:00'}, {'place': '3', 'time': '19:00'}, {'place': '4', 'time': '18:00'}, {'place': '4', 'time': '19:00'}]
+[09:58:11] [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.5s min_post_interval=5.0s budget=360.0s
+[09:58:11] [极速订场] refill 矩阵完成 fetch_n=1 wall=09:58:05.681 elapsed_ms=1126
+[09:58:11] [极速订场] refill 缺口已归零，目标已满足，提前结束
+[09:58:11] [极速订场] 结束 status=success 总请求数=1 group=primary
+[09:58:11] 📊 [run-metric] task=1774789889122 matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=5135ms p95=5135ms last_ev=''
+[09:58:11] 🔄 [quiet-window] 进入 recovering，owner=1774789889122，account_key=1001:90821bae3fb9，reason=task-finally
+[09:58:11] [极速订场] 拉活成功，开始递送
+[09:58:11] [极速订场] 第一组矩阵无解，回退主组原 items 继续递送
+[09:58:11] [极速订场] 首单 group=primary (主组) items=[{'place': '3', 'time': '18:00'}, {'place': '3', 'time': '19:00'}]
+[09:58:12] [极速订场] 首单 第1次提交 action=switch_backup items=[{'place': '3', 'time': '18:00'}, {'place': '3', 'time': '19:00'}]
+[09:58:12] [极速订场] 首单2 group=primary (主组) items=[{'place': '4', 'time': '18:00'}, {'place': '4', 'time': '19:00'}]
+[09:58:17] [极速订场] 首单2 第2次提交 action=switch_backup items=[{'place': '4', 'time': '18:00'}, {'place': '4', 'time': '19:00'}]
+[09:58:17] [极速订场] refill 矩阵完成 fetch_n=1 wall=09:58:12.579 elapsed_ms=723
+[09:58:17] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:19] [极速订场] refill 矩阵完成 fetch_n=2 wall=09:58:14.076 elapsed_ms=992
+[09:58:19] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:19] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[09:58:20] [极速订场] refill 矩阵完成 fetch_n=3 wall=09:58:15.418 elapsed_ms=839
+[09:58:20] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:22] [极速订场] refill 矩阵完成 fetch_n=4 wall=09:58:17.050 elapsed_ms=1130
+[09:58:22] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:23] [极速订场] refill 矩阵完成 fetch_n=5 wall=09:58:18.421 elapsed_ms=869
+[09:58:23] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:25] [极速订场] refill 矩阵完成 fetch_n=6 wall=09:58:19.834 elapsed_ms=909
+[09:58:25] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:26] [极速订场] refill 矩阵完成 fetch_n=7 wall=09:58:21.246 elapsed_ms=908
+[09:58:26] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:28] [极速订场] refill 矩阵完成 fetch_n=8 wall=09:58:22.685 elapsed_ms=935
+[09:58:28] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:29] [极速订场] refill 矩阵完成 fetch_n=9 wall=09:58:24.059 elapsed_ms=871
+[09:58:29] [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 2, '19:00': 2}，短等待后重拉
+[09:58:30] [极速订场] refill 矩阵完成 fetch_n=10 wall=09:58:25.476 elapsed_ms=913
+[09:58:30] [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 2, '19:00': 2}
+[09:58:30] 📊 [run-metric] task=1774922105713 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 first_matrix=Nonems first_submit=0ms first_post=0ms first_success=Nonems p95=19920ms last_ev='预定失败,请返回重新选择日期'
+[09:58:30] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:2c279fe795b5，reason=task-finally
+[09:58:38] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[09:59:38] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[09:59:40] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:00:40] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:00:41] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:01:41] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:01:42] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:02:41] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:02:42] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:03:42] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:03:44] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:04:44] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:04:45] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:05:45] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:05:46] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:06:46] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:06:47] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:07:47] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:07:48] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:08:48] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:08:49] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:09:49] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:09:51] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:10:51] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:10:52] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:11:52] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:11:53] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:12:53] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:12:54] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:13:54] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:13:55] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:14:55] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:14:56] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:15:56] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:15:57] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:16:57] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:16:58] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:17:58] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:17:59] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:18:59] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:19:00] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:20:00] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:20:01] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:21:01] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:21:02] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:22:02] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:22:03] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:23:03] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:23:04] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:24:04] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:24:05] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:25:04] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:25:05] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:26:05] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:26:06] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:27:06] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:27:07] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:28:06] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:28:08] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:29:08] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:29:09] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:30:09] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:30:10] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:31:10] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:31:11] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:32:11] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:32:12] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:33:12] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:33:14] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:34:13] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:34:14] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:35:14] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:35:15] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:36:15] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:36:16] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:37:17] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:37:18] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:38:17] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:38:18] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:39:18] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:39:19] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:40:19] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:40:20] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:41:20] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:41:21] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:42:21] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:42:22] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}
+[10:43:22] 🧩 [refill#1772093525261|auto|acc_2] 开始执行: date=2026-04-04, target_count=2, times=['14:00', '15:00'], places=14
+[10:43:26] 🙈 [refill#1772093525261|auto|acc_2] 当前无可补订组合，缺口: {'14:00': 2, '15:00': 2}

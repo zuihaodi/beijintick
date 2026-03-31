@@ -1,0 +1,34 @@
+{
+  "phase": "phase0_server_multi_post",
+  "generated_at_utc": "2026-03-30T06:19:20.826354+00:00",
+  "date": "2026-04-01",
+  "dry_run": true,
+  "delivery_min_post_interval_seconds": 4.0,
+  "warmup_matrix": {
+    "elapsed_ms": 1562,
+    "error": null,
+    "meta": {
+      "mine_overlay_ok": false,
+      "mine_slots_count": 0,
+      "mine_overlay_error": "首轮加速模式：跳过mine覆盖",
+      "date_booking_scope": "unlocked",
+      "last_day_open_time": "12:00:00"
+    },
+    "matrix_keys_sample": [
+      "1",
+      "10",
+      "11",
+      "12",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ]
+  },
+  "posts": [],
+  "conclusion_hint": "dry-run：未发 POST；请在开约后使用 --confirm-live-post 完成多批验证并归档返回文案。"
+}
