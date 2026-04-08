@@ -161,17 +161,21 @@
     "accountId": "acc_1",
     "config": {
       "candidate_places": [
+        "5",
         "6",
         "7"
       ],
+      "delivery_first_group_allow_scatter": true,
       "delivery_first_group_from_matrix": true,
       "delivery_first_group_time_preference_order": [
-        "18:00",
-        "19:00"
+        "12:00",
+        "13:00",
+        "14:00"
       ],
       "delivery_first_group_times": [
-        "18:00",
-        "19:00"
+        "12:00",
+        "13:00",
+        "14:00"
       ],
       "delivery_groups": [
         {
@@ -179,20 +183,40 @@
           "label": "主组",
           "items": [
             {
-              "place": "6",
-              "time": "18:00"
+              "place": "5",
+              "time": "12:00"
+            },
+            {
+              "place": "5",
+              "time": "13:00"
+            },
+            {
+              "place": "5",
+              "time": "14:00"
             },
             {
               "place": "6",
-              "time": "19:00"
+              "time": "12:00"
+            },
+            {
+              "place": "6",
+              "time": "13:00"
+            },
+            {
+              "place": "6",
+              "time": "14:00"
             },
             {
               "place": "7",
-              "time": "18:00"
+              "time": "12:00"
             },
             {
               "place": "7",
-              "time": "19:00"
+              "time": "13:00"
+            },
+            {
+              "place": "7",
+              "time": "14:00"
             }
           ]
         }
@@ -201,45 +225,68 @@
       "delivery_matrix_place_min": 1,
       "delivery_target_blocks": 3,
       "delivery_target_times": [
-        "18:00",
-        "19:00"
+        "12:00",
+        "13:00",
+        "14:00"
       ],
       "delivery_time_preference_order": [
-        "18:00",
-        "19:00"
+        "12:00",
+        "13:00",
+        "14:00"
       ],
       "direct_items": [
         {
-          "place": "6",
-          "time": "18:00"
+          "place": "5",
+          "time": "12:00"
+        },
+        {
+          "place": "5",
+          "time": "13:00"
+        },
+        {
+          "place": "5",
+          "time": "14:00"
         },
         {
           "place": "6",
-          "time": "19:00"
+          "time": "12:00"
+        },
+        {
+          "place": "6",
+          "time": "13:00"
+        },
+        {
+          "place": "6",
+          "time": "14:00"
         },
         {
           "place": "7",
-          "time": "18:00"
+          "time": "12:00"
         },
         {
           "place": "7",
-          "time": "19:00"
+          "time": "13:00"
+        },
+        {
+          "place": "7",
+          "time": "14:00"
         }
       ],
       "mode": "direct",
-      "target_count": 2,
+      "target_count": 3,
       "target_times": [
-        "18:00",
-        "19:00"
+        "12:00",
+        "13:00",
+        "14:00"
       ]
     },
     "enabled": false,
     "id": 1774712054103,
-    "last_run_at": 1774883700294,
+    "last_run_at": 1775019120386,
     "notification_phones": [],
     "pushplus_tokens": [],
-    "run_time": "23:15:00",
-    "target_day_offset": 6,
+    "run_time": "12:52:00",
+    "target_day_offset": 5,
     "type": "daily",
     "weekly_day": 0
   },
@@ -250,15 +297,8 @@
         "3",
         "4"
       ],
+      "delivery_first_group_allow_scatter": true,
       "delivery_first_group_from_matrix": true,
-      "delivery_first_group_time_preference_order": [
-        "18:00",
-        "19:00"
-      ],
-      "delivery_first_group_times": [
-        "18:00",
-        "19:00"
-      ],
       "delivery_groups": [
         {
           "id": "primary",
@@ -266,19 +306,19 @@
           "items": [
             {
               "place": "3",
-              "time": "18:00"
+              "time": "13:00"
             },
             {
               "place": "3",
-              "time": "19:00"
+              "time": "14:00"
             },
             {
               "place": "4",
-              "time": "18:00"
+              "time": "13:00"
             },
             {
               "place": "4",
-              "time": "19:00"
+              "time": "14:00"
             }
           ]
         }
@@ -287,44 +327,240 @@
       "delivery_matrix_place_min": 1,
       "delivery_target_blocks": 2,
       "delivery_target_times": [
-        "18:00",
-        "19:00"
+        "13:00",
+        "14:00"
       ],
       "delivery_time_preference_order": [
-        "18:00",
-        "19:00"
+        "13:00",
+        "14:00"
       ],
       "direct_items": [
         {
           "place": "3",
-          "time": "18:00"
+          "time": "13:00"
         },
         {
           "place": "3",
-          "time": "19:00"
+          "time": "14:00"
         },
         {
           "place": "4",
-          "time": "18:00"
+          "time": "13:00"
         },
         {
           "place": "4",
-          "time": "19:00"
+          "time": "14:00"
         }
       ],
       "mode": "direct",
       "target_count": 2,
       "target_times": [
-        "18:00",
-        "19:00"
+        "13:00",
+        "14:00"
       ]
     },
     "enabled": false,
     "id": 1774789889122,
-    "last_run_at": 1774922280546,
+    "last_run_at": 1775195020825,
     "notification_phones": [],
     "pushplus_tokens": [],
-    "run_time": "09:58:00",
+    "run_time": "13:43:40",
+    "target_day_offset": 3,
+    "type": "daily",
+    "weekly_day": 0
+  },
+  {
+    "run_time": "15:44:30",
+    "type": "daily",
+    "target_day_offset": 5,
+    "config": {
+      "mode": "direct",
+      "delivery_groups": [
+        {
+          "id": "primary",
+          "label": "主组",
+          "items": [
+            {
+              "place": "3",
+              "time": "21:00"
+            },
+            {
+              "place": "4",
+              "time": "21:00"
+            }
+          ]
+        }
+      ],
+      "direct_items": [
+        {
+          "place": "3",
+          "time": "21:00"
+        },
+        {
+          "place": "4",
+          "time": "21:00"
+        }
+      ],
+      "candidate_places": [
+        "3",
+        "4"
+      ],
+      "target_times": [
+        "21:00"
+      ],
+      "target_count": 2,
+      "delivery_mode": "matrix",
+      "delivery_first_group_from_matrix": true,
+      "delivery_target_blocks": 2,
+      "delivery_target_times": [
+        "21:00"
+      ],
+      "delivery_time_preference_order": [
+        "21:00"
+      ],
+      "delivery_matrix_place_min": 14,
+      "delivery_matrix_place_max": 17,
+      "delivery_first_group_allow_scatter": true
+    },
+    "weekly_day": 0,
+    "notification_phones": [],
+    "pushplus_tokens": [
+      "e4dd60912a45405fbc208ae14ea16f7c"
+    ],
+    "accountId": "acc_1",
+    "enabled": true,
+    "id": 1774922105713,
+    "last_run_at": 1775547870803
+  },
+  {
+    "accountId": "acc_2",
+    "config": {
+      "candidate_places": [
+        "5",
+        "6",
+        "7"
+      ],
+      "delivery_first_group_allow_scatter": true,
+      "delivery_first_group_from_matrix": true,
+      "delivery_first_group_time_preference_order": [
+        "16:00",
+        "17:00",
+        "18:00"
+      ],
+      "delivery_first_group_times": [
+        "16:00",
+        "17:00",
+        "18:00"
+      ],
+      "delivery_groups": [
+        {
+          "id": "primary",
+          "label": "主组",
+          "items": [
+            {
+              "place": "5",
+              "time": "16:00"
+            },
+            {
+              "place": "5",
+              "time": "17:00"
+            },
+            {
+              "place": "5",
+              "time": "18:00"
+            },
+            {
+              "place": "6",
+              "time": "16:00"
+            },
+            {
+              "place": "6",
+              "time": "17:00"
+            },
+            {
+              "place": "6",
+              "time": "18:00"
+            },
+            {
+              "place": "7",
+              "time": "16:00"
+            },
+            {
+              "place": "7",
+              "time": "17:00"
+            },
+            {
+              "place": "7",
+              "time": "18:00"
+            }
+          ]
+        }
+      ],
+      "delivery_matrix_place_max": 17,
+      "delivery_matrix_place_min": 1,
+      "delivery_target_blocks": 3,
+      "delivery_target_times": [
+        "16:00",
+        "17:00",
+        "18:00"
+      ],
+      "delivery_time_preference_order": [
+        "16:00",
+        "17:00",
+        "18:00"
+      ],
+      "direct_items": [
+        {
+          "place": "5",
+          "time": "16:00"
+        },
+        {
+          "place": "5",
+          "time": "17:00"
+        },
+        {
+          "place": "5",
+          "time": "18:00"
+        },
+        {
+          "place": "6",
+          "time": "16:00"
+        },
+        {
+          "place": "6",
+          "time": "17:00"
+        },
+        {
+          "place": "6",
+          "time": "18:00"
+        },
+        {
+          "place": "7",
+          "time": "16:00"
+        },
+        {
+          "place": "7",
+          "time": "17:00"
+        },
+        {
+          "place": "7",
+          "time": "18:00"
+        }
+      ],
+      "mode": "direct",
+      "target_count": 3,
+      "target_times": [
+        "16:00",
+        "17:00",
+        "18:00"
+      ]
+    },
+    "enabled": false,
+    "id": 1775020685769,
+    "last_run_at": 1775021280662,
+    "notification_phones": [],
+    "pushplus_tokens": [],
+    "run_time": "13:28:00",
     "target_day_offset": 5,
     "type": "daily",
     "weekly_day": 0
@@ -336,15 +572,8 @@
         "3",
         "4"
       ],
+      "delivery_first_group_allow_scatter": true,
       "delivery_first_group_from_matrix": true,
-      "delivery_first_group_time_preference_order": [
-        "18:00",
-        "19:00"
-      ],
-      "delivery_first_group_times": [
-        "18:00",
-        "19:00"
-      ],
       "delivery_groups": [
         {
           "id": "primary",
@@ -352,19 +581,19 @@
           "items": [
             {
               "place": "3",
-              "time": "18:00"
+              "time": "16:00"
             },
             {
               "place": "3",
-              "time": "19:00"
+              "time": "17:00"
             },
             {
               "place": "4",
-              "time": "18:00"
+              "time": "16:00"
             },
             {
               "place": "4",
-              "time": "19:00"
+              "time": "17:00"
             }
           ]
         }
@@ -373,45 +602,47 @@
       "delivery_matrix_place_min": 1,
       "delivery_target_blocks": 2,
       "delivery_target_times": [
-        "18:00",
-        "19:00"
+        "16:00",
+        "17:00"
       ],
       "delivery_time_preference_order": [
-        "18:00",
-        "19:00"
+        "16:00",
+        "17:00"
       ],
       "direct_items": [
         {
           "place": "3",
-          "time": "18:00"
+          "time": "16:00"
         },
         {
           "place": "3",
-          "time": "19:00"
+          "time": "17:00"
         },
         {
           "place": "4",
-          "time": "18:00"
+          "time": "16:00"
         },
         {
           "place": "4",
-          "time": "19:00"
+          "time": "17:00"
         }
       ],
       "mode": "direct",
       "target_count": 2,
       "target_times": [
-        "18:00",
-        "19:00"
+        "16:00",
+        "17:00"
       ]
     },
     "enabled": false,
-    "id": 1774922105713,
-    "last_run_at": 1774922285553,
+    "id": 1775194615430,
+    "last_run_at": 1775271040321,
     "notification_phones": [],
-    "pushplus_tokens": [],
-    "run_time": "09:58:05",
-    "target_day_offset": 5,
+    "pushplus_tokens": [
+      "e4dd60912a45405fbc208ae14ea16f7c"
+    ],
+    "run_time": "10:50:40",
+    "target_day_offset": 2,
     "type": "daily",
     "weekly_day": 0
   }

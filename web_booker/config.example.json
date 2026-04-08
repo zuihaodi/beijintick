@@ -8,6 +8,7 @@
       "card_index": "<your-card-index>",
       "card_st_id": "<your-card-st-id>",
       "shop_num": "1001",
+      "gym_connect_ip": "",
       "delivery_max_places_per_timeslot": 2
     }
   ],
@@ -17,6 +18,7 @@
     "user": "<sms-user>",
     "api_key": "<sms-api-key>"
   },
+
   "health_check_enabled": true,
   "health_check_interval_min": 30.0,
   "health_check_start_time": "00:00",
@@ -26,6 +28,7 @@
   "verbose_logs": false,
   "metrics_keep_last": 300,
   "metrics_retention_days": 7,
+
   "matrix_timeout_seconds": 3.0,
   "transient_storm_threshold": 8,
   "transient_storm_backoff_seconds": 1.5,
@@ -33,6 +36,7 @@
   "transient_storm_extend_timeout_after": 3,
   "locked_state_values": [2, 3, 5, 6],
   "same_time_precheck_limit": 0,
+
   "order_query_timeout_seconds": 2.5,
   "order_query_max_pages": 2,
   "post_submit_orders_join_timeout_seconds": 0.3,
@@ -43,10 +47,13 @@
   "post_submit_orders_sync_fallback": false,
   "post_submit_verify_pending_retry_seconds": 0.35,
   "post_submit_verify_pending_matrix_recheck_times": 4,
+  "post_submit_treat_verify_timeout_as_retry": true,
   "manual_verify_pending_recheck_times": 3,
   "manual_verify_pending_retry_seconds": 0.25,
   "manual_verify_pending_orders_fallback_enabled": true,
   "manual_auto_refill_enabled": true,
+  "manual_deep_reconcile_enabled": false,
+
   "submit_timeout_seconds": 4.0,
   "max_items_per_batch": 6,
   "max_consecutive_slots_per_place": 3,
@@ -57,18 +64,23 @@
     "auto_minimal": { "minimal_direct_mode": true },
     "manual_minimal": { "minimal_direct_mode": true }
   },
+
   "delivery_total_budget_seconds": 360.0,
-  "delivery_warmup_budget_seconds": 240.0,
-  "delivery_warmup_max_retries": 200,
-  "delivery_min_post_interval_seconds": 2.2,
+  "delivery_min_post_interval_seconds": 5,
+  "delivery_account_phase_offset_ms": 120,
+  "delivery_retry_jitter_ms": 180,
   "delivery_transport_round_interval_seconds": 0.25,
   "delivery_refill_matrix_poll_seconds": 0.35,
+  "delivery_plan_max_age_seconds": 8,
   "delivery_refill_no_candidate_streak_limit": 0,
-  "delivery_burst_workers": 1,
-  "delivery_rate_limit_workers": 1,
-  "delivery_transport_sustain_workers": 2,
-  "delivery_burst_window_seconds": 1.0,
-  "delivery_rate_limit_backoff_seconds": 1.7,
-  "delivery_backup_switch_delay_seconds": 2.0,
+  "delivery_chunk_posts_by_fieldinfo": true,
+  "delivery_max_fieldinfo_hours": 3,
+  "delivery_solver_auto_time_consecutive": true,
+  "delivery_solver_aggressive_best_tier": true,
+  "delivery_monotone_total_downgrade": true,
+  "delivery_solver_max_total_cells": true,
+
+  "doc_task_config_interval_post": "tasks.json 中每项任务的 config 可设 delivery_mode：缺省或 matrix=矩阵递送；interval_post=全量间隔 POST。全量间隔下候选场地号仅按 delivery_matrix_place_min/max（界面「矩阵可选场地」）轮询，不用 candidate_places。同层须配矩阵号段与 delivery_target_times；可选 interval_post_consecutive_hours(1-3)、interval_post_candidate_order、interval_post_prewarm_matrix、interval_post_start_hours。目标格子数 target_count。",
+
   "gym_api_probe_presets": []
 }

@@ -12,4 +12,6 @@ web_booker/config.json
 web_booker/config.secret.json
 web_booker/tasks.json
 web_booker/refill_tasks.json
+web_booker/refill_scheduler_state.json
 web_booker/task_run_metrics.json
+web_booker/diagnostic_refill.ndjson

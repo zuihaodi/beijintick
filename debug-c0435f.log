@@ -38,3 +38,11 @@
 {"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1774887565545, "hypothesisId": "projectInfo"}
 {"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1774889576991, "hypothesisId": "projectInfo"}
 {"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1774889577012, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775029547017, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775029547017, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775034511389, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775034511440, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775203134702, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775203134703, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775203469047, "hypothesisId": "projectInfo"}
+{"sessionId": "c0435f", "location": "app.py:get_use_card_info", "message": "card_info_return", "data": {"universal_len": 1, "has_cardcash": true}, "timestamp": 1775203469070, "hypothesisId": "projectInfo"}

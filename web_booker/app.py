@@ -1,15 +1,31 @@
 """
 变更记录（手动维护）:
+- 2026-04-07 多账号 gym_connect_ip：按账号强制 TCP 连接北外双线路公网 IP（TLS SNI/Host 仍为 gymvip.bfsu.edu.cn）；基础配置-账号信息可选 114.247.63.124 / 60.247.76.34 或留空走 DNS
+- 2026-04-04 手动 /api/book：默认关闭 verify_pending 深度复核（manual_deep_reconcile_enabled）；响应 gym_message_raw；首单同批软重试内不再检查 plan 保鲜
+- 2026-04-04 已订总览 /api/mine-overview：以 getPlaceOrder 为主；订单分页截断且矩阵 mine 更多时，按同账号矩阵补展示（mine_matrix_backfill=1）
+- 2026-04-04 极速递送：取消独立 warmup；任务起即统一循环 get_matrix→算场→分批 POST；求解层将 available 与 locked 等同视为可订格（booked/mine 排除）
+- 2026-04-03 极速递送：拉矩阵→首组→主单 POST→循环拉矩阵补缺口合并为统一递送循环；必填 delivery_plan_max_age_seconds，POST 前超保鲜则重拉矩阵
+- 2026-04-01 首组按矩阵时 delivery_target_blocks 强制与主组 items 推导一致；回退 group_booking 分批强制 max_places_per_timeslot=账号上限；首单前打 effective_target_blocks 日志
+- 2026-04-01 refill 缺口（aph 同步后补）：include_mine_overlay=False 时合并本会话 stop_success 格子，避免 need 虚高
+- 2026-04-01 组场策略（自动递送）：单调总需求递降+自上而下第一可行档优先多占；同档内 auto_time_consecutive 择优；delivery_solver_aggressive_best_tier 在单调开启时为 no-op；独立 refill 仍分层 solve_refill_need_tiered
+- 2026-04-01 组场/递送：按「同场地连续时段→fieldinfo 条」合并后，按账号每 POST 最多 N 条 fieldinfo 切批；求解层增加 policy 日志封装（自动递送 vs 独立 refill）
+
+实施进度（任务清单，与业务对齐）:
+- [x] fieldinfo 语义合并 + 按账号每 POST 最多 N 条切批（delivery_chunk_posts_by_fieldinfo）
+- [x] 求解入口 policy 日志（自动递送 vs 独立 refill；独立不传 solver_scoring）
+- [x] 自动递送核心组场：单调总需求档位 + 第一可行档；档内 auto_time_consecutive、散号 streak；关单调时可 aggressive 跨旧档按分择优
+- [x] 管理端表单/校验器显式展示 delivery_solver_* / delivery_chunk_*（index.html + validate_required_execution_config）
+- [x] unittest 金标：散号 streak、aggressive 跨档择优、fieldinfo 切批（web_booker/tests）
 - 2026-03-29 定时任务触发改为后台线程执行，同 run_time 的多任务可与 run_pending 同迭代内并行启动（不再串行阻塞）
-- 2026-03-25 极速递送 warmup：矩阵无 locked 为主开约信号、meta 暴露 last_day_open_time、未开约先睡至开约时刻再主组 POST 一次、首组矩阵无解回退主组 items
+- 2026-03-25 极速递送 warmup：矩阵无 locked 为主开约信号、meta 暴露 last_day_open_time、未开约先睡至开约时刻（曾支持主组盲打 POST，已关）、首组矩阵无解回退主组 items
 - 2026-03-21 delivery_target_blocks 取消全局/profile 默认；由任务 config 显式值或主组 items 推导
 - 2026-02-09 03:29 保留健康检查调度并统一任务通知/结果上报
 - 2026-02-09 04:10 健康检查增加起始时间并在前端显示预计下次检查
 - 2026-02-09 04:40 接入 PushPlus 并增加微信通知配置入口
+- 2026-03-31 log() 互斥、毫秒时间戳、tid 前缀；/api/logs 时间窗解析兼容毫秒
 """
 
-from flask import Flask, render_template, request, jsonify
-from flask_httpauth import HTTPBasicAuth
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from jinja2 import Environment, TemplateSyntaxError
 import requests
 import json
@@ -22,14 +38,25 @@ import schedule
 import time
 import threading
 import os
+import logging
 import hashlib
+import html
 import re
 import random
+import secrets
+import itertools
 import builtins
 import copy
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from dataclasses import dataclass
 from requests.adapters import HTTPAdapter
+
+# 北外馆方域名与双公网入口；账号可配置 gym_connect_ip 强制走指定线路（TCP 连该 IP，Host/SNI 仍为域名）
+GYM_API_TARGET_HOST = "gymvip.bfsu.edu.cn"
+GYM_API_LINE_IPS = ("114.247.63.124", "60.247.76.34")
+GYM_API_LINE_IP_SET = frozenset(GYM_API_LINE_IPS)
 
 
 def timestamped_print(*args, **kwargs):
@@ -104,12 +131,115 @@ def normalize_time_str(value):
         return None
     if isinstance(value, str):
         value = value.strip()
-        try:
-            dt = datetime.strptime(value, "%H:%M")
-            return dt.strftime("%H:%M")
-        except ValueError:
-            return None
+        for fmt in ("%H:%M", "%H:%M:%S"):
+            try:
+                dt = datetime.strptime(value, fmt)
+                return dt.strftime("%H:%M")
+            except ValueError:
+                continue
+        return None
     return None
+
+
+def normalize_order_schedule_date_key(raw):
+    """将订单段 reversionDate / readydate 等统一为 YYYY-MM-DD，与「已订补订」看板日期键一致。"""
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    if "T" in s:
+        s = s.split("T", 1)[0].strip()
+    elif " " in s and len(s) >= 10:
+        s = s.split(" ", 1)[0].strip()
+    s = s.replace("/", "-")
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            datetime(y, mo, d)
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+        except ValueError:
+            return ""
+    return ""
+
+
+def _order_row_eligible_for_mine_slots(order):
+    """与矩阵 mine 覆盖、已订总览一致：排除取消；showStatus 缺省时依赖 prestatus（避免有效单被静默丢弃）。"""
+    if not isinstance(order, dict):
+        return False
+    if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+        return False
+    s = order.get("showStatus")
+    if s is None:
+        return True
+    return str(s).strip() == "0"
+
+
+def mine_overview_window_dates(count=8):
+    """与前端 getNextSevenDays 一致：从今天起连续 count 天（含今天）。"""
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 8
+    n = max(1, min(n, 14))
+    base = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return [(base + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(n)]
+
+
+def matrix_cell_indicates_mine(cell):
+    """场地矩阵单格是否表示当前账号已预订（与手动页 normalizeStatus 语义对齐）。"""
+    if cell is None:
+        return False
+    if isinstance(cell, str):
+        s = cell.lower()
+        return s in ("mine", "self", "my_booked", "mybooked", "booked_by_me")
+    if isinstance(cell, int):
+        return cell == 2
+    if isinstance(cell, dict):
+        if cell.get("mine") or cell.get("isMine") or cell.get("bookedByMe"):
+            return True
+        inner = cell.get("status") or cell.get("state") or cell.get("value")
+        return matrix_cell_indicates_mine(inner)
+    return False
+
+
+def count_mine_cells_in_matrix(matrix):
+    """统计矩阵中「我的」场地格子数量（与订单拆出的 hourly 槽粒度一致）。"""
+    if not isinstance(matrix, dict):
+        return 0
+    n = 0
+    for _place, smap in matrix.items():
+        if not isinstance(smap, dict):
+            continue
+        for _tkey, cell in smap.items():
+            if matrix_cell_indicates_mine(cell):
+                n += 1
+    return n
+
+
+def mine_slots_from_matrix(matrix):
+    """枚举矩阵中标记为「我的」的 (场地号, HH:MM)，用于订单分页截断时的展示补全（与当前账号矩阵一致，无串号）。"""
+    pairs = []
+    if not isinstance(matrix, dict):
+        return pairs
+    for place_key, smap in matrix.items():
+        if not isinstance(smap, dict):
+            continue
+        pl = str(place_key).strip()
+        if not pl:
+            continue
+        for tkey, cell in smap.items():
+            if not matrix_cell_indicates_mine(cell):
+                continue
+            tm = normalize_time_str(tkey) if tkey is not None else None
+            if not tm and isinstance(tkey, str):
+                tm = normalize_time_str(tkey.strip())
+            if not tm:
+                continue
+            if not re.fullmatch(r"\d{2}:\d{2}", tm):
+                continue
+            pairs.append((pl, tm))
+    return pairs
+
 
 # 定期健康检查的函数
 def health_check():
@@ -209,6 +339,20 @@ def schedule_health_check():
 
 app = Flask(__name__)
 
+
+class _WerkzeugSkipRefillPauseAccessLog(logging.Filter):
+    """前端每秒轮询 GET /api/refill-scheduler/pause，Werkzeug 默认会刷屏；过滤后便于终端查看 POST 等业务请求。"""
+
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        return "GET /api/refill-scheduler/pause" not in msg
+
+
+logging.getLogger("werkzeug").addFilter(_WerkzeugSkipRefillPauseAccessLog())
+
 # ================= 配置 =================
 CONFIG = {
     "accounts": [
@@ -268,6 +412,7 @@ CONFIG = {
     "manual_verify_pending_retry_seconds": 0.25,
     "manual_verify_pending_orders_fallback_enabled": True,
     "manual_auto_refill_enabled": True,
+    "manual_deep_reconcile_enabled": False,
     "too_fast_skip_refill_in_same_request": True,
     "multi_item_retry_balance_enabled": True,
     "multi_item_batch_retry_times_cap": 1,
@@ -290,8 +435,10 @@ CONFIG = {
     "transient_storm_extend_timeout_after": 3,  # 连续失败 >= 此数时使用 matrix_timeout_storm_seconds
     "metrics_keep_last": 300,  # 统一观测文件最大保留条数
     "metrics_retention_days": 7,  # 统一观测文件保留天数
-    # Web 管理界面 HTTP Basic（可选，建议在 config.secret.json 中开启并填写）
+    # Web 管理界面登录（可选，建议在 config.secret.json 中开启并填写用户名密码）
     "web_ui_auth": {"enabled": False, "username": "", "password": ""},
+    # Flask 会话签名密钥，仅写入 config.secret.json；缺失时启动自动生成
+    "web_session_secret": "",
     "same_time_precheck_limit": 0,  # 同时段预检上限；<=0 表示关闭预检
     "preselect_enabled": True,
     "preselect_ttl_seconds": 2.0,
@@ -305,14 +452,24 @@ CONFIG = {
     "delivery_rate_limit_backoff_seconds": 1.7,
     "delivery_refill_matrix_poll_seconds": 0.35,
     "delivery_refill_no_candidate_streak_limit": 0,
+    "delivery_plan_max_age_seconds": 8.0,
     "delivery_total_budget_seconds": 600.0,
-    "delivery_min_post_interval_seconds": 2.2,
+    "delivery_account_phase_offset_ms": 120,
+    "delivery_retry_jitter_ms": 180,
     "delivery_backup_switch_delay_seconds": 2.0,
-    "delivery_warmup_max_retries": 200,
-    "delivery_warmup_budget_seconds": 300.0,
     "max_items_per_batch": 6,
     "max_consecutive_slots_per_place": 3,
     "delivery_submit_granularity": "per_legal_batch",
+    # 同 POST 内 fieldinfo 条数上限：默认用账号 delivery_max_places_per_timeslot；单条连续时段不超过此时长（整点小时格，3 表示最多 3 小时）
+    "delivery_chunk_posts_by_fieldinfo": True,
+    "delivery_max_fieldinfo_hours": 3,
+    # 自动递送（极速订场）组场：与独立 refill 隔离；关则回退旧打分与 aggressive 首档即返
+    "delivery_solver_auto_time_consecutive": True,
+    "delivery_solver_aggressive_best_tier": True,
+    # 自动递送 aggressive：总需求档位单调递降，自上而下第一可行档（优先多占）；关则回退旧 _build_downgrade_levels（含非单调尾部）
+    "delivery_monotone_total_downgrade": True,
+    # aggressive / refill 单调缺口：在可行前提下按总格数 Σk 最大，同 S 内全 level_spec 枚举后取 _score_items 最优；关则保留单调档位表 + 自上而下第一可行
+    "delivery_solver_max_total_cells": True,
     "manual_submit_profile": "manual_minimal",
     "auto_submit_profile": "auto_minimal",
     "submit_profiles": {
@@ -328,13 +485,12 @@ CONFIG = {
 }
 
 
-# 执行参数上下限（唯一定义处）：总时长 1800 秒，拉活总时长 900 秒，拉活重试 300 次；超出时限制并提示用户
+# 执行参数上下限（唯一定义处）
 EXEC_PARAM_LIMITS = {
-    "delivery_warmup_max_retries": (1, 9900),
     "delivery_total_budget_seconds": (3.0, 9900.0),
-    "delivery_warmup_budget_seconds": (1.0, 9900.0),
     "delivery_min_post_interval_seconds": (0.0, 120.0),
     "delivery_refill_no_candidate_streak_limit": (0, 5000),
+    "delivery_plan_max_age_seconds": (0.5, 300.0),
 }
 
 
@@ -349,6 +505,11 @@ def _clamp_exec_param(key, raw_value, default):
         return (default, False)
     clamped = max(lo, min(hi, val))
     return (clamped, clamped != val)
+
+
+def _read_delivery_min_post_interval_seconds():
+    """递送 POST 最小间隔：仅使用已加载到 CONFIG 的值（须存在于 config.json 且通过 validate_required_execution_config）。"""
+    return max(0.0, float(CONFIG["delivery_min_post_interval_seconds"]))
 
 
 def strip_delivery_keys_from_profiles(cfg):
@@ -371,6 +532,7 @@ def strip_delivery_keys_from_profiles(cfg):
 # 场地/时段策略：按任务 config 为准；无任务键时由主组 items 推导。不写入全局 CONFIG（加载磁盘后会剔除）。
 TASK_VENUE_STRATEGY_DELIVERY_KEYS = frozenset(
     {
+        "delivery_mode",
         "delivery_first_group_from_matrix",
         "delivery_first_group_times",
         "delivery_first_group_time_preference_order",
@@ -381,6 +543,7 @@ TASK_VENUE_STRATEGY_DELIVERY_KEYS = frozenset(
         "delivery_preferred_place_max",
         "delivery_matrix_place_min",
         "delivery_matrix_place_max",
+        "delivery_first_group_allow_scatter",
     }
 )
 
@@ -549,8 +712,9 @@ def _derive_venue_strategy_from_primary_items(items):
             "delivery_time_preference_order": [],
             "delivery_preferred_place_min": 0,
             "delivery_preferred_place_max": 0,
-            "delivery_matrix_place_min": 1,
-            "delivery_matrix_place_max": 14,
+        "delivery_matrix_place_min": 1,
+        "delivery_matrix_place_max": 14,
+        "delivery_first_group_allow_scatter": False,
         }
     times_sorted = sorted(
         {
@@ -582,6 +746,7 @@ def _derive_venue_strategy_from_primary_items(items):
         "delivery_preferred_place_max": 0,
         "delivery_matrix_place_min": mlo,
         "delivery_matrix_place_max": mhi,
+        "delivery_first_group_allow_scatter": False,
     }
 
 
@@ -594,10 +759,11 @@ def _merge_task_venue_strategy(task_config, primary_items):
     if "delivery_first_group_from_matrix" in task_config:
         out["delivery_first_group_from_matrix"] = bool(task_config["delivery_first_group_from_matrix"])
     if "delivery_target_blocks" in task_config and task_config["delivery_target_blocks"] is not None:
-        try:
-            out["delivery_target_blocks"] = max(1, min(3, int(task_config["delivery_target_blocks"])))
-        except (TypeError, ValueError):
-            pass
+        if not bool(out.get("delivery_first_group_from_matrix")):
+            try:
+                out["delivery_target_blocks"] = max(1, min(3, int(task_config["delivery_target_blocks"])))
+            except (TypeError, ValueError):
+                pass
     for lk in (
         "delivery_first_group_times",
         "delivery_first_group_time_preference_order",
@@ -629,11 +795,187 @@ def _merge_task_venue_strategy(task_config, primary_items):
             out["delivery_matrix_place_max"] = hi
         except Exception:
             pass
+    if "delivery_first_group_allow_scatter" in task_config:
+        out["delivery_first_group_allow_scatter"] = bool(task_config["delivery_first_group_allow_scatter"])
     if "delivery_submit_granularity" in task_config:
         _g = str(task_config.get("delivery_submit_granularity") or "").strip().lower()
         if _g in ("per_legal_batch", "single_cell"):
             out["delivery_submit_granularity"] = _g
+    if bool(out.get("delivery_first_group_from_matrix")):
+        out["delivery_target_blocks"] = max(
+            1,
+            min(3, int(_delivery_target_blocks_from_items(normalize_booking_items(primary_items)))),
+        )
     return out
+
+
+def get_task_delivery_mode(task_config):
+    """任务递送模式：缺省 matrix（与旧 tasks.json 兼容）。interval_post=全量间隔 POST。"""
+    if not isinstance(task_config, dict):
+        return "matrix"
+    m = str(task_config.get("delivery_mode") or "").strip().lower()
+    if m == "interval_post":
+        return "interval_post"
+    return "matrix"
+
+
+def validate_interval_post_strategy(cfg):
+    """全量间隔 POST 保存前校验。"""
+    errs = []
+    if not isinstance(cfg, dict):
+        return errs
+    if cfg.get("interval_post_consecutive_hours") is not None and str(cfg.get("interval_post_consecutive_hours")).strip() != "":
+        try:
+            L = int(cfg["interval_post_consecutive_hours"])
+            if L < 1 or L > 3:
+                errs.append("interval_post_consecutive_hours 须在 [1, 3]")
+        except (TypeError, ValueError):
+            errs.append("interval_post_consecutive_hours 须为整数")
+    try:
+        lo = int(cfg.get("delivery_matrix_place_min"))
+        hi = int(cfg.get("delivery_matrix_place_max"))
+        if lo > hi:
+            lo, hi = hi, lo
+        if hi < 1:
+            errs.append("全量间隔 POST 须配置有效的 delivery_matrix_place_min/max（矩阵可选场地号段）")
+    except (TypeError, ValueError):
+        errs.append("全量间隔 POST 须配置 delivery_matrix_place_min / delivery_matrix_place_max")
+    tt = cfg.get("delivery_target_times")
+    if not isinstance(tt, list) or not [x for x in tt if normalize_time_str(x)]:
+        errs.append("全量间隔 POST 需要 delivery_target_times（由主组推导或手工填写）")
+    co = str(cfg.get("interval_post_candidate_order") or "").strip().lower()
+    if co and co not in ("ordered", "shuffled"):
+        errs.append("interval_post_candidate_order 须为 ordered 或 shuffled")
+    return errs
+
+
+def _interval_post_consecutive_times_from_start(start_hhmm, L):
+    """从整点起点生成 L 个连续 1h 槽（HH:MM）；若跨日则不可用，返回 None。"""
+    if L < 1:
+        return None
+    s0 = normalize_time_str(start_hhmm)
+    if not s0:
+        return None
+    times = [s0]
+    try:
+        cur = datetime.strptime(s0, "%H:%M")
+    except ValueError:
+        return None
+    for _ in range(L - 1):
+        cur = cur + timedelta(hours=1)
+        times.append(cur.strftime("%H:%M"))
+    try:
+        t_first = datetime.strptime(times[0], "%H:%M")
+        t_last = datetime.strptime(times[-1], "%H:%M")
+        if (t_last - t_first).total_seconds() != (L - 1) * 3600:
+            return None
+    except Exception:
+        return None
+    return times
+
+
+def build_interval_post_candidate_blocks(task_config, primary_items, venue_merged):
+    """
+    生成全量间隔 POST 候选：每块为单场地 + 连续 L 小时。
+    场地号**只**来自合并策略里的 delivery_matrix_place_min/max（与任务中心「矩阵可选场地」一致），
+    不使用 candidate_places（主组点选场地仅表达时段/目标量等，避免只扫 3、4 号而漏掉号段内其它场）。
+    返回 (blocks, err_msg)；blocks 为 [{id, place, times}]。
+    """
+    tc = task_config if isinstance(task_config, dict) else {}
+    vm = venue_merged if isinstance(venue_merged, dict) else {}
+    try:
+        L = int(tc.get("interval_post_consecutive_hours"))
+        if L < 1 or L > 3:
+            L = None
+    except (TypeError, ValueError):
+        L = None
+    if L is None:
+        try:
+            L = max(1, min(3, int(CONFIG.get("delivery_max_fieldinfo_hours", 3) or 3)))
+        except (TypeError, ValueError):
+            L = 3
+
+    try:
+        lo = int(vm.get("delivery_matrix_place_min") or 1)
+        hi = int(vm.get("delivery_matrix_place_max") or 14)
+    except (TypeError, ValueError):
+        lo, hi = 1, 14
+    lo, hi = max(1, lo), max(1, hi)
+    if lo > hi:
+        lo, hi = hi, lo
+    cand_places = [str(i) for i in range(lo, hi + 1)]
+    if not cand_places:
+        return [], "全量间隔 POST：无可用场地号"
+
+    starts = []
+    ish = tc.get("interval_post_start_hours")
+    if isinstance(ish, list) and ish:
+        seen = set()
+        for x in ish:
+            s = normalize_time_str(x)
+            if s and s not in seen:
+                seen.add(s)
+                starts.append(s)
+    else:
+        pref = vm.get("delivery_time_preference_order") or vm.get("delivery_target_times") or []
+        if not pref:
+            pref = summarize_booking_items(primary_items or []).get("times") or []
+        tt_list = [normalize_time_str(x) for x in (vm.get("delivery_target_times") or []) if normalize_time_str(x)]
+        tt_set = set(tt_list)
+        seen = set()
+        for t in pref:
+            s = normalize_time_str(t)
+            if not s or s in seen:
+                continue
+            if tt_set and s not in tt_set:
+                continue
+            seen.add(s)
+            starts.append(s)
+        if not starts and tt_list:
+            for s in tt_list:
+                if s not in seen:
+                    seen.add(s)
+                    starts.append(s)
+
+    if not starts:
+        return [], "全量间隔 POST：无合法起点时段（请配置 delivery_target_times / 主组时段）"
+
+    blocks = []
+    for p in cand_places:
+        for t0 in starts:
+            chain = _interval_post_consecutive_times_from_start(t0, L)
+            if not chain or len(chain) != L:
+                continue
+            blocks.append({"id": f"{p}:{chain[0]}x{L}", "place": str(p), "times": list(chain)})
+
+    if not blocks:
+        return [], f"全量间隔 POST：连续{L}小时下无可用候选（检查起点与营业时间）"
+
+    order_mode = str(tc.get("interval_post_candidate_order") or "ordered").strip().lower()
+    if order_mode == "shuffled":
+        random.shuffle(blocks)
+    return blocks, ""
+
+
+def map_interval_post_classified_action(classified):
+    """
+    将 _classify_delivery_response 结果映射为间隔 POST 队列语义。
+    switch_backup / payload_fail -> 剔除当前候选（不再入队）。
+    """
+    if not isinstance(classified, dict):
+        return "terminal_fail"
+    action = str(classified.get("action") or "")
+    if action == "stop_success":
+        return "success"
+    if action == "switch_backup":
+        return "drop_candidate"
+    if action == "continue_delivery":
+        return "retry_tail"
+    if action == "min_backoff_continue":
+        return "retry_tail_slow"
+    if action == "stop_task_fail":
+        return "terminal_fail"
+    return "terminal_fail"
 
 
 def validate_task_venue_strategy(cfg):
@@ -641,18 +983,27 @@ def validate_task_venue_strategy(cfg):
     errs = []
     if not isinstance(cfg, dict):
         return errs
+    if get_task_delivery_mode(cfg) == "interval_post":
+        return validate_interval_post_strategy(cfg)
     if not cfg.get("delivery_first_group_from_matrix"):
         return errs
     ft = cfg.get("delivery_first_group_times")
-    if not isinstance(ft, list) or len(ft) == 0:
-        errs.append("已开启首组按矩阵计算，请在任务中配置首组目标时段 delivery_first_group_times")
-        return errs
+    ft_set = (
+        {str(t).strip() for t in ft if re.fullmatch(r"\d{2}:\d{2}", str(t).strip())}
+        if isinstance(ft, list)
+        else set()
+    )
     fo = cfg.get("delivery_first_group_time_preference_order")
     if isinstance(fo, list) and fo:
-        fts = {str(t).strip() for t in ft if re.fullmatch(r"\d{2}:\d{2}", str(t).strip())}
+        if not ft_set:
+            errs.append(
+                "已开启首组按矩阵计算：若填写 delivery_first_group_time_preference_order，"
+                "须同时配置 delivery_first_group_times；否则请省略二者，由主组场次推导"
+            )
+            return errs
         for t in fo:
             s = str(t).strip()
-            if re.fullmatch(r"\d{2}:\d{2}", s) and s not in fts:
+            if re.fullmatch(r"\d{2}:\d{2}", s) and s not in ft_set:
                 errs.append(f"delivery_first_group_time_preference_order 含不在 delivery_first_group_times 中的项: {s}")
                 break
     tt = cfg.get("delivery_target_times")
@@ -684,16 +1035,21 @@ def validate_required_execution_config(cfg):
     errs = []
     num_float = (
         "delivery_total_budget_seconds",
-        "delivery_warmup_budget_seconds",
         "delivery_min_post_interval_seconds",
         "delivery_transport_round_interval_seconds",
         "delivery_refill_matrix_poll_seconds",
+        "delivery_plan_max_age_seconds",
         "submit_timeout_seconds",
         "matrix_timeout_seconds",
     )
     for k in num_float:
         if k not in cfg or cfg.get(k) is None or (isinstance(cfg.get(k), str) and str(cfg.get(k)).strip() == ""):
-            errs.append(f"缺少或为空: {k}")
+            if k == "delivery_min_post_interval_seconds":
+                errs.append(
+                    f"缺少或为空: {k}（请在系统配置 → 任务执行参数中填写，或编辑 web_booker/config.json）"
+                )
+            else:
+                errs.append(f"缺少或为空: {k}")
             continue
         try:
             v = float(cfg[k])
@@ -713,17 +1069,6 @@ def validate_required_execution_config(cfg):
             lo, hi = EXEC_PARAM_LIMITS[k]
             if v < lo or v > hi:
                 errs.append(f"{k} 须在 [{lo}, {hi}] 内，当前为 {v}")
-
-    if "delivery_warmup_max_retries" not in cfg or cfg.get("delivery_warmup_max_retries") is None:
-        errs.append("缺少或为空: delivery_warmup_max_retries")
-    else:
-        try:
-            wr = int(cfg["delivery_warmup_max_retries"])
-            lo, hi = EXEC_PARAM_LIMITS["delivery_warmup_max_retries"]
-            if wr < lo or wr > hi:
-                errs.append(f"delivery_warmup_max_retries 须在 [{lo}, {hi}] 内")
-        except (TypeError, ValueError):
-            errs.append("delivery_warmup_max_retries 须为整数")
 
     if "delivery_refill_no_candidate_streak_limit" not in cfg or cfg.get("delivery_refill_no_candidate_streak_limit") is None:
         errs.append("缺少或为空: delivery_refill_no_candidate_streak_limit")
@@ -750,6 +1095,43 @@ def validate_required_execution_config(cfg):
             except (TypeError, ValueError):
                 errs.append(f"{bk} 须为整数")
 
+    def _is_boolish(v):
+        if isinstance(v, bool):
+            return True
+        if isinstance(v, (int, float)) and int(v) in (0, 1):
+            return True
+        if isinstance(v, str) and str(v).strip().lower() in (
+            "true", "false", "0", "1", "yes", "no",
+        ):
+            return True
+        return False
+
+    for bk in (
+        "delivery_chunk_posts_by_fieldinfo",
+        "delivery_solver_auto_time_consecutive",
+        "delivery_solver_aggressive_best_tier",
+        "delivery_monotone_total_downgrade",
+        "delivery_solver_max_total_cells",
+    ):
+        if bk not in cfg or cfg.get(bk) is None:
+            continue
+        if not _is_boolish(cfg.get(bk)):
+            errs.append(f"{bk} 须为布尔值")
+
+    if "delivery_max_fieldinfo_hours" in cfg and cfg.get("delivery_max_fieldinfo_hours") is not None:
+        if isinstance(cfg.get("delivery_max_fieldinfo_hours"), str) and str(cfg.get("delivery_max_fieldinfo_hours")).strip() == "":
+            errs.append("delivery_max_fieldinfo_hours 不能为空字符串")
+        else:
+            try:
+                mh = int(cfg["delivery_max_fieldinfo_hours"])
+                if mh < 1 or mh > 3:
+                    errs.append("delivery_max_fieldinfo_hours 须在 [1, 3] 内")
+            except (TypeError, ValueError):
+                errs.append("delivery_max_fieldinfo_hours 须为整数")
+
+    if errs:
+        errs.append("请对照仓库内 web_booker/config.example.json 补全或修正必填项（勿依赖程序静默填默认）。")
+
     return errs
 
 
@@ -759,7 +1141,15 @@ CONFIG_FILE = CONFIG_TEMPLATE_FILE
 CONFIG_SECRET_FILE = os.path.join(BASE_DIR, "config.secret.json")
 # 敏感配置：仅从 config.secret.json 读写，不写入 config.json，便于与执行参数分离
 SENSITIVE_TOP_LEVEL_KEYS = frozenset(
-    {"accounts", "auth", "notification_phones", "pushplus_tokens", "sms", "web_ui_auth"}
+    {
+        "accounts",
+        "auth",
+        "notification_phones",
+        "pushplus_tokens",
+        "sms",
+        "web_ui_auth",
+        "web_session_secret",
+    }
 )
 # 已从 CONFIG 默认与 execution API 移除；磁盘上旧 config.json 可能仍含这些键，加载时不再合并进 CONFIG
 DEPRECATED_EXEC_PARAM_KEYS = frozenset({
@@ -783,12 +1173,21 @@ DEPRECATED_EXEC_PARAM_KEYS = frozenset({
 })
 LOG_BUFFER = []
 MAX_LOG_SIZE = 500
+_LOG_IO_LOCK = threading.Lock()
+# 行首 `[HH:MM:SS` 或 `[HH:MM:SS.mmm`（与 log() 输出一致，供 window_min 解析）
+_LOG_LINE_TIME_HEAD = re.compile(r"^\[(\d{2}:\d{2}:\d{2})(?:\.\d{1,6})?\]")
 # 与 client.server_time_offset_seconds 同步，供 log() 前缀估计服务器时间（HTTP Date）
 _LOG_TIME_OFFSET_SECONDS = 0.0
 MAX_TARGET_COUNT = 9
 REFILL_TASKS_FILE = os.path.join(BASE_DIR, "refill_tasks.json")
+REFILL_SCHEDULER_STATE_FILE = os.path.join(BASE_DIR, "refill_scheduler_state.json")
+REFILL_GLOBAL_PAUSE_MINUTES_DEFAULT = 5
 TASK_RUN_METRICS_FILE = os.path.join(BASE_DIR, "task_run_metrics.json")
 _TASK_RUN_METRICS_LOCK = threading.Lock()
+# 独立 Refill 结构化诊断（NDJSON，与一键导出诊断包联动）
+DIAGNOSTIC_REFILL_NDJSON_FILE = os.path.join(BASE_DIR, "diagnostic_refill.ndjson")
+# 独立 refill 任务结构化诊断（NDJSON，与一键导出诊断包联动）
+DIAGNOSTIC_REFILL_NDJSON_PATH = os.path.join(BASE_DIR, "diagnostic_refill.ndjson")
 
 
 def _percentile(sorted_values, p):
@@ -904,44 +1303,69 @@ def record_matrix_fetch_failure(run_metric, phase, err_msg, elapsed_ms=None):
     append_transport_error_event(run_metric, phase, b, str(err_msg or "")[:200], elapsed_ms)
 
 
+def _log_timestamp_str():
+    dt = datetime.now() + timedelta(seconds=float(_LOG_TIME_OFFSET_SECONDS or 0.0))
+    return dt.strftime("%H:%M:%S") + f".{dt.microsecond // 1000:03d}"
+
+
+def _snapshot_log_buffer():
+    with _LOG_IO_LOCK:
+        return list(LOG_BUFFER)
+
+
+def _log_line_naive_datetime_for_window(line, now_dt):
+    """从行首解析当日墙钟时间，供 window_min 过滤；无法解析返回 None。"""
+    m = _LOG_LINE_TIME_HEAD.match(line or "")
+    if not m:
+        return None
+    t = datetime.strptime(m.group(1), "%H:%M:%S").time()
+    cur = now_dt.replace(hour=t.hour, minute=t.minute, second=t.second, microsecond=0)
+    if cur > now_dt:
+        cur = cur - timedelta(days=1)
+    return cur
+
+
 def log(msg):
-    """记录日志到内存缓冲区、控制台，可选按天落盘便于次日查看"""
-    print(msg)
-    timestamp = (
-        datetime.now() + timedelta(seconds=float(_LOG_TIME_OFFSET_SECONDS or 0.0))
-    ).strftime("%H:%M:%S")
-    line = f"[{timestamp}] {msg}"
-    LOG_BUFFER.append(line)
-    if len(LOG_BUFFER) > MAX_LOG_SIZE:
-        LOG_BUFFER.pop(0)
-    # 按天落盘，明天仍可查看今天的运行日志；可选保留最近 N 天
-    if CONFIG.get("log_to_file"):
-        try:
-            log_dir = (CONFIG.get("log_file_dir") or "logs").strip() or "logs"
-            if not os.path.isabs(log_dir):
-                log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), log_dir)
-            os.makedirs(log_dir, exist_ok=True)
-            today_str = datetime.now().strftime("%Y%m%d")
-            log_file = os.path.join(log_dir, f"run_{today_str}.log")
-            # 每天首次写日志时清理超过保留期的旧日志（避免每次 log 都扫目录）
-            retention_days = int(CONFIG.get("log_retention_days", 3) or 0)
-            if retention_days > 0 and getattr(log, "_last_purge_date", None) != today_str:
-                try:
-                    cutoff = (datetime.now() - timedelta(days=retention_days)).strftime("%Y%m%d")
-                    for name in os.listdir(log_dir):
-                        if name.startswith("run_") and name.endswith(".log") and len(name) == 15:
-                            date_str = name[4:12]
-                            if date_str < cutoff:
-                                p = os.path.join(log_dir, name)
-                                if os.path.isfile(p):
-                                    os.remove(p)
-                    log._last_purge_date = today_str
-                except Exception:
-                    pass
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-        except Exception as e:
-            builtins.print(f"⚠️ 写日志文件失败: {e}")
+    """记录日志到内存缓冲区、控制台，可选按天落盘便于次日查看（与控制台同一行格式，带毫秒与可选 tid 前缀）。"""
+    ctx = get_runtime_request_context()
+    tid_raw = ctx.get("task_id") if isinstance(ctx, dict) else None
+    tid = str(tid_raw).strip() if tid_raw is not None else ""
+    prefix = f"tid={tid}| " if tid else ""
+    raw = str(msg)
+    ts = _log_timestamp_str()
+    line = f"[{ts}] {prefix}{raw}"
+    with _LOG_IO_LOCK:
+        builtins.print(line)
+        LOG_BUFFER.append(line)
+        if len(LOG_BUFFER) > MAX_LOG_SIZE:
+            LOG_BUFFER.pop(0)
+        # 按天落盘，明天仍可查看今天的运行日志；可选保留最近 N 天
+        if CONFIG.get("log_to_file"):
+            try:
+                log_dir = (CONFIG.get("log_file_dir") or "logs").strip() or "logs"
+                if not os.path.isabs(log_dir):
+                    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), log_dir)
+                os.makedirs(log_dir, exist_ok=True)
+                today_str = datetime.now().strftime("%Y%m%d")
+                log_file = os.path.join(log_dir, f"run_{today_str}.log")
+                retention_days = int(CONFIG.get("log_retention_days", 3) or 0)
+                if retention_days > 0 and getattr(log, "_last_purge_date", None) != today_str:
+                    try:
+                        cutoff = (datetime.now() - timedelta(days=retention_days)).strftime("%Y%m%d")
+                        for name in os.listdir(log_dir):
+                            if name.startswith("run_") and name.endswith(".log") and len(name) == 15:
+                                date_str = name[4:12]
+                                if date_str < cutoff:
+                                    p = os.path.join(log_dir, name)
+                                    if os.path.isfile(p):
+                                        os.remove(p)
+                        log._last_purge_date = today_str
+                    except Exception:
+                        pass
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except Exception as e:
+                builtins.print(f"⚠️ 写日志文件失败: {e}")
 
 
 def is_verbose_logs_enabled():
@@ -1087,43 +1511,28 @@ def booking_date_scope_from_appoint(date_str, appoint_cfg):
     return "future"
 
 
-def matrix_booking_open_by_no_locked_cells(matrix):
+def is_matrix_cell_bookable_for_new_booking(state):
     """
-    矩阵中若存在任一 locked 格，视为尚未开约；若至少有一格且全无 locked，视为已开约。
-    与「未开约时全场 locked」的馆方常见行为对齐；不依赖 available。
-    返回 True / False / None（None：无有效格点，无法据此判断，应回退日历 scope）。
+    递送/求解：将 available 与 locked 视为可尝试预订的新格子；mine、booked 等不可作为新订目标。
+    约定：开约后接口不再返回 locked；锁定期 locked 与 available 一并参与算场。
     """
-    if not isinstance(matrix, dict) or not matrix:
-        return None
-    cell_n = 0
-    for _p, row in matrix.items():
+    if state is None:
+        return False
+    s = str(state).strip().lower()
+    return s in ("available", "locked")
+
+
+def matrix_snapshot_has_locked_cell(matrix):
+    """矩阵中是否存在任一 locked 格（用于观测锁定期快照）。"""
+    if not isinstance(matrix, dict):
+        return False
+    for row in matrix.values():
         if not isinstance(row, dict):
             continue
-        for _t, st in row.items():
-            cell_n += 1
+        for st in row.values():
             if st == "locked":
-                return False
-    if cell_n == 0:
-        return None
-    return True
-
-
-def seconds_until_today_open_time_cn(open_t):
-    """距北京时间「今天」open_t 的秒数；已过则 0。"""
-    if not open_t:
-        return 0.0
-    now = datetime.now(_CN_TZ)
-    target = datetime(
-        now.year,
-        now.month,
-        now.day,
-        open_t.hour,
-        open_t.minute,
-        open_t.second,
-        open_t.microsecond,
-        tzinfo=_CN_TZ,
-    )
-    return max(0.0, (target - now).total_seconds())
+                return True
+    return False
 
 
 def map_slot_state_int(state_int, locked_state_values_set):
@@ -1286,6 +1695,165 @@ def _build_downgrade_levels(target_blocks, target_times, time_preference_order):
     return levels
 
 
+def _sum_level_spec(spec):
+    if not spec:
+        return 0
+    return sum(int(v) for v in spec.values())
+
+
+def _walk_downgrade_sequence(initial, order):
+    """
+    从 initial（各时段正整数块数）出发，按 time_preference_order 中「靠后时段先削」每次减 1，
+    生成递降档位序列（不含旧版 _build_downgrade_levels 末尾 spec_2/spec_1 那种破坏总需求单调的附加档）。
+    """
+    levels = []
+    current = dict(initial)
+    if not current:
+        return levels
+    levels.append(dict(current))
+    while current:
+        reduced = False
+        for t in reversed(order):
+            if t not in current:
+                continue
+            k = current[t]
+            if k <= 1:
+                cur_copy = dict(current)
+                del cur_copy[t]
+                if cur_copy and cur_copy not in levels:
+                    levels.append(cur_copy)
+                    current = cur_copy
+                    reduced = True
+                break
+            else:
+                cur_copy = dict(current)
+                cur_copy[t] = k - 1
+                if cur_copy not in levels:
+                    levels.append(cur_copy)
+                    current = cur_copy
+                    reduced = True
+                break
+        if not reduced:
+            break
+    if order and {order[0]: 1} not in levels:
+        levels.append({order[0]: 1})
+    return levels
+
+
+def _level_specs_unique_by_total_desc(levels):
+    """按总格数从大到小排序；同一总和 S 只保留一条（规范路径已保证唯一）。"""
+    levels = [sp for sp in levels if _sum_level_spec(sp) > 0]
+    levels.sort(key=lambda sp: -_sum_level_spec(sp))
+    seen = set()
+    out = []
+    for sp in levels:
+        s = _sum_level_spec(sp)
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(sp)
+    return out
+
+
+def _enumerate_level_specs_by_total(order, cap_per_time):
+    """
+    各时段 k_t ∈ [0,B]、Σk=S 的全部 level_spec，按总和 S 分组。
+    order 为时段列表（与 time_preference_order 一致）；B = min(6, cap_per_time)。
+    """
+    if not order:
+        return {}
+    try:
+        B = max(1, min(6, int(cap_per_time)))
+    except (TypeError, ValueError):
+        B = 1
+    n = len(order)
+    by_sum = {}
+    for tpl in itertools.product(range(B + 1), repeat=n):
+        s = sum(tpl)
+        if s <= 0:
+            continue
+        spec = {order[i]: int(tpl[i]) for i in range(n)}
+        by_sum.setdefault(s, []).append(spec)
+    return by_sum
+
+
+def _enumerate_need_specs_by_total(order, caps_per_time):
+    """
+    在 caps_per_time[t] 上限下枚举各时段块数，按 Σk=S 分组（s≥1）；用于 refill 单调缺口 + 总格数最大化。
+    """
+    if not order:
+        return {}
+    ranges = []
+    for t in order:
+        try:
+            mx = max(0, min(6, int(caps_per_time.get(t, 0))))
+        except (TypeError, ValueError):
+            mx = 0
+        ranges.append(range(0, mx + 1))
+    if not ranges:
+        return {}
+    by_sum = {}
+    for tpl in itertools.product(*ranges):
+        s = sum(tpl)
+        if s <= 0:
+            continue
+        spec = {order[i]: int(tpl[i]) for i in range(len(order)) if tpl[i] > 0}
+        if not spec:
+            continue
+        by_sum.setdefault(s, []).append(spec)
+    return by_sum
+
+
+def _build_monotone_total_budget_levels(target_blocks, target_times, time_preference_order):
+    """
+    单调总需求档位表：每个档位为 {时段: 块数}，总格数 S 沿档位索引严格递减（M..1），无旧版尾部单时段满块等「先降后升」。
+
+    规范分解（与主 while 一致）：在 time_preference_order 中越靠后的时段越先被削；故对每个总和 S 至多一条 level_spec。
+
+    示例（2 时段 × target_blocks=2，order 先 18 后 19）：
+      S=4: {18:00:2, 19:00:2}
+      S=3: {18:00:2, 19:00:1}
+      S=2: {18:00:2} 或 {19:00:2} 取决于削法；本路径先削 19，得 {18:00:2}
+      S=1: {18:00:1}
+
+    示例（2 时段 × target_blocks=3，即 3×2 总上限 6）：
+      S=6: {18:3,19:3} → S=5: {18:3,19:2} → … → 靠后时段先减至删段，再削前一档。
+    """
+    if not target_times or not time_preference_order:
+        if target_times and target_blocks:
+            return [{t: target_blocks for t in target_times}]
+        return []
+    order = [t for t in time_preference_order if t in target_times]
+    if not order:
+        order = list(target_times)
+    initial = {t: target_blocks for t in order}
+    levels = _walk_downgrade_sequence(initial, order)
+    return _level_specs_unique_by_total_desc(levels)
+
+
+def _build_monotone_need_levels(need_by_time, time_preference_order):
+    """
+    与 _build_monotone_total_budget_levels 相同递降规则，初值取当前缺口 need_by_time（仅正整数时段），
+    用于自动递送 refill：从 sum(need) 单调降到 1，自上而下第一可行档。
+    """
+    need = {}
+    for t, v in (need_by_time or {}).items():
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv > 0:
+            need[str(t).strip()] = iv
+    if not need:
+        return []
+    order = [t for t in time_preference_order if t in need]
+    if not order:
+        order = sorted(need.keys())
+    initial = {t: need[t] for t in order}
+    levels = _walk_downgrade_sequence(initial, order)
+    return _level_specs_unique_by_total_desc(levels)
+
+
 def _normalized_matrix_place_span(lo_raw, hi_raw):
     """矩阵求解可选场地号闭区间；缺省 1–14，限制在 [1, cap]。"""
     cap = 50
@@ -1318,7 +1886,7 @@ def _selectable_place_bounds_from_intent(intent):
 def compute_first_group_from_matrix(matrix, places, times, config_or_dict):
     """
     从拉活得到的 matrix 计算第一组 group_items（偏好场地 + 块数×时间降级）。
-    可选场地号段由配置决定（默认 1–14）；仅 matrix[p][t]=="available" 可订。
+    可选场地号段由配置决定（默认 1–14）；matrix[p][t] 为 available 或 locked 时视为可订（见 is_matrix_cell_bookable_for_new_booking）。
     返回 (group_items, level_index) 或 (None, None)。
     """
     if not matrix or not isinstance(config_or_dict, dict):
@@ -1354,9 +1922,13 @@ def compute_first_group_from_matrix(matrix, places, times, config_or_dict):
         "preferred_place_max": int(cfg.get("delivery_preferred_place_max") or 0),
         "selectable_place_min": span_lo,
         "selectable_place_max": span_hi,
-        "require_consecutive": True,
+        "require_consecutive": not bool(cfg.get("delivery_first_group_allow_scatter")),
         "mine_places_by_time": mine_bt,
+        "solver_max_total_cells": bool(CONFIG.get("delivery_solver_max_total_cells", True)),
     }
+    if bool(CONFIG.get("delivery_solver_auto_time_consecutive", True)):
+        intent["solver_scoring"] = "auto_time_consecutive"
+        intent["solver_aggressive_best_tier"] = bool(CONFIG.get("delivery_solver_aggressive_best_tier", True))
     solved = solve_candidate_from_matrix(
         matrix,
         places_list,
@@ -1368,12 +1940,74 @@ def compute_first_group_from_matrix(matrix, places, times, config_or_dict):
     return solved.get("items"), solved.get("level_index")
 
 
+def _prev_consecutive_hour_str(tstr):
+    try:
+        dt = datetime.strptime(str(tstr).strip(), "%H:%M")
+        return (dt - timedelta(hours=1)).strftime("%H:%M")
+    except Exception:
+        return None
+
+
+def scatter_pick_items_with_time_streak_bias(
+    matrix,
+    selectable_places,
+    level_spec,
+    time_preference_order,
+    mine_by_time,
+    use_prefer,
+    prefer_min,
+    prefer_max,
+):
+    """
+    散号模式：按 time_preference_order 逐时段选场；同一自然日「上一整点」已选场地优先（延续同场地连续时段）。
+    与 legacy 散号一致，允许某时段 avail 不足则少选。
+    """
+    filled_by_time = {}
+    items = []
+    for t in time_preference_order:
+        need = int(level_spec.get(t, 0))
+        if need <= 0:
+            continue
+        avail = [
+            p
+            for p in selectable_places
+            if is_matrix_cell_bookable_for_new_booking((matrix.get(p) or {}).get(t))
+        ]
+        if not avail:
+            continue
+        prev_t = _prev_consecutive_hour_str(t)
+        streak_set = set()
+        if prev_t and str(prev_t) in filled_by_time:
+            streak_set = set(filled_by_time[str(prev_t)])
+        mt_list = mine_by_time.get(str(t).strip()) if mine_by_time else None
+
+        def sort_key(p):
+            in_streak = 1 if p in streak_set else 0
+            d_mine = _place_distance_to_mine_set(p, mt_list) if mt_list else 0
+            pref_pen = 0 if (not use_prefer or (prefer_min <= int(p) <= prefer_max)) else 1
+            return (-in_streak, d_mine, pref_pen, int(p))
+
+        avail = sorted(avail, key=sort_key)
+        pick_count = min(max(0, need), len(avail))
+        if pick_count <= 0:
+            continue
+        picked = avail[:pick_count]
+        for p in picked:
+            items.append({"place": str(p), "time": str(t)})
+        filled_by_time[str(t)] = picked
+    return normalize_booking_items(items) if items else []
+
+
 def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=None):
     """
     统一候选求解器（主任务 refill / 独立 refill 可复用）。
+    选格语义：is_matrix_cell_bookable_for_new_booking（available 与 locked 可订；booked/mine 排除）。
     mode:
-      - strict: 仅接受完整目标，不做降级
-      - aggressive: 允许按 _build_downgrade_levels 降级
+      - strict: 仅接受完整目标，不做降级（need_by_time 时为一档；若 intent 含 monotone_need_relax 则对缺口梯自上而下第一可行）
+      - aggressive: 默认按 _build_monotone_total_budget_levels 总需求单调递降；关 delivery_monotone_total_downgrade 时回退 _build_downgrade_levels
+    delivery_solver_max_total_cells（或 intent["solver_max_total_cells"] 显式覆盖）为真时：
+      在 aggressive 的「总预算单调」路径、以及 strict+monotone_need_relax 的 refill 路径上，改为按 S 从大到小枚举该 S 下全部 level_spec，
+      同 S 内取 _score_items 最高；关则仍用单调档位表 + 自上而下第一可行（及 aggressive_best 等原语义）。
     返回:
       {"items": [...], "level_index": int, "level_spec": {...}, "score": float} 或 None
     """
@@ -1404,15 +2038,46 @@ def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=Non
     if not selectable_places:
         return None
 
-    if need_by_time:
+    monotone_need_relax = bool(cfg.get("monotone_need_relax"))
+    use_monotone_total = (
+        not need_by_time
+        and mode == "aggressive"
+        and bool(CONFIG.get("delivery_monotone_total_downgrade", True))
+    )
+    if "solver_max_total_cells" in cfg:
+        use_max_total_cells = bool(cfg.get("solver_max_total_cells"))
+    else:
+        use_max_total_cells = bool(CONFIG.get("delivery_solver_max_total_cells", True))
+
+    specs_by_s = None
+    if monotone_need_relax and need_by_time:
+        if use_max_total_cells:
+            order_n = [t for t in time_preference_order if int(need_by_time.get(t) or 0) > 0]
+            if not order_n:
+                return None
+            caps = {t: int(max(0, need_by_time.get(t) or 0)) for t in order_n}
+            specs_by_s = _enumerate_need_specs_by_total(order_n, caps)
+            level_specs = []
+        else:
+            level_specs = _build_monotone_need_levels(need_by_time, time_preference_order)
+    elif need_by_time:
         level_specs = [{t: max(0, int(need_by_time.get(t) or 0)) for t in time_preference_order}]
         level_specs = [{t: k for t, k in spec.items() if k > 0} for spec in level_specs]
         level_specs = [spec for spec in level_specs if spec]
+    elif use_monotone_total:
+        if use_max_total_cells:
+            specs_by_s = _enumerate_level_specs_by_total(time_preference_order, target_blocks)
+            level_specs = []
+        else:
+            level_specs = _build_monotone_total_budget_levels(target_blocks, target_times, time_preference_order)
     elif mode == "aggressive":
         level_specs = _build_downgrade_levels(target_blocks, target_times, time_preference_order)
     else:
         level_specs = [{t: target_blocks for t in time_preference_order}]
-    if not level_specs:
+    if specs_by_s is not None:
+        if not specs_by_s:
+            return None
+    elif not level_specs:
         return None
 
     def _score_items(items, level_spec):
@@ -1439,19 +2104,56 @@ def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=Non
         else:
             preferred_ratio = 1.0
         # 同场跨多时段略加分；在「全局仍多目标时段」时单时段占多条连续场地略减分（与业务优先级对齐）
+        scoring_mode = str(cfg.get("solver_scoring") or "").strip()
         venue_time_bonus = 0.0
         if len(unique_times) >= 2 and len(unique_places) == 1:
-            venue_time_bonus = 35.0
+            venue_time_bonus = 48.0 if scoring_mode == "auto_time_consecutive" else 35.0
         elif len(target_times) >= 2 and len(unique_times) == 1 and len(unique_places) >= 2:
-            venue_time_bonus = -22.0
-        # 覆盖完整度 > 块数完整度 > 连号质量 > 偏好区命中
-        return (
+            venue_time_bonus = -35.0 if scoring_mode == "auto_time_consecutive" else -22.0
+        base = (
             100.0 * coverage_ratio
             + 60.0 * block_ratio
             + 40.0 * consecutive_ratio
             + 20.0 * preferred_ratio
             + venue_time_bonus
         )
+        if scoring_mode != "auto_time_consecutive":
+            return base
+        extra_auto = 0.0
+        by_place_times = {}
+        for it in items:
+            p = str(it.get("place") or "")
+            t = str(it.get("time") or "")
+            if p and t:
+                by_place_times.setdefault(p, []).append(t)
+        for _p, tlist in by_place_times.items():
+            try:
+                tsu = sorted(set(tlist), key=lambda x: datetime.strptime(x, "%H:%M"))
+            except ValueError:
+                continue
+            if len(tsu) < 2:
+                continue
+            best_run = 1
+            cur_run = 1
+            for ii in range(1, len(tsu)):
+                try:
+                    prev_h = datetime.strptime(tsu[ii - 1], "%H:%M")
+                    cur_h = datetime.strptime(tsu[ii], "%H:%M")
+                    ok = (cur_h - prev_h) == timedelta(hours=1)
+                except ValueError:
+                    ok = False
+                if ok:
+                    cur_run += 1
+                    best_run = max(best_run, cur_run)
+                else:
+                    cur_run = 1
+            extra_auto += 18.0 * float(max(0, best_run - 1))
+        for it in items:
+            t = str(it.get("time") or "")
+            if t in time_preference_order:
+                idx = time_preference_order.index(t)
+                extra_auto += float(len(time_preference_order) - idx) * 2.5
+        return base + extra_auto
 
     def _best_for_level(level_index, level_spec):
         """单层内最优候选；无可行解返回 None。"""
@@ -1492,7 +2194,7 @@ def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=Non
                 ok = True
                 for t, k in level_spec.items():
                     for j in range(k):
-                        if (matrix.get(s_places[j]) or {}).get(t) != "available":
+                        if not is_matrix_cell_bookable_for_new_booking((matrix.get(s_places[j]) or {}).get(t)):
                             ok = False
                             break
                     if not ok:
@@ -1515,32 +2217,49 @@ def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=Non
                 if tier_best is None or score > float(tier_best.get("score") or -1):
                     tier_best = cand
         else:
+            scatter_mode = str(cfg.get("solver_scoring") or "").strip()
             items = []
-            for t in time_preference_order:
-                need = int(level_spec.get(t, 0))
-                if need <= 0:
-                    continue
-                avail = [p for p in selectable_places if (matrix.get(p) or {}).get(t) == "available"]
-                mt_list = mine_by_time.get(str(t).strip()) if mine_by_time else None
-                if use_prefer:
-                    avail = sorted(
-                        avail,
-                        key=lambda p: (
-                            _place_distance_to_mine_set(p, mt_list) if mt_list else 0,
-                            0 if prefer_min <= int(p) <= prefer_max else 1,
-                            int(p),
-                        ),
-                    )
-                elif mt_list:
-                    avail = sorted(
-                        avail,
-                        key=lambda p: (_place_distance_to_mine_set(p, mt_list), int(p)),
-                    )
-                pick_count = min(max(0, need), len(avail))
-                if pick_count <= 0:
-                    continue
-                for p in avail[:pick_count]:
-                    items.append({"place": p, "time": t})
+            if scatter_mode == "auto_time_consecutive":
+                items = scatter_pick_items_with_time_streak_bias(
+                    matrix,
+                    selectable_places,
+                    level_spec,
+                    time_preference_order,
+                    mine_by_time,
+                    use_prefer,
+                    prefer_min,
+                    prefer_max,
+                )
+            if not items:
+                for t in time_preference_order:
+                    need = int(level_spec.get(t, 0))
+                    if need <= 0:
+                        continue
+                    avail = [
+            p
+            for p in selectable_places
+            if is_matrix_cell_bookable_for_new_booking((matrix.get(p) or {}).get(t))
+        ]
+                    mt_list = mine_by_time.get(str(t).strip()) if mine_by_time else None
+                    if use_prefer:
+                        avail = sorted(
+                            avail,
+                            key=lambda p: (
+                                _place_distance_to_mine_set(p, mt_list) if mt_list else 0,
+                                0 if prefer_min <= int(p) <= prefer_max else 1,
+                                int(p),
+                            ),
+                        )
+                    elif mt_list:
+                        avail = sorted(
+                            avail,
+                            key=lambda p: (_place_distance_to_mine_set(p, mt_list), int(p)),
+                        )
+                    pick_count = min(max(0, need), len(avail))
+                    if pick_count <= 0:
+                        continue
+                    for p in avail[:pick_count]:
+                        items.append({"place": p, "time": t})
             if not items:
                 return None
             items = normalize_booking_items(items)
@@ -1553,8 +2272,39 @@ def solve_candidate_from_matrix(matrix, places, intent, mode="strict", state=Non
             }
         return tier_best
 
-    if mode == "aggressive":
-        # 首组 aggressive：只做「首个有可行解的降级档」内的最优，避免跨档比分为劣档让路（如只抢 21:00 三连号）。
+    def _solve_max_total_from_specs(by_sum):
+        if not by_sum:
+            return None
+        for S in sorted(by_sum.keys(), reverse=True):
+            specs = by_sum[S]
+            best_at_s = None
+            for idx, spec in enumerate(specs):
+                li = S * 1000 + min(idx, 999)
+                cand = _best_for_level(li, spec)
+                if cand is None:
+                    continue
+                if best_at_s is None or float(cand.get("score") or -1) > float(best_at_s.get("score") or -1):
+                    best_at_s = cand
+            if best_at_s is not None:
+                return best_at_s
+        return None
+
+    if specs_by_s is not None:
+        return _solve_max_total_from_specs(specs_by_s)
+
+    mono_first = monotone_need_relax or use_monotone_total
+    if mode == "aggressive" or monotone_need_relax:
+        scoring_mode = str(cfg.get("solver_scoring") or "").strip()
+        aggressive_best = bool(cfg.get("solver_aggressive_best_tier", False)) and not mono_first
+        if scoring_mode == "auto_time_consecutive" and aggressive_best:
+            best_agg = None
+            for level_index, level_spec in enumerate(level_specs):
+                tier_best = _best_for_level(level_index, level_spec)
+                if tier_best is None:
+                    continue
+                if best_agg is None or float(tier_best.get("score") or -1) > float(best_agg.get("score") or -1):
+                    best_agg = tier_best
+            return best_agg
         for level_index, level_spec in enumerate(level_specs):
             tier_best = _best_for_level(level_index, level_spec)
             if tier_best is not None:
@@ -1669,7 +2419,7 @@ def solve_refill_need_tiered(matrix, places, intent_base, need_by_time, allow_sc
             key=lambda p: (_place_distance_to_mine_set(p, mt_list) if mt_list else 0, int(p)),
         )
         for p in sel_scan:
-            if (matrix.get(str(p)) or {}).get(t) == "available":
+            if is_matrix_cell_bookable_for_new_booking((matrix.get(str(p)) or {}).get(t)):
                 fake = {
                     "items": [{"place": str(p), "time": t}],
                     "level_index": 0,
@@ -1754,6 +2504,159 @@ def is_goal_satisfied(items, intent):
             if not ok:
                 return False
     return True
+
+
+@dataclass(frozen=True)
+class RefillPolicySpec:
+    """组场求解策略标签；auto_campaign 可走单调缺口梯 + solve_candidate，independent 仍走 solve_refill_need_tiered。"""
+
+    name: str
+
+
+REFILL_POLICY_AUTO_CAMPAIGN = RefillPolicySpec("auto_campaign")
+REFILL_POLICY_INDEPENDENT = RefillPolicySpec("independent_refill")
+
+
+def _hours_consecutive_1h_grid(prev_s, cur_s):
+    try:
+        prev_dt = datetime.strptime(prev_s, "%H:%M")
+        cur_dt = datetime.strptime(cur_s, "%H:%M")
+        return (cur_dt - prev_dt) == timedelta(hours=1)
+    except Exception:
+        return False
+
+
+def items_to_booking_runs(items, max_slot_count=3):
+    """
+    将 (place,time) 转为「同场地、连续整点小时」run 列表；单 run 最多 max_slot_count 个整点（fieldinfo 单条最长停留）。
+    场地顺序与 _build_field_info_list 一致（首次出现顺序）。
+    """
+    normalized = normalize_booking_items(items or [])
+    place_order = []
+    place_to_times = {}
+    for item in normalized:
+        p_key = str(item.get("place") or "")
+        t_key = str(item.get("time") or "")
+        if not p_key or not t_key:
+            continue
+        if p_key not in place_to_times:
+            place_to_times[p_key] = set()
+            place_order.append(p_key)
+        place_to_times[p_key].add(t_key)
+    runs = []
+    try:
+        msc = max(1, min(6, int(max_slot_count or 3)))
+    except Exception:
+        msc = 3
+    for p_key in place_order:
+        times_set = place_to_times.get(p_key) or set()
+        if not times_set:
+            continue
+        try:
+            times_sorted = sorted(times_set, key=lambda t: datetime.strptime(t, "%H:%M"))
+        except ValueError:
+            continue
+        cur_run = [times_sorted[0]]
+        for t_str in times_sorted[1:]:
+            if _hours_consecutive_1h_grid(cur_run[-1], t_str):
+                if len(cur_run) >= msc:
+                    runs.append({"place": p_key, "times": list(cur_run)})
+                    cur_run = [t_str]
+                else:
+                    cur_run.append(t_str)
+            else:
+                runs.append({"place": p_key, "times": list(cur_run)})
+                cur_run = [t_str]
+        if cur_run:
+            runs.append({"place": p_key, "times": list(cur_run)})
+    return runs
+
+
+def booking_runs_to_flat_items(runs):
+    out = []
+    for r in runs or []:
+        p = str((r or {}).get("place") or "")
+        for t in (r or {}).get("times") or []:
+            if p and t:
+                out.append({"place": p, "time": str(t)})
+    return out
+
+
+def chunk_booking_runs_for_post(runs, max_records_per_post):
+    """每 POST 至多 max_records_per_post 条 fieldinfo（与 run 一一对应）。"""
+    try:
+        lim = max(1, min(6, int(max_records_per_post or 1)))
+    except Exception:
+        lim = 1
+    runs = list(runs or [])
+    if not runs:
+        return []
+    chunks = []
+    cur = []
+    for r in runs:
+        if len(cur) >= lim:
+            chunks.append(cur)
+            cur = []
+        cur.append(r)
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _booking_runs_self_check(runs, max_slot_count):
+    try:
+        msc = max(1, min(6, int(max_slot_count or 3)))
+    except Exception:
+        msc = 3
+    for r in runs or []:
+        times = r.get("times") or []
+        if not times:
+            return False, "空时段 run"
+        if len(times) > msc:
+            return False, f"单条连续时段超过上限 {msc} 小时"
+        for i in range(1, len(times)):
+            if not _hours_consecutive_1h_grid(times[i - 1], times[i]):
+                return False, "run 内时段不连续"
+    return True, ""
+
+
+def legal_batches_from_booking_record_chunking(items, max_records_per_post, max_slot_count):
+    """
+    返回与 group_booking_items_into_legal_batches 相同形态: list[list[{place,time}]]。
+    先按 fieldinfo 语义合并为 run，再按每 POST 最多 N 条 run 切批。
+    """
+    runs = items_to_booking_runs(items, max_slot_count=max_slot_count)
+    if not runs:
+        return []
+    ok, reason = _booking_runs_self_check(runs, max_slot_count)
+    if not ok:
+        log(f"⚠️ [fieldinfo分批] 组场自检未过，回退旧分批: {reason}")
+        return []
+    chunks = chunk_booking_runs_for_post(runs, max_records_per_post)
+    return [booking_runs_to_flat_items(ch) for ch in chunks if ch]
+
+
+def solve_refill_with_policy(matrix, places, intent_base, need_by_time, allow_scatter, policy):
+    """自动递送 refill：默认单调缺口递降第一可行；独立 refill 仍走分层 solve_refill_need_tiered。"""
+    tag = policy.name if isinstance(policy, RefillPolicySpec) else str(policy)
+    if policy == REFILL_POLICY_AUTO_CAMPAIGN and bool(CONFIG.get("delivery_monotone_total_downgrade", True)):
+        intent = dict(intent_base)
+        intent["need_by_time"] = need_by_time
+        intent["monotone_need_relax"] = True
+        intent["require_consecutive"] = not bool(allow_scatter)
+        if bool(CONFIG.get("delivery_solver_auto_time_consecutive", True)):
+            intent["solver_scoring"] = "auto_time_consecutive"
+        solved = solve_candidate_from_matrix(matrix, places, intent, mode="strict")
+        if solved and solved.get("items"):
+            used = dict(solved.get("level_spec") or {})
+            tier = "单调缺口递降"
+            log(f"[组场引擎] policy={tag} allow_scatter={bool(allow_scatter)} tier={tier} used_need={used}")
+            return solved, used, tier
+    solved, used, tier = solve_refill_need_tiered(
+        matrix, places, intent_base, need_by_time, allow_scatter=allow_scatter
+    )
+    log(f"[组场引擎] policy={tag} allow_scatter={bool(allow_scatter)} tier={tier} used_need={used}")
+    return solved, used, tier
 
 
 def _manual_literal_goal_complete(submitted_items, target_items):
@@ -2066,6 +2969,8 @@ if os.path.exists(CONFIG_FILE):
                 CONFIG['manual_verify_pending_orders_fallback_enabled'] = bool(saved['manual_verify_pending_orders_fallback_enabled'])
             if 'manual_auto_refill_enabled' in saved:
                 CONFIG['manual_auto_refill_enabled'] = bool(saved['manual_auto_refill_enabled'])
+            if 'manual_deep_reconcile_enabled' in saved:
+                CONFIG['manual_deep_reconcile_enabled'] = bool(saved['manual_deep_reconcile_enabled'])
             if 'too_fast_skip_refill_in_same_request' in saved:
                 CONFIG['too_fast_skip_refill_in_same_request'] = bool(saved['too_fast_skip_refill_in_same_request'])
             if 'multi_item_retry_balance_enabled' in saved:
@@ -2098,22 +3003,40 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG['matrix_timeout_seconds'] = max(0.5, float(saved['matrix_timeout_seconds']))
                 except Exception:
                     pass
-            if 'delivery_warmup_max_retries' in saved:
-                try:
-                    val, _ = _clamp_exec_param('delivery_warmup_max_retries', saved['delivery_warmup_max_retries'], CONFIG.get('delivery_warmup_max_retries', 5))
-                    CONFIG['delivery_warmup_max_retries'] = val
-                except Exception:
-                    pass
             if 'delivery_total_budget_seconds' in saved:
                 try:
                     val, _ = _clamp_exec_param('delivery_total_budget_seconds', saved['delivery_total_budget_seconds'], CONFIG.get('delivery_total_budget_seconds', 20.0))
                     CONFIG['delivery_total_budget_seconds'] = val
                 except Exception:
                     pass
-            if 'delivery_warmup_budget_seconds' in saved:
+            if 'delivery_plan_max_age_seconds' in saved:
                 try:
-                    val, _ = _clamp_exec_param('delivery_warmup_budget_seconds', saved['delivery_warmup_budget_seconds'], CONFIG.get('delivery_warmup_budget_seconds', 8.0))
-                    CONFIG['delivery_warmup_budget_seconds'] = val
+                    val, _ = _clamp_exec_param(
+                        "delivery_plan_max_age_seconds",
+                        saved["delivery_plan_max_age_seconds"],
+                        CONFIG.get("delivery_plan_max_age_seconds", 8.0),
+                    )
+                    CONFIG["delivery_plan_max_age_seconds"] = val
+                except Exception:
+                    pass
+            if 'delivery_min_post_interval_seconds' in saved:
+                try:
+                    val, _ = _clamp_exec_param(
+                        "delivery_min_post_interval_seconds",
+                        saved["delivery_min_post_interval_seconds"],
+                        EXEC_PARAM_LIMITS["delivery_min_post_interval_seconds"][0],
+                    )
+                    CONFIG["delivery_min_post_interval_seconds"] = val
+                except Exception:
+                    pass
+            if 'delivery_account_phase_offset_ms' in saved:
+                try:
+                    CONFIG['delivery_account_phase_offset_ms'] = max(0, min(1000, int(saved['delivery_account_phase_offset_ms'])))
+                except Exception:
+                    pass
+            if 'delivery_retry_jitter_ms' in saved:
+                try:
+                    CONFIG['delivery_retry_jitter_ms'] = max(0, min(1000, int(saved['delivery_retry_jitter_ms'])))
                 except Exception:
                     pass
             if 'delivery_refill_no_candidate_streak_limit' in saved:
@@ -2126,6 +3049,21 @@ if os.path.exists(CONFIG_FILE):
                     CONFIG["delivery_refill_no_candidate_streak_limit"] = val
                 except Exception:
                     pass
+            if 'delivery_chunk_posts_by_fieldinfo' in saved:
+                CONFIG['delivery_chunk_posts_by_fieldinfo'] = bool(saved['delivery_chunk_posts_by_fieldinfo'])
+            if 'delivery_max_fieldinfo_hours' in saved:
+                try:
+                    CONFIG['delivery_max_fieldinfo_hours'] = max(1, min(3, int(saved['delivery_max_fieldinfo_hours'])))
+                except Exception:
+                    pass
+            if 'delivery_solver_auto_time_consecutive' in saved:
+                CONFIG['delivery_solver_auto_time_consecutive'] = bool(saved['delivery_solver_auto_time_consecutive'])
+            if 'delivery_solver_aggressive_best_tier' in saved:
+                CONFIG['delivery_solver_aggressive_best_tier'] = bool(saved['delivery_solver_aggressive_best_tier'])
+            if 'delivery_monotone_total_downgrade' in saved:
+                CONFIG['delivery_monotone_total_downgrade'] = bool(saved['delivery_monotone_total_downgrade'])
+            if 'delivery_solver_max_total_cells' in saved:
+                CONFIG['delivery_solver_max_total_cells'] = bool(saved['delivery_solver_max_total_cells'])
             if 'log_to_file' in saved:
                 CONFIG['log_to_file'] = bool(saved['log_to_file'])
             if 'log_file_dir' in saved and isinstance(saved['log_file_dir'], str):
@@ -2212,8 +3150,48 @@ if os.path.exists(CONFIG_SECRET_FILE):
                 CONFIG['sms'].update(secret_saved['sms'])
             if 'web_ui_auth' in secret_saved and isinstance(secret_saved['web_ui_auth'], dict):
                 CONFIG['web_ui_auth'] = copy.deepcopy(secret_saved['web_ui_auth'])
+            if 'web_session_secret' in secret_saved:
+                _wss = str(secret_saved['web_session_secret'] or '').strip()
+                if _wss:
+                    CONFIG['web_session_secret'] = _wss
     except Exception as e:
         print(f"加载敏感配置失败(将使用 config.json 中的值): {e}")
+
+
+def _ensure_web_session_secret_persisted():
+    """将 Flask 会话签名密钥落在 config.secret.json，重启后 Cookie 仍有效（不依赖环境变量）。"""
+    if str(CONFIG.get("web_session_secret") or "").strip():
+        return
+    new_secret = secrets.token_hex(32)
+    CONFIG["web_session_secret"] = new_secret
+    path = CONFIG_SECRET_FILE
+    merged = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                merged = loaded
+        except Exception as e:
+            print(
+                f"[config] 读取 {path} 失败，无法写入 web_session_secret（本会话内仍可用）: {e}"
+            )
+            return
+    merged = dict(merged)
+    merged["web_session_secret"] = new_secret
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[config] 写入 web_session_secret 失败: {e}")
+
+
+def _inject_web_session_secret_into_saved_secret(saved_secret):
+    """写回 config.secret.json 时附带会话签名密钥，避免部分保存路径漏带该键。"""
+    w = str(CONFIG.get("web_session_secret") or "").strip()
+    if w:
+        saved_secret["web_session_secret"] = w
+
 
 strip_delivery_keys_from_profiles(CONFIG)
 for _vk in TASK_VENUE_STRATEGY_DELIVERY_KEYS:
@@ -2224,6 +3202,12 @@ if _cfg_startup_errors:
     _cfg_err_msg = "执行参数校验失败，请在 config.json 中补全或修正: " + "; ".join(_cfg_startup_errors)
     print("[config] ERROR " + _cfg_err_msg)
     raise RuntimeError(_cfg_err_msg)
+
+_ensure_web_session_secret_persisted()
+app.permanent_session_lifetime = timedelta(days=30)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.secret_key = str(CONFIG.get("web_session_secret") or "").strip() or secrets.token_hex(32)
 
 QUIET_WINDOW_LOCK = threading.RLock()
 QUIET_WINDOW_REQUEST_CONTEXT = threading.local()
@@ -2256,6 +3240,8 @@ def _normalize_account_item(raw, idx):
             account_limit = max(1, min(6, int(raw_limit)))
         except (TypeError, ValueError):
             account_limit = None
+    _line_ip = str(raw.get("gym_connect_ip") or "").strip()
+    gym_connect_ip = _line_ip if _line_ip in GYM_API_LINE_IP_SET else ""
     return {
         "id": account_id,
         "name": str(raw.get("name") or account_id).strip() or account_id,
@@ -2265,6 +3251,7 @@ def _normalize_account_item(raw, idx):
         "card_st_id": str(raw.get("card_st_id") or "").strip(),
         "shop_num": str(raw.get("shop_num") or "").strip(),
         "delivery_max_places_per_timeslot": account_limit,
+        "gym_connect_ip": gym_connect_ip,
     }
 
 
@@ -2331,6 +3318,8 @@ def build_client_for_account(account):
     cookie = str(account.get("cookie") or "").strip()
     if cookie:
         c.headers["Cookie"] = cookie
+    _ip = str(account.get("gym_connect_ip") or "").strip()
+    c.gym_connect_ip = _ip if _ip in GYM_API_LINE_IP_SET else ""
     return c
 
 
@@ -2349,6 +3338,8 @@ def sync_primary_client_auth():
         client.headers["Cookie"] = cookie
     elif "Cookie" in client.headers:
         del client.headers["Cookie"]
+    _line = str(primary.get("gym_connect_ip") or "").strip()
+    client.gym_connect_ip = _line if _line in GYM_API_LINE_IP_SET else ""
 
 
 ensure_accounts_config()
@@ -2610,6 +3601,7 @@ def quiet_window_block_info(requester_kind, requester_task_id=None, owner_allowe
         "api_mine_overview": "我的订单总览",
         "api_cancel_order": "取消订单",
         "api_book": "手动下单",
+        "api_test_raw_reservation": "测试区原始订场POST",
         "api_check_token": "凭证探测",
         "api_gym_probe": "馆方 API 探测",
         "run_task_now": "立即运行任务",
@@ -2627,9 +3619,28 @@ def quiet_window_block_info(requester_kind, requester_task_id=None, owner_allowe
 TASKS_TEMPLATE_FILE = os.path.join(BASE_DIR, "tasks.json")
 TASKS_FILE = TASKS_TEMPLATE_FILE
 
+
+class _GymLineHTTPSAdapter(HTTPAdapter):
+    """HTTPS URL 使用北外线路公网 IP 时，TLS SNI 仍使用 gymvip 域名（与 Host 头一致）。"""
+
+    def __init__(self, sni_hostname, *args, **kwargs):
+        self._gym_sni_hostname = str(sni_hostname or GYM_API_TARGET_HOST)
+        super().__init__(*args, **kwargs)
+
+    def build_connection_pool_key_attributes(self, request, verify, cert):
+        host_params, pool_kwargs = super().build_connection_pool_key_attributes(request, verify, cert)
+        try:
+            host = (urllib.parse.urlparse(request.url).hostname or "").strip()
+        except Exception:
+            host = ""
+        if host in GYM_API_LINE_IP_SET:
+            pool_kwargs["server_hostname"] = self._gym_sni_hostname
+        return host_params, pool_kwargs
+
+
 class ApiClient:
     def __init__(self, inherit_global_auth=True):
-        self.host = "gymvip.bfsu.edu.cn"
+        self.host = GYM_API_TARGET_HOST
         self.headers = {
             "Host": self.host,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254162e) XWEB/18151 Flue",
@@ -2652,10 +3663,22 @@ class ApiClient:
             self.card_index = ""
             self.card_st_id = ""
         self.session = requests.Session()
+        self.session.mount("https://", _GymLineHTTPSAdapter(GYM_API_TARGET_HOST, max_retries=0))
+        self.gym_connect_ip = ""
         self.server_time_offset_seconds = 0.0
         self._matrix_cache = {}
         self._matrix_cache_window_s = 0.12
         self._matrix_cache_lock = threading.Lock()
+
+    def _gym_tcp_netloc(self):
+        ip = str(getattr(self, "gym_connect_ip", "") or "").strip()
+        if ip in GYM_API_LINE_IP_SET:
+            return ip
+        return self.host
+
+    def _gym_https_url(self, path_norm):
+        tail = str(path_norm or "").strip().lstrip("/")
+        return f"https://{self._gym_tcp_netloc()}/{tail}"
 
     def _quiet_scope_from_client(self):
         return build_quiet_window_scope(auth={"token": self.token, "shop_num": self.shop_num})
@@ -2664,7 +3687,7 @@ class ApiClient:
         """馆方 HTTP 原始请求；path_norm 须已规范为 easyserpClient/..."""
         method = (method or "GET").upper()
         path_norm = str(path_norm or "").strip().lstrip("/")
-        url = f"https://{self.host}/{path_norm}"
+        url = self._gym_https_url(path_norm)
         timeout = float(timeout or 15)
         timeout = max(0.5, min(45.0, timeout))
         t0 = time.time()
@@ -2777,6 +3800,11 @@ class ApiClient:
 
         field_info_list = []
         total_money = 0
+        try:
+            max_fieldinfo_hours = int(CONFIG.get("delivery_max_fieldinfo_hours", 3) or 3)
+        except (TypeError, ValueError):
+            max_fieldinfo_hours = 3
+        max_fieldinfo_hours = max(1, min(3, max_fieldinfo_hours))
 
         for p_key in place_order:
             times_set = place_to_times[p_key]
@@ -2824,8 +3852,16 @@ class ApiClient:
                     run_end_excl = et_obj
                     run_money = price
                 elif st_obj == run_end_excl:
-                    run_end_excl = et_obj
-                    run_money += price
+                    cand_end = et_obj
+                    span_hours = (cand_end - run_start).total_seconds() / 3600.0
+                    if span_hours > float(max_fieldinfo_hours):
+                        _append_run()
+                        run_start = st_obj
+                        run_end_excl = et_obj
+                        run_money = price
+                    else:
+                        run_end_excl = cand_end
+                        run_money += price
                 else:
                     _append_run()
                     run_start = st_obj
@@ -2907,7 +3943,7 @@ class ApiClient:
             pool_maxsize=max(1, int(pool_size or 1)),
             max_retries=0,
         )
-        session.mount("https://", adapter)
+        session.mount("https://", _GymLineHTTPSAdapter(GYM_API_TARGET_HOST, pool_connections=max(1, int(pool_size or 1)), pool_maxsize=max(1, int(pool_size or 1)), max_retries=0))
         session.mount("http://", adapter)
         session.headers.clear()
         session.headers.update(headers_snapshot or {})
@@ -3071,12 +4107,363 @@ class ApiClient:
                 "elapsed_ms": int(max(0.0, time.time() - started_at) * 1000),
             }
 
-    def submit_delivery_campaign(self, date_str, delivery_groups, submit_profile=None, task_config=None):
-        url = f"https://{self.host}/easyserpClient/place/reservationPlace"
+    def test_raw_reservation_place_post(self, date_str, selected_items, timeout_s=None):
+        """
+        手动页「测试」专用：只发一次馆方 reservationPlace POST，不经过 submit_order / submit_delivery_campaign / refill。
+        返回结构与 _post_reservation_once 一致，便于观测原始业务 msg。
+        """
+        items = normalize_booking_items(selected_items)
+        if not items:
+            return {
+                "ok": False,
+                "status_code": 0,
+                "resp_data": None,
+                "raw_text": "",
+                "raw_message": "",
+                "exception_text": "无有效订场格子",
+                "elapsed_ms": 0,
+            }
+        try:
+            to = float(
+                timeout_s
+                if timeout_s is not None
+                else cfg_get("submit_timeout_seconds", CONFIG.get("submit_timeout_seconds", 4.0))
+                or 4.0
+            )
+        except (TypeError, ValueError):
+            to = 4.0
+        to = max(0.5, min(45.0, to))
+        body, _fi, _tm = self._build_reservation_body(date_str, items)
+        url = self._gym_https_url("easyserpClient/place/reservationPlace")
+        return self._post_reservation_once(self.session, self.headers, url, body, to)
+
+    def submit_interval_post_campaign(self, date_str, delivery_groups, task_config=None):
+        """全量间隔 POST：枚举单场地连续 L 小时块，按 min_post_interval 递送；动态剔除候选。"""
+        url = self._gym_https_url("easyserpClient/place/reservationPlace")
+        campaign_started_at = time.time()
+        run_id = f"ip-{int(campaign_started_at * 1000)}-{random.randint(1000, 9999)}"
+        run_metric = {
+            "run_id": run_id,
+            "request_mode": "interval_post",
+            "submit_req_count": 0,
+            "submit_success_resp_count": 0,
+            "goal_satisfied": False,
+            "stopped_by": "",
+            "terminal_reason": "",
+            "delivery_status": "retrying",
+            "business_status": "unknown",
+            "t_first_post_ms": None,
+            "t_first_accept_ms": None,
+            "attempt_count_total": 0,
+            "dispatch_round_count": 0,
+            "delivery_window_ms": None,
+            "interval_candidates_initial": 0,
+            "interval_candidates_pruned": 0,
+            "interval_retry_requeued": 0,
+            "resp_404_count": 0,
+            "resp_5xx_count": 0,
+            "timeout_count": 0,
+            "connection_error_count": 0,
+            "rate_limited_count": 0,
+            "auth_fail_count": 0,
+            "non_json_count": 0,
+            "unknown_business_fail_count": 0,
+            "payload_fail_count": 0,
+            "submit_latencies_ms": [],
+            "phase_summary": {},
+            "server_msg_raw": "",
+            "business_fail_msg": "",
+        }
+        tc = task_config if isinstance(task_config, dict) else {}
+        groups = normalize_delivery_groups(delivery_groups or [])
+        if not groups:
+            run_metric["delivery_status"] = "blocked"
+            run_metric["stopped_by"] = "no_groups"
+            return {
+                "status": "fail",
+                "msg": "全量间隔 POST 至少需要 1 组递送",
+                "success_items": [],
+                "failed_items": [],
+                "run_metric": run_metric,
+            }
+        primary_items = normalize_booking_items((groups[0] or {}).get("items") or [])
+        venue_merged = _merge_task_venue_strategy(tc, primary_items)
+        account_max_places = None
+        try:
+            _raw_acc_limit = getattr(self, "delivery_max_places_per_timeslot", None)
+            if _raw_acc_limit is not None and str(_raw_acc_limit).strip() != "":
+                account_max_places = max(1, min(6, int(_raw_acc_limit)))
+        except Exception:
+            account_max_places = None
+        if account_max_places is None:
+            run_metric["delivery_status"] = "blocked"
+            run_metric["stopped_by"] = "account_config_invalid"
+            run_metric["terminal_reason"] = "account_max_places_missing"
+            return {
+                "status": "fail",
+                "msg": "账号未配置 delivery_max_places_per_timeslot",
+                "success_items": [],
+                "failed_items": primary_items,
+                "run_metric": run_metric,
+            }
+
+        def cfg_campaign(key, default=None):
+            if key in TASK_VENUE_STRATEGY_DELIVERY_KEYS:
+                return venue_merged.get(key, tc.get(key, default))
+            if key == "delivery_submit_granularity":
+                v = venue_merged.get(key)
+                if v is not None:
+                    return v
+                return CONFIG.get(key, default)
+            return CONFIG.get(key, default)
+
+        def mark_bucket(bucket_name):
+            if bucket_name == "resp_404":
+                run_metric["resp_404_count"] += 1
+            elif bucket_name == "resp_5xx":
+                run_metric["resp_5xx_count"] += 1
+            elif bucket_name == "timeout":
+                run_metric["timeout_count"] += 1
+            elif bucket_name == "connection_error":
+                run_metric["connection_error_count"] += 1
+            elif bucket_name == "rate_limited":
+                run_metric["rate_limited_count"] += 1
+            elif bucket_name == "auth_fail":
+                run_metric["auth_fail_count"] += 1
+            elif bucket_name == "non_json":
+                run_metric["non_json_count"] += 1
+            elif bucket_name == "unknown_business_fail":
+                run_metric["unknown_business_fail_count"] += 1
+            elif bucket_name == "payload_fail":
+                run_metric["payload_fail_count"] += 1
+
+        blocks, berr = build_interval_post_candidate_blocks(tc, primary_items, venue_merged)
+        if berr:
+            run_metric["delivery_status"] = "blocked"
+            run_metric["stopped_by"] = "invalid_candidates"
+            run_metric["terminal_reason"] = "interval_post_build_failed"
+            return {
+                "status": "fail",
+                "msg": berr,
+                "success_items": [],
+                "failed_items": primary_items,
+                "run_metric": run_metric,
+            }
+        run_metric["interval_candidates_initial"] = len(blocks)
+        try:
+            remaining_goal = max(1, int(tc.get("target_count") or 1))
+        except (TypeError, ValueError):
+            remaining_goal = 1
+
+        delivery_min_post_interval_s = _read_delivery_min_post_interval_seconds()
+        run_metric["effective_delivery_min_post_interval_seconds"] = float(delivery_min_post_interval_s)
+        try:
+            _dtb = float(cfg_campaign("delivery_total_budget_seconds", 600.0) or 600.0)
+        except (TypeError, ValueError):
+            _dtb = 600.0
+        delivery_total_budget_s, _ = _clamp_exec_param("delivery_total_budget_seconds", _dtb, _dtb)
+        deadline_ts = campaign_started_at + delivery_total_budget_s
+        timeout_s = max(0.5, float(cfg_campaign("submit_timeout_seconds", 4.0) or 4.0))
+        timeout_s = min(45.0, timeout_s)
+        headers_snapshot = dict(self.headers or {})
+        post_spacing = {"last_end_mono": None}
+        success_items_acc = []
+
+        log(
+            f"[全量间隔POST] 开始 date={date_str} candidates={len(blocks)} "
+            f"goal_cells={remaining_goal} min_post_interval={delivery_min_post_interval_s}s budget={delivery_total_budget_s}s"
+        )
+
+        if bool(tc.get("interval_post_prewarm_matrix")):
+            try:
+                mx_to = max(0.5, float(CONFIG.get("matrix_timeout_seconds", 10.0) or 10.0))
+            except (TypeError, ValueError):
+                mx_to = 10.0
+            _ = self.get_matrix(date_str, include_mine_overlay=False, request_timeout=mx_to)
+            log("[全量间隔POST] 已执行 prewarm get_matrix（可忽略失败）")
+
+        queue = deque(blocks)
+        retry_counts = {}
+        max_retry_per_candidate = 32
+
+        def prune_queue_overlap(place_key, booked_times_set):
+            """去掉与同场地已订时段有交集的候选块。"""
+            nonlocal queue
+            new_q = deque()
+            pruned = 0
+            for c in queue:
+                if str(c.get("place") or "") != str(place_key):
+                    new_q.append(c)
+                    continue
+                ct = set(c.get("times") or [])
+                if ct & booked_times_set:
+                    pruned += 1
+                    continue
+                new_q.append(c)
+            queue = new_q
+            run_metric["interval_candidates_pruned"] = int(run_metric.get("interval_candidates_pruned") or 0) + pruned
+
+        while queue and time.time() < deadline_ts and remaining_goal > 0:
+            cand = queue.popleft()
+            cid = str(cand.get("id") or "")
+            batch_items = [{"place": str(cand["place"]), "time": str(t)} for t in (cand.get("times") or [])]
+            if not batch_items:
+                continue
+            body, _, _ = self._build_reservation_body(date_str, batch_items)
+            now_wall = time.time()
+            if run_metric.get("t_first_post_ms") is None:
+                run_metric["t_first_post_ms"] = int(max(0.0, now_wall - campaign_started_at) * 1000)
+            if delivery_min_post_interval_s > 0 and post_spacing["last_end_mono"] is not None:
+                _remain = delivery_min_post_interval_s - (time.perf_counter() - post_spacing["last_end_mono"])
+                if _remain > 0:
+                    time.sleep(_remain)
+            result = self._post_reservation_once(self.session, headers_snapshot, url, body, timeout_s)
+            if delivery_min_post_interval_s > 0:
+                post_spacing["last_end_mono"] = time.perf_counter()
+            run_metric["submit_req_count"] = int(run_metric.get("submit_req_count") or 0) + 1
+            run_metric["attempt_count_total"] = int(run_metric.get("attempt_count_total") or 0) + 1
+            run_metric["dispatch_round_count"] = int(run_metric.get("dispatch_round_count") or 0) + 1
+            run_metric.setdefault("submit_latencies_ms", []).append(int(result.get("elapsed_ms") or 0))
+
+            if result.get("ok"):
+                raw_msg = str(result.get("raw_message") or "")[:200]
+                run_metric["server_msg_raw"] = raw_msg or run_metric.get("server_msg_raw") or ""
+                classified = self._classify_delivery_response(
+                    result.get("raw_message"),
+                    resp_data=result.get("resp_data"),
+                    exception_text=None,
+                )
+                if run_metric.get("t_first_accept_ms") is None:
+                    run_metric["t_first_accept_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
+            else:
+                run_metric["transport_error"] = True
+                raw_msg = str(result.get("exception_text") or "")[:200]
+                run_metric["server_msg_raw"] = raw_msg or run_metric.get("server_msg_raw") or ""
+                classified = self._classify_delivery_response(
+                    None,
+                    resp_data=None,
+                    exception_text=result.get("exception_text"),
+                )
+            bucket = str(classified.get("bucket") or "")
+            if bucket:
+                mark_bucket(bucket)
+            mapped = map_interval_post_classified_action(classified)
+
+            if mapped == "success":
+                run_metric["submit_success_resp_count"] = int(run_metric.get("submit_success_resp_count") or 0) + 1
+                for it in batch_items:
+                    success_items_acc.append(dict(it))
+                booked_hours = {str(t) for t in (cand.get("times") or [])}
+                remaining_goal -= len(booked_hours)
+                prune_queue_overlap(cand.get("place"), booked_hours)
+                log(f"[全量间隔POST] 成功 items={batch_items} 剩余目标格={remaining_goal}")
+                if remaining_goal <= 0:
+                    run_metric["goal_satisfied"] = True
+                    run_metric["stopped_by"] = "goal_satisfied"
+                    run_metric["delivery_status"] = "completed"
+                    run_metric["business_status"] = "success"
+                    run_metric["terminal_reason"] = "business_success"
+                    break
+                continue
+
+            if mapped == "drop_candidate":
+                run_metric["interval_candidates_pruned"] = int(run_metric.get("interval_candidates_pruned") or 0) + 1
+                log(f"[全量间隔POST] 剔除候选 {cid} msg={classified.get('normalized_msg', '')[:120]}")
+                continue
+
+            if mapped == "terminal_fail":
+                term = str(classified.get("terminal_reason") or "unknown_business_fail")
+                run_metric["stopped_by"] = term
+                run_metric["terminal_reason"] = term
+                run_metric["business_fail_msg"] = str(classified.get("normalized_msg") or "")[:200]
+                run_metric["delivery_status"] = "exhausted"
+                run_metric["business_status"] = "fail"
+                run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
+                return {
+                    "status": "fail",
+                    "msg": run_metric["business_fail_msg"] or "全量间隔 POST 终局失败",
+                    "success_items": success_items_acc,
+                    "failed_items": primary_items,
+                    "run_metric": run_metric,
+                }
+
+            # retry_tail / retry_tail_slow
+            rc = int(retry_counts.get(cid, 0) or 0) + 1
+            retry_counts[cid] = rc
+            if rc > max_retry_per_candidate:
+                run_metric["interval_candidates_pruned"] = int(run_metric.get("interval_candidates_pruned") or 0) + 1
+                log(f"[全量间隔POST] 候选 {cid} 重试超限，丢弃")
+                continue
+            run_metric["interval_retry_requeued"] = int(run_metric.get("interval_retry_requeued") or 0) + 1
+            queue.append(cand)
+            if mapped == "retry_tail_slow":
+                try:
+                    jitter = max(
+                        0,
+                        min(1000, int(cfg_campaign("delivery_retry_jitter_ms", CONFIG.get("delivery_retry_jitter_ms", 180)) or 0)),
+                    )
+                except (TypeError, ValueError):
+                    jitter = 0
+                time.sleep(0.5 + (random.uniform(0.0, jitter / 1000.0) if jitter else 0.0))
+            log(f"[全量间隔POST] 可重试，候选回队尾 {cid} ({mapped})")
+
+        run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
+        if remaining_goal <= 0:
+            run_metric["goal_satisfied"] = True
+            run_metric["stopped_by"] = run_metric.get("stopped_by") or "goal_satisfied"
+            run_metric["delivery_status"] = "completed"
+            run_metric["business_status"] = "success"
+            return {
+                "status": "success",
+                "msg": "目标格子已凑齐（全量间隔 POST）",
+                "success_items": success_items_acc,
+                "failed_items": [],
+                "run_metric": run_metric,
+            }
+        if not queue:
+            run_metric["stopped_by"] = "no_candidates_remaining"
+            run_metric["terminal_reason"] = "no_candidates_remaining"
+            run_metric["delivery_status"] = "exhausted"
+            run_metric["business_status"] = "unknown" if success_items_acc else "fail"
+            st = "partial" if success_items_acc else "fail"
+            return {
+                "status": st,
+                "msg": "候选已用尽，目标未完全满足" if success_items_acc else "候选已用尽",
+                "success_items": success_items_acc,
+                "failed_items": primary_items,
+                "run_metric": run_metric,
+            }
+        run_metric["stopped_by"] = "budget_exhausted"
+        run_metric["terminal_reason"] = "budget_exhausted"
+        run_metric["delivery_status"] = "exhausted"
+        run_metric["business_status"] = "unknown" if success_items_acc else "fail"
+        st = "partial" if success_items_acc else "fail"
+        return {
+            "status": st,
+            "msg": "时间预算用尽" + ("（部分成功）" if success_items_acc else ""),
+            "success_items": success_items_acc,
+            "failed_items": primary_items,
+            "run_metric": run_metric,
+        }
+
+    def submit_delivery_campaign(self, date_str, delivery_groups, submit_profile=None, task_config=None, skip_warmup=False):
+        """极速订场递送：业务终局与 HTTP 分类器一致（_classify_delivery_response 的 stop_success 等），不经过 api_book 的 verify_pending 订单/矩阵复核链。
+
+        自动任务（execute_task / delivery_campaign）以本函数返回的 status 为准：服务端已接受时不会仅因「矩阵未立即显示 mine」再改判为 fail；
+        partial 仅表示 stop_success 已发生但 refill 侧目标块仍未凑齐（与 is_goal_satisfied 对齐），并非 HTTP 被否。
+
+        skip_warmup：为 True 时不在此函数开头强制 get_matrix，递送循环内仍会拉矩阵算场（手动预订：假定页面已拉过矩阵、会话有效）。
+        自动任务与手动均走同一递送循环；无首轮矩阵快照时 delivery_first_group_from_matrix 仍可在循环内首次拉矩阵后生效。
+        delivery_plan_max_age_seconds：基于某次矩阵快照的 POST 若超过该时长须先重拉矩阵再算场（必填，见 config.example.json）。
+        """
+        url = self._gym_https_url("easyserpClient/place/reservationPlace")
         profile_name = str(submit_profile or "").strip()
 
         groups = normalize_delivery_groups(delivery_groups)
+        campaign_started_at = time.time()
+        run_id = f"dc-{int(campaign_started_at * 1000)}-{random.randint(1000, 9999)}"
         run_metric = {
+            "run_id": run_id,
             "submit_req_count": 0,
             "submit_success_resp_count": 0,
             "submit_retry_count": 0,
@@ -3119,6 +4506,8 @@ class ApiClient:
             "business_status": "unknown",
             "terminal_reason": "",
             "refill_matrix_fetch_count": 0,
+            "delivery_plan_stale_resync_count": 0,
+            "payload_fail_reprime_count": 0,
             "too_fast_matrix_refresh_count": 0,
             "delivery_backup_groups_ignored": 0,
             "refill_candidate_found_count": 0,
@@ -3126,7 +4515,70 @@ class ApiClient:
             "refill_no_candidate_max_streak": 0,
             "refill_no_candidate_streak_final": 0,
             "goal_satisfied": False,
+            "phase": "init",
+            "phase_started_at_ms": 0,
+            "phase_elapsed_ms": {},
+            "phase_events": [],
+            "phase_summary": {},
+            "warmup_attempts_total": 0,
+            "warmup_success_at_ms": None,
+            "warmup_fail_buckets": {},
+            "campaign_matrix_saw_locked_cell": False,
+            "primary_first_business_action": None,
+            "refill_need_snapshot": {},
+            "terminal_snapshot": {},
         }
+        phase_clock = {}
+
+        def _campaign_ms_now():
+            return int(max(0.0, time.time() - campaign_started_at) * 1000)
+
+        def _trim_phase_events():
+            evs = run_metric.get("phase_events")
+            if isinstance(evs, list) and len(evs) > 300:
+                del evs[0:len(evs) - 300]
+
+        def _record_phase_event(phase_name, event_name, payload=None):
+            event = {
+                "phase": str(phase_name or run_metric.get("phase") or "unknown"),
+                "event": str(event_name or "event"),
+                "ts_ms": _campaign_ms_now(),
+            }
+            if isinstance(payload, dict) and payload:
+                event["payload"] = payload
+            run_metric.setdefault("phase_events", []).append(event)
+            _trim_phase_events()
+
+        def _set_phase(phase_name, payload=None):
+            p = str(phase_name or "unknown")
+            run_metric["phase"] = p
+            run_metric["phase_started_at_ms"] = _campaign_ms_now()
+            phase_clock[p] = time.time()
+            _record_phase_event(p, "phase_start", payload if isinstance(payload, dict) else None)
+
+        def _close_phase(phase_name):
+            p = str(phase_name or "")
+            t0 = phase_clock.get(p)
+            if not t0:
+                return
+            elapsed = int(max(0.0, time.time() - t0) * 1000)
+            pe = run_metric.setdefault("phase_elapsed_ms", {})
+            pe[p] = int(pe.get(p) or 0) + elapsed
+
+        def _set_terminal_snapshot(status_name):
+            snap = {
+                "status": str(status_name or ""),
+                "stopped_by": str(run_metric.get("stopped_by") or ""),
+                "terminal_reason": str(run_metric.get("terminal_reason") or ""),
+                "delivery_status": str(run_metric.get("delivery_status") or ""),
+                "business_status": str(run_metric.get("business_status") or ""),
+                "goal_satisfied": bool(run_metric.get("goal_satisfied")),
+                "delivery_window_ms": int(run_metric.get("delivery_window_ms") or 0),
+                "submit_req_count": int(run_metric.get("submit_req_count") or 0),
+                "dispatch_round_count": int(run_metric.get("dispatch_round_count") or 0),
+            }
+            run_metric["terminal_snapshot"] = snap
+            _record_phase_event("terminal", "terminal_snapshot", snap)
         if not groups:
             return {
                 "status": "fail",
@@ -3175,26 +4627,41 @@ class ApiClient:
         transport_round_interval_s = max(0.05, float(cfg_campaign("delivery_transport_round_interval_seconds", 0.25) or 0.25))
         refill_poll_interval_s = max(0.05, float(cfg_campaign("delivery_refill_matrix_poll_seconds", 0.35) or 0.35))
         try:
+            retry_jitter_ms = max(
+                0,
+                min(1000, int(cfg_campaign("delivery_retry_jitter_ms", CONFIG.get("delivery_retry_jitter_ms", 180)) or 0)),
+            )
+        except (TypeError, ValueError):
+            retry_jitter_ms = 0
+        try:
             _raw_sl = int(cfg_campaign("delivery_refill_no_candidate_streak_limit", 0) or 0)
         except (TypeError, ValueError):
             _raw_sl = 0
         refill_no_candidate_streak_limit, _ = _clamp_exec_param(
             "delivery_refill_no_candidate_streak_limit", _raw_sl, _raw_sl
         )
-        delivery_min_post_interval_s = max(
-            0.0, float(cfg_campaign("delivery_min_post_interval_seconds", CONFIG.get("delivery_min_post_interval_seconds", 2.2)) or 0)
-        )
+        delivery_min_post_interval_s = _read_delivery_min_post_interval_seconds()
         run_metric["effective_delivery_min_post_interval_seconds"] = float(delivery_min_post_interval_s)
+        run_metric["effective_retry_jitter_ms"] = int(retry_jitter_ms)
         run_metric["effective_max_places_per_timeslot"] = int(account_max_places)
         _dtb = float(cfg_campaign("delivery_total_budget_seconds", 600.0) or 600.0)
         delivery_total_budget_s, _ = _clamp_exec_param("delivery_total_budget_seconds", _dtb, _dtb)
+        _raw_pma = float(cfg_campaign("delivery_plan_max_age_seconds", CONFIG.get("delivery_plan_max_age_seconds", 8.0)) or 8.0)
+        plan_max_age_s, _ = _clamp_exec_param("delivery_plan_max_age_seconds", _raw_pma, _raw_pma)
+        run_metric["effective_delivery_plan_max_age_seconds"] = float(plan_max_age_s)
         headers_snapshot = dict(self.headers or {})
         sessions = [self.session]
         use_main_session = True
 
-        campaign_started_at = time.time()
         deadline_ts = campaign_started_at + delivery_total_budget_s
         post_spacing = {"last_end_mono": None}
+
+        def _sleep_with_retry_jitter(base_sleep_s):
+            sleep_s = max(0.0, float(base_sleep_s or 0.0))
+            if retry_jitter_ms > 0:
+                sleep_s += random.uniform(0.0, retry_jitter_ms / 1000.0)
+            if sleep_s > 0:
+                time.sleep(sleep_s)
 
         def mark_bucket(bucket_name):
             if bucket_name == "resp_404":
@@ -3217,240 +4684,59 @@ class ApiClient:
                 run_metric["payload_fail_count"] += 1
 
         log(
-            f"[极速订场] 开始 date={date_str} 单路递送+refill round_interval={transport_round_interval_s}s "
+            f"[极速订场] 开始 date={date_str} 统一递送循环 round_interval={transport_round_interval_s}s "
             f"refill_poll={refill_poll_interval_s}s min_post_interval={delivery_min_post_interval_s}s "
-            f"budget={delivery_total_budget_s}s"
+            f"plan_max_age={plan_max_age_s}s retry_jitter={retry_jitter_ms}ms budget={delivery_total_budget_s}s"
         )
         try:
-            # 第一组发送前拉活：直接 get_matrix 并根据返回值判断，可重试错误有限次重试，鉴权错误不重试
-            _wmr = int(cfg_campaign("delivery_warmup_max_retries", 200) or 200)
-            warmup_max_attempts, _ = _clamp_exec_param("delivery_warmup_max_retries", _wmr, _wmr)
-            _wbs = float(cfg_campaign("delivery_warmup_budget_seconds", 300.0) or 300.0)
-            warmup_budget_s, _ = _clamp_exec_param("delivery_warmup_budget_seconds", _wbs, _wbs)
-            warmup_deadline = time.time() + warmup_budget_s
-            warmup_attempt = 0
-            warmup_ok = False
-            warmup_result = None
-            probe_main_group_sent = False
+            _set_phase("delivery_loop", {"date": str(date_str), "groups": len(groups)})
             matrix_timeout_s = max(0.5, float(CONFIG.get("matrix_timeout_seconds", 3.0) or 3.0))
-            transient_keywords = (
-                "非json格式", "non-json", "404", "502", "503", "504", "无效数据",
-                "nginx", "bad gateway", "service unavailable", "timeout", "timed out",
-                "connection reset", "max retries exceeded", "temporarily unavailable",
-            )
-            auth_keywords = ("失效", "凭证", "token", "登录", "未登录", "返回-1")
-            while warmup_attempt < warmup_max_attempts and time.time() < warmup_deadline:
-                warmup_attempt += 1
-                if time.time() >= warmup_deadline:
-                    break
-                mx_t0 = time.perf_counter()
-                warmup = self.get_matrix(
-                    date_str, include_mine_overlay=False, request_timeout=matrix_timeout_s, bypass_cache=True
+            if skip_warmup:
+                run_metric["warmup_skipped"] = True
+                run_metric["campaign_entry"] = "batch"
+                log(
+                    "[极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场"
+                    "（若提示操作过快请刷新场地矩阵后再试）"
                 )
-                if isinstance(warmup, dict) and not warmup.get("error"):
-                    scope = (warmup.get("meta") or {}).get("date_booking_scope") or "unlocked"
-                    mos = matrix_booking_open_by_no_locked_cells(warmup.get("matrix"))
-                    if mos is True:
-                        booking_open = True
-                    elif mos is False:
-                        booking_open = False
-                    else:
-                        booking_open = scope != "future"
-                    if booking_open:
-                        log("[极速订场] 拉活成功，开始递送")
-                        warmup_ok = True
-                        warmup_result = warmup
-                        break
-                    # 未开约：先睡到 lastDayOpenTime 再发一次主组 POST，然后继续拉活
-                    last_open_meta = (warmup.get("meta") or {}).get("last_day_open_time") or "12:00:00"
-                    open_t = _parse_last_day_open_time(last_open_meta)
-                    sleep_sec = seconds_until_today_open_time_cn(open_t)
-                    if sleep_sec > 0:
-                        log(f"[极速订场] 未开约 sleep {sleep_sec:.1f}s 至 lastDayOpenTime={last_open_meta}")
-                        warmup_deadline = max(warmup_deadline, time.time() + sleep_sec + 90.0)
-                        time.sleep(sleep_sec)
-                    if not probe_main_group_sent:
-                        main_items = normalize_booking_items(groups[0].get("items") or [])
-                        if main_items:
-                            body, _, _ = self._build_reservation_body(date_str, main_items)
-                            result = self._post_reservation_once(sessions[0], headers_snapshot, url, body, timeout_s)
-                            if delivery_min_post_interval_s > 0:
-                                post_spacing["last_end_mono"] = time.perf_counter()
-                            probe_main_group_sent = True
-                            log("[极速订场] 未开约 开约时刻主组 1 次")
-                            if run_metric.get("t_first_post_ms") is None:
-                                run_metric["t_first_post_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
-                            run_metric["attempt_count_total"] = (run_metric.get("attempt_count_total") or 0) + 1
-                            run_metric["submit_req_count"] = (run_metric.get("submit_req_count") or 0) + 1
-                            run_metric.setdefault("submit_latencies_ms", []).append(int(result.get("elapsed_ms") or 0))
-                            raw_msg = result.get("raw_message") if result.get("ok") else result.get("exception_text")
-                            classified = self._classify_delivery_response(
-                                result.get("raw_message"),
-                                resp_data=result.get("resp_data"),
-                                exception_text=result.get("exception_text") if not result.get("ok") else None,
-                            )
-                            bucket = str(classified.get("bucket") or "")
-                            mark_bucket(bucket)
-                            msg_snippet = str(raw_msg or result.get("exception_text") or "")[:200]
-                            if msg_snippet:
-                                run_metric["server_msg_raw"] = msg_snippet
-                            if classified.get("action") != "stop_success":
-                                append_transport_error_event(
-                                    run_metric,
-                                    "warmup_probe_post",
-                                    bucket,
-                                    (msg_snippet or str(raw_msg or ""))[:120],
-                                    int(result.get("elapsed_ms") or 0),
-                                )
-                            if classified.get("action") == "stop_success":
-                                run_metric["submit_success_resp_count"] = (run_metric.get("submit_success_resp_count") or 0) + 1
-                                run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
-                                run_metric["stopped_by"] = "business_success"
-                                run_metric["delivery_status"] = "accepted"
-                                run_metric["business_status"] = "success"
-                                run_metric["terminal_reason"] = str(classified.get("terminal_reason") or "business_success")
-                                group_id = str(groups[0].get("id") or "primary")
-                                group_label = str(groups[0].get("label") or "主组合")
-                                log(f"[极速订场] 未开约主组试探成功 结束 status=success group={group_id}")
-                                return {
-                                    "status": "success",
-                                    "msg": f"{group_label}已被服务端接受，请稍后手动刷新结果",
-                                    "success_items": main_items,
-                                    "failed_items": [],
-                                    "run_metric": run_metric,
-                                    "delivery_group_id": group_id,
-                                    "manual_followup_required": True,
-                                }
-                        else:
-                            probe_main_group_sent = True
-                    else:
-                        log("[极速订场] 未开约 已发过开约时刻主组 继续拉活")
-                    time.sleep(0.8)
-                    continue
-                err_msg = (
-                    str(warmup.get("error", "") or "").strip()
-                    if isinstance(warmup, dict)
-                    else "matrix_invalid_response"
-                )
-                mx_elapsed_ms = int((time.perf_counter() - mx_t0) * 1000)
-                record_matrix_fetch_failure(run_metric, "warmup_matrix", err_msg or "unknown", mx_elapsed_ms)
-                err_l = err_msg.lower()
-                if any(k in err_msg for k in auth_keywords) or any(k in err_l for k in ("token", "登录", "未登录")):
-                    log(f"[极速订场] 拉活失败(鉴权/会话硬失败)，不重试: {err_msg[:200]}")
-                    return {
-                        "status": "fail",
-                        "msg": "拉活失败：鉴权/会话失效（硬失败）" + (f" ({err_msg[:100]})" if err_msg else ""),
-                        "success_items": [],
-                        "failed_items": (groups[0].get("items") or []) if groups else [],
-                        "run_metric": run_metric,
-                    }
-                log(f"[极速订场] 拉活失败(可重试) 第{warmup_attempt}次: {err_msg[:150]}")
-                time.sleep(0.8)
-            if not warmup_ok:
-                log("[极速订场] 拉活失败(多次重试后仍不可用)，未发送预订请求")
-                return {
-                    "status": "fail",
-                    "msg": "拉活失败（多次重试后仍不可用）",
-                    "success_items": [],
-                    "failed_items": (groups[0].get("items") or []) if groups else [],
-                    "run_metric": run_metric,
+                _record_phase_event("delivery_loop", "skip_prefetch_matrix", {"entry": "batch"})
+                run_metric.setdefault("phase_summary", {})["delivery_entry"] = {
+                    "unified_loop": True,
+                    "skipped_matrix_prefetch": True,
+                }
+            else:
+                run_metric["campaign_entry"] = "unified_loop"
+                run_metric["delivery_unified_loop"] = True
+                log("[极速订场] 无独立 warmup，首轮由递送循环 get_matrix 开始")
+                _record_phase_event("delivery_loop", "unified_entry", {})
+                run_metric.setdefault("phase_summary", {})["delivery_entry"] = {
+                    "unified_loop": True,
+                    "skipped_matrix_prefetch": False,
                 }
 
+            _close_phase("delivery_loop")
             pre_matrix_primary_items = normalize_booking_items(groups[0].get("items") or [])
 
-            if cfg_campaign("delivery_first_group_from_matrix") and warmup_result and warmup_result.get("matrix"):
-                first_group_times_raw = cfg_campaign("delivery_first_group_times")
-                first_group_times_ok = isinstance(first_group_times_raw, list) and len(first_group_times_raw) > 0
-                if first_group_times_ok:
-                    matrix_blocks = max(1, min(3, int(cfg_campaign("delivery_target_blocks", 2) or 2)))
-                    run_metric["matrix_first_group_blocks_source"] = "config"
-                    first_group_cfg = {
-                        "delivery_target_blocks": matrix_blocks,
-                        "delivery_target_times": list(cfg_campaign("delivery_target_times") or []),
-                        "delivery_time_preference_order": list(cfg_campaign("delivery_time_preference_order") or []),
-                        "delivery_first_group_times": cfg_campaign("delivery_first_group_times"),
-                        "delivery_first_group_time_preference_order": cfg_campaign("delivery_first_group_time_preference_order"),
-                        "delivery_preferred_place_min": cfg_campaign("delivery_preferred_place_min"),
-                        "delivery_preferred_place_max": cfg_campaign("delivery_preferred_place_max"),
-                        "delivery_matrix_place_min": cfg_campaign("delivery_matrix_place_min", 1),
-                        "delivery_matrix_place_max": cfg_campaign("delivery_matrix_place_max", 14),
-                    }
-                    computed_items, combo_level = compute_first_group_from_matrix(
-                        warmup_result["matrix"],
-                        warmup_result.get("places"),
-                        warmup_result.get("times"),
-                        first_group_cfg,
-                    )
-                    if computed_items:
-                        groups[0] = {**groups[0], "items": computed_items}
-                        run_metric["first_group_combo_level"] = combo_level
-                        log(f"[极速订场] 第一组由 matrix 算出 level={combo_level} items={computed_items}")
-                    elif pre_matrix_primary_items:
-                        groups[0] = {**groups[0], "items": list(pre_matrix_primary_items)}
-                        run_metric["first_group_combo_level"] = "fallback_items"
-                        log("[极速订场] 第一组矩阵无解，回退主组原 items 继续递送")
-                    else:
-                        log("[极速订场] 第一组无可用组合(矩阵降级全无解)，未发送预订请求")
-                        return {
-                            "status": "fail",
-                            "msg": "第一组无可用组合（矩阵中无满足条件的连号与时段）",
-                            "success_items": [],
-                            "failed_items": (groups[0].get("items") or []) if groups else [],
-                            "run_metric": run_metric,
-                        }
-                else:
-                    log("[极速订场] 未配置首组目标时段，首组按主组原样递送")
+            mx_work = None
+            plan_mono_holder = [None]
 
-            primary = groups[0]
-            group_id = str(primary.get("id") or "primary")
-            group_label = str(primary.get("label") or "主组合")
-            run_metric["picked_group_id"] = group_id
-            target_items = normalize_booking_items(primary.get("items") or [])
-            if not target_items:
-                return {
-                    "status": "fail",
-                    "msg": "主组合无有效预订项",
-                    "success_items": [],
-                    "failed_items": [],
-                    "run_metric": run_metric,
-                    "delivery_group_id": group_id,
-                }
+            def _touch_plan_mono():
+                plan_mono_holder[0] = time.monotonic()
 
-            target_times_from_items = sorted({str(it.get("time")) for it in target_items if str(it.get("time") or "")})
-            intent_target_times = cfg_campaign("delivery_first_group_times") or target_times_from_items
-            intent_target_times = [str(t).strip() for t in intent_target_times if re.fullmatch(r"\d{2}:\d{2}", str(t).strip())]
-            if not intent_target_times:
-                intent_target_times = list(target_times_from_items)
-            intent_time_order = cfg_campaign("delivery_first_group_time_preference_order") or intent_target_times
-            intent_time_order = [str(t).strip() for t in intent_time_order if str(t).strip() in set(intent_target_times)] or list(intent_target_times)
-            intent_target_blocks = max(1, min(3, int(cfg_campaign("delivery_target_blocks", 2) or 2)))
-            run_metric["goal_target_blocks_source"] = "config"
-            span_lo, span_hi = _normalized_matrix_place_span(
-                cfg_campaign("delivery_matrix_place_min", 1),
-                cfg_campaign("delivery_matrix_place_max", 14),
-            )
-            campaign_intent = {
-                "target_blocks": intent_target_blocks,
-                "target_times": intent_target_times,
-                "time_preference_order": intent_time_order,
-                "preferred_place_min": int(cfg_campaign("delivery_preferred_place_min", 0) or 0),
-                "preferred_place_max": int(cfg_campaign("delivery_preferred_place_max", 0) or 0),
-                "selectable_place_min": span_lo,
-                "selectable_place_max": span_hi,
-                "require_consecutive": True,
-            }
-            run_metric["goal_target_blocks"] = int(campaign_intent.get("target_blocks") or 1)
-            run_metric["goal_target_times"] = list(campaign_intent.get("target_times") or [])
+            def _plan_is_stale():
+                m = plan_mono_holder[0]
+                if m is None:
+                    return False
+                return (time.monotonic() - m) > float(plan_max_age_s)
 
+            PLAN_STALE = object()
+            first_group_applied = False
+            primary_done = False
+            campaign_intent = None
             refill_limits = {}
-            for _lim_key in ("max_items_per_batch", "max_consecutive_slots_per_place", "max_places_per_timeslot"):
-                _cfg_key = f"delivery_refill_{_lim_key}"
-                try:
-                    _v = cfg_campaign(_cfg_key, None)
-                    if _v is not None:
-                        refill_limits[_lim_key] = int(_v)
-                except Exception:
-                    pass
+            refill_no_candidate_streak = 0
+            group_id = "primary"
+            group_label = "主组合"
+            target_items = []
 
             def _campaign_post_batch(batch_items, phase_tag):
                 """单次提交一批并分类；递增 run_metric 计数。"""
@@ -3527,6 +4813,20 @@ class ApiClient:
                     run_metric["submit_retry_count"] = (run_metric.get("submit_retry_count") or 0) + 1
                 elif action in ("switch_backup", "stop_task_fail"):
                     run_metric["business_fail_msg"] = str(classified.get("normalized_msg") or "")[:200]
+                if str(phase_tag).startswith("首单") and run_metric.get("primary_first_business_action") is None:
+                    run_metric["primary_first_business_action"] = action or "unknown"
+                _record_phase_event(
+                    "primary_submit" if str(phase_tag).startswith("首单") else ("refill_loop" if str(phase_tag).startswith("refill") else "delivery"),
+                    "post_result",
+                    {
+                        "phase_tag": str(phase_tag),
+                        "attempt_no": int(run_metric.get("dispatch_round_count") or 0),
+                        "action": action or "",
+                        "bucket": bucket or "",
+                        "http_status": int(result.get("status_code") or 0),
+                        "elapsed_ms": int(result.get("elapsed_ms") or 0),
+                    },
+                )
 
                 if run_metric.get("t_first_accept_ms") is None and action in (
                     "stop_success",
@@ -3542,11 +4842,25 @@ class ApiClient:
                 return classified, result
 
             def _return_success(batch_items, goal_satisfied=True):
+                _close_phase("primary_submit")
+                _close_phase("refill_loop")
+                _set_phase("terminal", {"status": "success" if goal_satisfied else "partial"})
                 run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
                 run_metric["stopped_by"] = "business_success" if goal_satisfied else "business_success_but_goal_not_met"
                 run_metric["delivery_status"] = "accepted"
                 run_metric["business_status"] = "success" if goal_satisfied else "partial_success"
                 run_metric["terminal_reason"] = "business_success" if goal_satisfied else "business_success_but_goal_not_met"
+                run_metric.setdefault("phase_summary", {})["primary_submit"] = {
+                    "first_business_action": str(run_metric.get("primary_first_business_action") or ""),
+                    "submit_req_count": int(run_metric.get("submit_req_count") or 0),
+                }
+                run_metric.setdefault("phase_summary", {})["refill_loop"] = {
+                    "refill_matrix_fetch_count": int(run_metric.get("refill_matrix_fetch_count") or 0),
+                    "candidate_found_count": int(run_metric.get("refill_candidate_found_count") or 0),
+                    "no_candidate_count": int(run_metric.get("refill_no_candidate_count") or 0),
+                    "need_snapshot": dict(run_metric.get("refill_need_snapshot") or {}),
+                }
+                _set_terminal_snapshot("success" if goal_satisfied else "partial")
                 log(f"[极速订场] 结束 status=success 总请求数={run_metric['submit_req_count']} group={group_id}")
                 return {
                     "status": "success" if goal_satisfied else "partial",
@@ -3559,11 +4873,25 @@ class ApiClient:
                 }
 
             def _return_task_fail(classified, batch_items):
+                _close_phase("primary_submit")
+                _close_phase("refill_loop")
+                _set_phase("terminal", {"status": "fail", "reason": "task_fail"})
                 run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
                 run_metric["stopped_by"] = "task_fail"
                 run_metric["delivery_status"] = "blocked"
                 run_metric["business_status"] = "fail"
                 run_metric["terminal_reason"] = str(classified.get("terminal_reason") or "task_fail")
+                run_metric.setdefault("phase_summary", {})["primary_submit"] = {
+                    "first_business_action": str(run_metric.get("primary_first_business_action") or ""),
+                    "submit_req_count": int(run_metric.get("submit_req_count") or 0),
+                }
+                run_metric.setdefault("phase_summary", {})["refill_loop"] = {
+                    "refill_matrix_fetch_count": int(run_metric.get("refill_matrix_fetch_count") or 0),
+                    "candidate_found_count": int(run_metric.get("refill_candidate_found_count") or 0),
+                    "no_candidate_count": int(run_metric.get("refill_no_candidate_count") or 0),
+                    "need_snapshot": dict(run_metric.get("refill_need_snapshot") or {}),
+                }
+                _set_terminal_snapshot("fail")
                 log(f"[极速订场] 结束 status=fail(task_fail) 总请求数={run_metric['submit_req_count']}")
                 return {
                     "status": "fail",
@@ -3575,13 +4903,43 @@ class ApiClient:
                 }
 
             def _is_hard_task_fail(classified):
-                """鉴权失败与明确馆方规则终局类 stop_task_fail 立即结束；其余 stop_task_fail 进入 refill。"""
+                """鉴权失败与明确馆方规则终局类 stop_task_fail 立即结束；其余 stop_task_fail 继续递送循环。"""
                 if not isinstance(classified, dict):
                     return False
                 tr = str(classified.get("terminal_reason") or "")
                 return tr == "auth_fail" or tr == "booking_rule_terminal"
 
-            batch_limits_arg = refill_limits if refill_limits else None
+            # refill 常配合 include_mine_overlay=False；矩阵若尚未把新开订单标成 mine，
+            # 将本会话 stop_success 的格子并入缺口与 mine_places_by_time。
+            campaign_accepted_cells = set()
+
+            def _register_campaign_accepted(batch_items):
+                for it in normalize_booking_items(batch_items or []):
+                    p = str(it.get("place") or "").strip()
+                    t = str(it.get("time") or "").strip()
+                    if p and t:
+                        campaign_accepted_cells.add((p, t))
+
+            def _legal_batches_for_items(items_for_batching):
+                """优先按 fieldinfo 条数（账号上限）切 POST；失败则回退旧 group_booking。"""
+                if bool(CONFIG.get("delivery_chunk_posts_by_fieldinfo", True)):
+                    try:
+                        mh = max(1, min(3, int(CONFIG.get("delivery_max_fieldinfo_hours", 3) or 3)))
+                    except Exception:
+                        mh = 3
+                    chunk_batches = legal_batches_from_booking_record_chunking(
+                        items_for_batching, int(account_max_places), mh
+                    )
+                    if chunk_batches:
+                        return chunk_batches
+                _fallback_limits = dict(refill_limits) if isinstance(refill_limits, dict) and refill_limits else {}
+                _fallback_limits["max_places_per_timeslot"] = int(account_max_places)
+                return group_booking_items_into_legal_batches(
+                    items_for_batching,
+                    cfg_campaign,
+                    profile_name=profile_name,
+                    batch_limits=_fallback_limits,
+                )
 
             def _apply_submit_granularity_batches(batches_in):
                 g = str(cfg_campaign("delivery_submit_granularity", "per_legal_batch") or "per_legal_batch").strip().lower()
@@ -3593,96 +4951,327 @@ class ApiClient:
                     return out
                 return list(batches_in)
 
-            def _sequential_post_all_batches(batches_list, phase_base):
-                """同轮顺序 POST；软失败不终局，硬失败返回 (classified, fail_batch)。"""
+            def _needs_reprime_for_payload_fail(classified, post_result):
+                """业务层 payload_fail 且文案含「数据错误」时，需先重拉矩阵再同批重试（占一次软重试）。"""
+                if not isinstance(classified, dict) or not isinstance(post_result, dict):
+                    return False
+                if str(classified.get("action") or "") != "switch_backup":
+                    return False
+                if str(classified.get("bucket") or "") != "payload_fail":
+                    return False
+                blob = (
+                    str(post_result.get("raw_message") or "")
+                    + str(classified.get("normalized_msg") or "")
+                )
+                return "数据错误" in blob
+
+            def _sequential_post_all_batches(batches_list, phase_base, same_batch_soft_retries=0, stale_check=None):
+                """同轮顺序 POST；软失败不终局，硬失败返回 (classified, fail_batch)。
+
+                same_batch_soft_retries：同一批 items 在非硬失败时额外 POST 次数（首单测试用 5 即最多共 6 次）。
+                refill 传 0 保持原行为。
+                stale_check：仅在「每批开始前」检查；同批软重试内不检查，避免 plan_max_age 与 min_post_interval 叠加误触发。
+                """
+                nonlocal mx_work
                 merged_ok = []
+                max_tries = 1 + max(0, int(same_batch_soft_retries))
                 for idx, batch in enumerate(batches_list):
-                    tag = phase_base if idx == 0 else f"{phase_base}{idx + 1}"
-                    if idx == 0:
-                        log(f"[极速订场] {tag} group={group_id} ({group_label}) items={batch}")
-                    else:
-                        log(f"[极速订场] {tag} group={group_id} ({group_label}) items={batch}")
-                    classified_loop, _ = _campaign_post_batch(batch, tag)
-                    if not classified_loop:
+                    tag_base = phase_base if idx == 0 else f"{phase_base}{idx + 1}"
+                    abort_all = False
+                    if stale_check is not None and stale_check():
+                        return PLAN_STALE, None
+                    for attempt in range(1, max_tries + 1):
+                        tag = tag_base if attempt == 1 else f"{tag_base}#r{attempt}"
+                        if attempt == 1:
+                            log(f"[极速订场] {tag} group={group_id} ({group_label}) items={batch}")
+                        else:
+                            log(
+                                f"[极速订场] {tag} 同批软重试 {attempt}/{max_tries} "
+                                f"group={group_id} ({group_label}) items={batch}"
+                            )
+                        classified_loop, post_result_loop = _campaign_post_batch(batch, tag)
+                        if not classified_loop:
+                            abort_all = True
+                            break
+                        act_loop = classified_loop.get("action")
+                        if act_loop == "stop_task_fail" and _is_hard_task_fail(classified_loop):
+                            return classified_loop, batch
+                        if act_loop == "stop_success":
+                            merged_ok.extend(batch)
+                            _register_campaign_accepted(batch)
+                            break
+                        if act_loop in ("continue_delivery", "min_backoff_continue"):
+                            _sleep_with_retry_jitter(min(transport_round_interval_s, 0.5))
+                        elif act_loop == "switch_backup":
+                            run_metric["submit_retry_count"] = (run_metric.get("submit_retry_count") or 0) + 1
+                            if (
+                                attempt < max_tries
+                                and _needs_reprime_for_payload_fail(classified_loop, post_result_loop)
+                            ):
+                                mx_new = self.get_matrix(
+                                    date_str,
+                                    include_mine_overlay=False,
+                                    request_timeout=matrix_timeout_s,
+                                    bypass_cache=True,
+                                )
+                                if isinstance(mx_new, dict) and not mx_new.get("error"):
+                                    mx_work = mx_new
+                                    _touch_plan_mono()
+                                    run_metric["payload_fail_reprime_count"] = int(
+                                        run_metric.get("payload_fail_reprime_count") or 0
+                                    ) + 1
+                                    log(
+                                        f"[极速订场] {tag} 数据错误等业务拒单后已重拉矩阵，将同批重试 "
+                                        f"reprime_n={run_metric['payload_fail_reprime_count']}"
+                                    )
+                        else:
+                            _sleep_with_retry_jitter(min(transport_round_interval_s, 0.5))
+                        if attempt < max_tries:
+                            continue
+                    if abort_all:
                         break
-                    act_loop = classified_loop.get("action")
-                    if act_loop == "stop_task_fail" and _is_hard_task_fail(classified_loop):
-                        return classified_loop, batch
-                    if act_loop == "stop_success":
-                        merged_ok.extend(batch)
-                    elif act_loop in ("continue_delivery", "min_backoff_continue"):
-                        time.sleep(min(transport_round_interval_s, 0.5))
-                    elif act_loop == "switch_backup":
-                        run_metric["submit_retry_count"] = (run_metric.get("submit_retry_count") or 0) + 1
                 return None, None
 
-            legal_batches_raw = group_booking_items_into_legal_batches(
-                target_items, cfg_campaign, profile_name=profile_name, batch_limits=batch_limits_arg
+            log(
+                f"[极速订场] 递送循环 effective_target_blocks={int(venue_merged.get('delivery_target_blocks') or 1)} "
+                f"fieldinfo_max_records_per_post={int(account_max_places)} "
+                f"first_group_matrix={bool(venue_merged.get('delivery_first_group_from_matrix'))}"
             )
-            if not legal_batches_raw:
-                return {
-                    "status": "fail",
-                    "msg": "主组合无法拆分为合法批次",
-                    "success_items": [],
-                    "failed_items": target_items,
-                    "run_metric": run_metric,
-                    "delivery_group_id": group_id,
-                }
-            legal_batches = _apply_submit_granularity_batches(legal_batches_raw)
-            hard_cls, hard_batch = _sequential_post_all_batches(legal_batches, "首单")
-            if hard_cls:
-                return _return_task_fail(hard_cls, hard_batch or [])
+            _set_phase("refill_loop", {"unified_delivery": True})
 
-            # refill：每轮先拉矩阵；多批顺序 POST；满额以矩阵 mine 计数为准
-            refill_no_candidate_streak = 0
             while time.time() < deadline_ts:
-                run_metric["refill_matrix_fetch_count"] = (run_metric.get("refill_matrix_fetch_count") or 0) + 1
-                mx_t0 = time.perf_counter()
-                mx = self.get_matrix(
-                    date_str, include_mine_overlay=False, request_timeout=matrix_timeout_s, bypass_cache=True
-                )
-                if not isinstance(mx, dict) or mx.get("error"):
-                    err = str((mx or {}).get("error", "matrix_fail") if isinstance(mx, dict) else "matrix_fail")[:120]
-                    mx_fail_ms = int((time.perf_counter() - mx_t0) * 1000)
-                    record_matrix_fetch_failure(run_metric, "refill_matrix", err, mx_fail_ms)
-                    log(f"[极速订场] refill get_matrix 失败: {err}，{refill_poll_interval_s}s 后重试")
-                    time.sleep(refill_poll_interval_s)
+                if mx_work is None:
+                    mx_t0 = time.perf_counter()
+                    mx_work = self.get_matrix(
+                        date_str, include_mine_overlay=False, request_timeout=matrix_timeout_s, bypass_cache=True
+                    )
+                    if not isinstance(mx_work, dict) or mx_work.get("error"):
+                        err = str((mx_work or {}).get("error", "matrix_fail") if isinstance(mx_work, dict) else "matrix_fail")[:120]
+                        mx_fail_ms = int((time.perf_counter() - mx_t0) * 1000)
+                        record_matrix_fetch_failure(run_metric, "refill_matrix", err, mx_fail_ms)
+                        log(f"[极速订场] 递送循环 get_matrix 失败: {err}，{refill_poll_interval_s}s 后重试")
+                        time.sleep(refill_poll_interval_s)
+                        mx_work = None
+                        continue
+                    _touch_plan_mono()
+                    run_metric["refill_matrix_fetch_count"] = (run_metric.get("refill_matrix_fetch_count") or 0) + 1
+                    mx_elapsed_ms = int((time.perf_counter() - mx_t0) * 1000)
+                    log(
+                        f"[极速订场] 递送循环 矩阵完成 fetch_n={run_metric['refill_matrix_fetch_count']} "
+                        f"wall={datetime.now().strftime('%H:%M:%S.%f')[:-3]} elapsed_ms={mx_elapsed_ms}"
+                    )
+                    if matrix_snapshot_has_locked_cell(mx_work.get("matrix")):
+                        run_metric["campaign_matrix_saw_locked_cell"] = True
+                elif plan_mono_holder[0] is None:
+                    _touch_plan_mono()
+
+                if not first_group_applied:
+                    if cfg_campaign("delivery_first_group_from_matrix") and mx_work.get("matrix"):
+                        first_group_times_raw = cfg_campaign("delivery_first_group_times")
+                        first_group_times_ok = isinstance(first_group_times_raw, list) and len(first_group_times_raw) > 0
+                        if first_group_times_ok:
+                            matrix_blocks = max(1, min(3, int(cfg_campaign("delivery_target_blocks", 2) or 2)))
+                            run_metric["matrix_first_group_blocks_source"] = "config"
+                            first_group_cfg = {
+                                "delivery_target_blocks": matrix_blocks,
+                                "delivery_target_times": list(cfg_campaign("delivery_target_times") or []),
+                                "delivery_time_preference_order": list(cfg_campaign("delivery_time_preference_order") or []),
+                                "delivery_first_group_times": cfg_campaign("delivery_first_group_times"),
+                                "delivery_first_group_time_preference_order": cfg_campaign("delivery_first_group_time_preference_order"),
+                                "delivery_preferred_place_min": cfg_campaign("delivery_preferred_place_min"),
+                                "delivery_preferred_place_max": cfg_campaign("delivery_preferred_place_max"),
+                                "delivery_matrix_place_min": cfg_campaign("delivery_matrix_place_min", 1),
+                                "delivery_matrix_place_max": cfg_campaign("delivery_matrix_place_max", 14),
+                                "delivery_first_group_allow_scatter": bool(
+                                    cfg_campaign("delivery_first_group_allow_scatter", False)
+                                ),
+                            }
+                            computed_items, combo_level = compute_first_group_from_matrix(
+                                mx_work["matrix"],
+                                mx_work.get("places"),
+                                mx_work.get("times"),
+                                first_group_cfg,
+                            )
+                            if computed_items:
+                                groups[0] = {**groups[0], "items": computed_items}
+                                run_metric["first_group_combo_level"] = combo_level
+                                log(f"[极速订场] 第一组由 matrix 算出 level={combo_level} items={computed_items}")
+                            elif pre_matrix_primary_items:
+                                groups[0] = {**groups[0], "items": list(pre_matrix_primary_items)}
+                                run_metric["first_group_combo_level"] = "fallback_items"
+                                log("[极速订场] 第一组矩阵无解，回退主组原 items 继续递送")
+                            else:
+                                log("[极速订场] 第一组无可用组合(矩阵降级全无解)，未发送预订请求")
+                                _fg_gid = str(groups[0].get("id") or "primary")
+                                _set_phase("terminal", {"status": "fail", "reason": "first_group_no_solution"})
+                                run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
+                                run_metric["stopped_by"] = "first_group_no_solution"
+                                run_metric["delivery_status"] = "blocked"
+                                run_metric["business_status"] = "fail"
+                                run_metric["terminal_reason"] = "first_group_no_solution"
+                                _set_terminal_snapshot("fail")
+                                return {
+                                    "status": "fail",
+                                    "msg": "第一组无可用组合（矩阵中无满足条件的连号与时段）",
+                                    "success_items": [],
+                                    "failed_items": (groups[0].get("items") or []) if groups else [],
+                                    "run_metric": run_metric,
+                                    "delivery_group_id": _fg_gid,
+                                }
+                        else:
+                            log("[极速订场] 未配置首组目标时段，首组按主组原样递送")
+                    first_group_applied = True
+
+                primary = groups[0]
+                group_id = str(primary.get("id") or "primary")
+                group_label = str(primary.get("label") or "主组合")
+                run_metric["picked_group_id"] = group_id
+                target_items = normalize_booking_items(primary.get("items") or [])
+                if not target_items:
+                    _set_phase("terminal", {"status": "fail", "reason": "primary_items_invalid"})
+                    run_metric["delivery_window_ms"] = int(max(0.0, time.time() - campaign_started_at) * 1000)
+                    run_metric["stopped_by"] = "primary_items_invalid"
+                    run_metric["delivery_status"] = "blocked"
+                    run_metric["business_status"] = "fail"
+                    run_metric["terminal_reason"] = "primary_items_invalid"
+                    _set_terminal_snapshot("fail")
+                    return {
+                        "status": "fail",
+                        "msg": "主组合无有效预订项",
+                        "success_items": [],
+                        "failed_items": [],
+                        "run_metric": run_metric,
+                        "delivery_group_id": group_id,
+                    }
+
+                if campaign_intent is None:
+                    target_times_from_items = sorted({str(it.get("time")) for it in target_items if str(it.get("time") or "")})
+                    intent_target_times = cfg_campaign("delivery_first_group_times") or target_times_from_items
+                    intent_target_times = [str(t).strip() for t in intent_target_times if re.fullmatch(r"\d{2}:\d{2}", str(t).strip())]
+                    if not intent_target_times:
+                        intent_target_times = list(target_times_from_items)
+                    intent_time_order = cfg_campaign("delivery_first_group_time_preference_order") or intent_target_times
+                    intent_time_order = [str(t).strip() for t in intent_time_order if str(t).strip() in set(intent_target_times)] or list(intent_target_times)
+                    intent_target_blocks = max(1, min(3, int(cfg_campaign("delivery_target_blocks", 2) or 2)))
+                    run_metric["goal_target_blocks_source"] = "config"
+                    span_lo, span_hi = _normalized_matrix_place_span(
+                        cfg_campaign("delivery_matrix_place_min", 1),
+                        cfg_campaign("delivery_matrix_place_max", 14),
+                    )
+                    campaign_intent = {
+                        "target_blocks": intent_target_blocks,
+                        "target_times": intent_target_times,
+                        "time_preference_order": intent_time_order,
+                        "preferred_place_min": int(cfg_campaign("delivery_preferred_place_min", 0) or 0),
+                        "preferred_place_max": int(cfg_campaign("delivery_preferred_place_max", 0) or 0),
+                        "selectable_place_min": span_lo,
+                        "selectable_place_max": span_hi,
+                        "require_consecutive": not bool(venue_merged.get("delivery_first_group_allow_scatter")),
+                        "solver_max_total_cells": bool(cfg_campaign("delivery_solver_max_total_cells", True)),
+                    }
+                    if bool(CONFIG.get("delivery_solver_auto_time_consecutive", True)):
+                        campaign_intent["solver_scoring"] = "auto_time_consecutive"
+                        campaign_intent["solver_aggressive_best_tier"] = bool(
+                            CONFIG.get("delivery_solver_aggressive_best_tier", True)
+                        )
+                    run_metric["goal_target_blocks"] = int(campaign_intent.get("target_blocks") or 1)
+                    run_metric["goal_target_times"] = list(campaign_intent.get("target_times") or [])
+                    refill_limits.clear()
+                    for _lim_key in ("max_items_per_batch", "max_consecutive_slots_per_place", "max_places_per_timeslot"):
+                        _cfg_key = f"delivery_refill_{_lim_key}"
+                        try:
+                            _v = cfg_campaign(_cfg_key, None)
+                            if _v is not None:
+                                refill_limits[_lim_key] = int(_v)
+                        except Exception:
+                            pass
+
+                matrix_live = mx_work.get("matrix") or {}
+
+                if not primary_done:
+                    legal_batches_raw = _legal_batches_for_items(target_items)
+                    if not legal_batches_raw:
+                        return {
+                            "status": "fail",
+                            "msg": "主组合无法拆分为合法批次",
+                            "success_items": [],
+                            "failed_items": target_items,
+                            "run_metric": run_metric,
+                            "delivery_group_id": group_id,
+                        }
+                    legal_batches = _apply_submit_granularity_batches(legal_batches_raw)
+                    _set_phase("primary_submit", {"batches": len(legal_batches)})
+                    hard_cls, hard_batch = _sequential_post_all_batches(
+                        legal_batches, "首单", same_batch_soft_retries=5, stale_check=_plan_is_stale
+                    )
+                    if hard_cls is PLAN_STALE:
+                        run_metric["delivery_plan_stale_resync_count"] = int(run_metric.get("delivery_plan_stale_resync_count") or 0) + 1
+                        log(f"[极速订场] 算场快照过期(>{plan_max_age_s}s)，重拉矩阵后再递送")
+                        _close_phase("primary_submit")
+                        mx_work = None
+                        continue
+                    if hard_cls:
+                        return _return_task_fail(hard_cls, hard_batch or [])
+                    _close_phase("primary_submit")
+                    primary_done = True
+                    mx_work = None
+                    time.sleep(transport_round_interval_s)
                     continue
-                mx_elapsed_ms = int((time.perf_counter() - mx_t0) * 1000)
-                log(
-                    f"[极速订场] refill 矩阵完成 fetch_n={run_metric['refill_matrix_fetch_count']} "
-                    f"wall={datetime.now().strftime('%H:%M:%S.%f')[:-3]} elapsed_ms={mx_elapsed_ms}"
-                )
-                matrix_live = mx.get("matrix") or {}
+
                 target_blocks_live = max(1, int(campaign_intent.get("target_blocks") or 1))
                 target_times_live = [str(t).strip() for t in (campaign_intent.get("target_times") or []) if str(t).strip()]
                 need_by_time = {}
                 for t in target_times_live:
                     mine_cnt = 0
-                    for p in (mx.get("places") or list(matrix_live.keys())):
+                    for p in (mx_work.get("places") or list(matrix_live.keys())):
                         st = (matrix_live.get(str(p)) or {}).get(t)
-                        if _matrix_cell_is_mine(st):
+                        pair = (str(p).strip(), str(t).strip())
+                        if _matrix_cell_is_mine(st) or pair in campaign_accepted_cells:
                             mine_cnt += 1
                     need_by_time[t] = max(0, target_blocks_live - mine_cnt)
+                run_metric["refill_need_snapshot"] = {
+                    "need_by_time": {str(k): int(v) for k, v in (need_by_time or {}).items()},
+                    "target_blocks": int(target_blocks_live),
+                }
                 if sum(int(v) for v in need_by_time.values()) <= 0:
                     run_metric["goal_satisfied"] = True
-                    log("[极速订场] refill 缺口已归零，目标已满足，提前结束")
-                    places_for_mine = mx.get("places") or list(matrix_live.keys())
+                    log("[极速订场] 递送循环 缺口已归零，目标已满足，提前结束")
+                    places_for_mine = mx_work.get("places") or list(matrix_live.keys())
                     mine_items = collect_mine_items_from_matrix(matrix_live, places_for_mine, target_times_live)
+                    extra_mine = [
+                        {"place": p, "time": tt}
+                        for p, tt in campaign_accepted_cells
+                        if str(tt).strip() in {str(x).strip() for x in target_times_live}
+                    ]
+                    mine_items = normalize_booking_items((mine_items or []) + extra_mine)
                     return _return_success(mine_items, goal_satisfied=True)
-                places_list = mx.get("places") or list(matrix_live.keys())
+                places_list = mx_work.get("places") or list(matrix_live.keys())
                 intent_base = {k: v for k, v in campaign_intent.items() if k != "require_consecutive"}
                 intent_base["target_blocks"] = target_blocks_live
                 intent_base["target_times"] = list(target_times_live)
-                intent_base["mine_places_by_time"] = mine_places_by_time_from_matrix(
-                    matrix_live, places_list, target_times_live
+                mine_bt = dict(
+                    mine_places_by_time_from_matrix(matrix_live, places_list, target_times_live)
                 )
-                solved, used_need_by_time, tier_label = solve_refill_need_tiered(
+                for _t in target_times_live:
+                    ts = str(_t).strip()
+                    acc_ps = sorted(
+                        {p for p, tt in campaign_accepted_cells if str(tt).strip() == ts},
+                        key=lambda x: int(x) if str(x).isdigit() else 0,
+                    )
+                    if not acc_ps:
+                        continue
+                    have = set(mine_bt.get(ts) or [])
+                    for _p in acc_ps:
+                        have.add(str(_p))
+                    mine_bt[ts] = sorted(have, key=lambda x: int(x) if str(x).isdigit() else 0)
+                intent_base["mine_places_by_time"] = mine_bt
+                solved, used_need_by_time, tier_label = solve_refill_with_policy(
                     matrix_live,
                     places_list,
                     intent_base,
                     need_by_time,
                     allow_scatter=True,
+                    policy=REFILL_POLICY_AUTO_CAMPAIGN,
                 )
                 if not solved or not solved.get("items"):
                     run_metric["refill_no_candidate_count"] = (run_metric.get("refill_no_candidate_count") or 0) + 1
@@ -3707,6 +5296,16 @@ class ApiClient:
                             f"[极速订场] refill 连续 {refill_no_candidate_streak} 次无满足约束候选，"
                             f"已达阈值 {refill_no_candidate_streak_limit}，早停 缺口={need_by_time}"
                         )
+                        run_metric.setdefault("phase_summary", {})["refill_loop"] = {
+                            "refill_matrix_fetch_count": int(run_metric.get("refill_matrix_fetch_count") or 0),
+                            "candidate_found_count": int(run_metric.get("refill_candidate_found_count") or 0),
+                            "no_candidate_count": int(run_metric.get("refill_no_candidate_count") or 0),
+                            "max_no_candidate_streak": int(run_metric.get("refill_no_candidate_max_streak") or 0),
+                            "need_snapshot": dict(run_metric.get("refill_need_snapshot") or {}),
+                        }
+                        _close_phase("refill_loop")
+                        _set_phase("terminal", {"status": "fail", "reason": "refill_no_candidate_streak"})
+                        _set_terminal_snapshot("fail")
                         return {
                             "status": "fail",
                             "msg": (
@@ -3718,28 +5317,35 @@ class ApiClient:
                             "run_metric": run_metric,
                             "delivery_group_id": group_id,
                         }
-                    log(f"[极速订场] refill 本轮无满足约束候选，缺口={need_by_time}，短等待后重拉")
+                    log(f"[极速订场] 递送循环 本轮无满足约束候选，缺口={need_by_time}，短等待后重拉")
                     time.sleep(refill_poll_interval_s)
+                    mx_work = None
                     continue
                 refill_no_candidate_streak = 0
                 log(
-                    f"[极速订场] refill 分层求解 tier={tier_label} used_need={used_need_by_time} "
+                    f"[极速订场] 递送循环 分层求解 tier={tier_label} used_need={used_need_by_time} "
                     f"原缺口={need_by_time}"
                 )
                 run_metric["refill_candidate_found_count"] = (run_metric.get("refill_candidate_found_count") or 0) + 1
                 avail_items = normalize_booking_items(solved.get("items") or [])
-                rbatches_raw = group_booking_items_into_legal_batches(
-                    avail_items, cfg_campaign, profile_name=profile_name, batch_limits=batch_limits_arg
-                )
+                rbatches_raw = _legal_batches_for_items(avail_items)
                 rbatches = _apply_submit_granularity_batches(rbatches_raw)
                 if not rbatches:
                     time.sleep(refill_poll_interval_s)
+                    mx_work = None
                     continue
-                hard_r, hard_rb = _sequential_post_all_batches(rbatches, "refill")
+                _set_phase("refill_loop", {"refill_post": True})
+                hard_r, hard_rb = _sequential_post_all_batches(rbatches, "refill", stale_check=_plan_is_stale)
+                if hard_r is PLAN_STALE:
+                    run_metric["delivery_plan_stale_resync_count"] = int(run_metric.get("delivery_plan_stale_resync_count") or 0) + 1
+                    log(f"[极速订场] 算场快照过期(>{plan_max_age_s}s)，重拉矩阵后再递送")
+                    mx_work = None
+                    continue
                 if hard_r:
                     return _return_task_fail(hard_r, hard_rb or [])
-                log("[极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额")
+                log("[极速订场] 递送循环 本轮多批已处理，下轮重拉矩阵校验满额")
                 run_metric["submit_retry_count"] = (run_metric.get("submit_retry_count") or 0) + 1
+                mx_work = None
                 time.sleep(transport_round_interval_s)
                 continue
 
@@ -3748,6 +5354,16 @@ class ApiClient:
             run_metric["delivery_status"] = "exhausted"
             run_metric["business_status"] = "unknown"
             run_metric["terminal_reason"] = "delivery_budget_exhausted"
+            run_metric.setdefault("phase_summary", {})["refill_loop"] = {
+                "refill_matrix_fetch_count": int(run_metric.get("refill_matrix_fetch_count") or 0),
+                "candidate_found_count": int(run_metric.get("refill_candidate_found_count") or 0),
+                "no_candidate_count": int(run_metric.get("refill_no_candidate_count") or 0),
+                "max_no_candidate_streak": int(run_metric.get("refill_no_candidate_max_streak") or 0),
+                "need_snapshot": dict(run_metric.get("refill_need_snapshot") or {}),
+            }
+            _close_phase("refill_loop")
+            _set_phase("terminal", {"status": "fail", "reason": "delivery_budget_exhausted"})
+            _set_terminal_snapshot("fail")
             log(f"[极速订场] 结束 status=fail(budget_exhausted) 总请求数={run_metric['submit_req_count']} 轮数={run_metric['dispatch_round_count']}")
             return {
                 "status": "fail",
@@ -3765,7 +5381,7 @@ class ApiClient:
                     except Exception:
                         pass
 
-    def submit_order_minimal(self, date_str, selected_items, submit_profile=None):
+    def submit_order_minimal(self, date_str, selected_items, submit_profile=None, skip_warmup=False):
         items = normalize_booking_items(selected_items)
         if not items:
             return {
@@ -3787,6 +5403,7 @@ class ApiClient:
             date_str,
             [{"id": "primary", "label": "主组合", "items": items}],
             submit_profile=submit_profile,
+            skip_warmup=skip_warmup,
         )
 
     def check_token(self):
@@ -3819,7 +5436,7 @@ class ApiClient:
         )
         if quiet_info:
             return {"ok": False, "unknown": True, "msg": quiet_info.get("msg"), "quiet_window_blocked": True, "quiet_window": quiet_info.get("quiet_window")}
-        url = f"https://{self.host}/easyserpClient/place/reservationPlace"
+        url = self._gym_https_url("easyserpClient/place/reservationPlace")
         probe_body = (
             f"token={self.token}&"
             f"shopNum={self.shop_num}&"
@@ -3864,10 +5481,18 @@ class ApiClient:
     def get_place_orders(self, page_size=20, max_pages=4, timeout_s=6):
         """获取我的场地订单列表（用于识别 mine 状态）。
 
-        为了提升「手动预订」与「我的场地」页面的响应速度，这里适当收紧了分页与超时时间：
-        - max_pages：从 6 减少到 4，优先关注最近的订单页
-        - timeout_s：从 10s 降到 6s，避免远端过慢时长时间卡住请求
+        page_size / max_pages 可由「已订总览」等入口放宽，以覆盖订单较多的账号；默认值仍偏保守。
         """
+        try:
+            page_size = int(page_size)
+        except (TypeError, ValueError):
+            page_size = 20
+        page_size = max(10, min(50, page_size))
+        try:
+            max_pages = int(max_pages)
+        except (TypeError, ValueError):
+            max_pages = 4
+        max_pages = max(1, min(25, max_pages))
         ctx = get_runtime_request_context()
         quiet_info = quiet_window_block_info(
             "order_query",
@@ -3877,7 +5502,7 @@ class ApiClient:
         )
         if quiet_info:
             return {"error": quiet_info.get("msg"), "quiet_window_blocked": True, "quiet_window": quiet_info.get("quiet_window")}
-        url = f"https://{self.host}/easyserpClient/place/getPlaceOrder"
+        url = self._gym_https_url("easyserpClient/place/getPlaceOrder")
         all_orders = []
 
         for page_no in range(max_pages):
@@ -3912,7 +5537,13 @@ class ApiClient:
             if len(page_items) < page_size:
                 break
 
-        return {"data": all_orders}
+        return {
+            "data": all_orders,
+            "fetch_meta": {
+                "capacity": int(max_pages) * int(page_size),
+                "returned": len(all_orders),
+            },
+        }
 
     def get_use_card_info(self, timeout_s=6):
         """获取用户卡信息（getUseCardInfo），用于展示余额。一用户一卡时取 universal[0].cardcash。"""
@@ -3925,7 +5556,7 @@ class ApiClient:
         )
         if quiet_info:
             return {"error": quiet_info.get("msg"), "quiet_window_blocked": True, "quiet_window": quiet_info.get("quiet_window")}
-        url = f"https://{self.host}/easyserpClient/common/getUseCardInfo"
+        url = self._gym_https_url("easyserpClient/common/getUseCardInfo")
         # 与 README 抓包一致：projectInfo 为非空数组，至少一条场地/时段，否则接口可能返回空 universal
         project_info_minimal = [{
             "day": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
@@ -3978,7 +5609,7 @@ class ApiClient:
 
     def cancel_place_order(self, bill_num, reason="用户取消"):
         """调用取消预约接口 canclePlaceAppointment。"""
-        url = f"https://{self.host}/easyserpClient/place/canclePlaceAppointment"
+        url = self._gym_https_url("easyserpClient/place/canclePlaceAppointment")
         body = (
             f"outtradeno={urllib.parse.quote(str(bill_num or ''))}&"
             f"token={urllib.parse.quote(str(self.token or ''))}&"
@@ -4004,10 +5635,9 @@ class ApiClient:
     def _extract_mine_slots(self, orders, target_date):
         """把订单列表转换为 mine 格子集合，格式: {(place, HH:MM)}。"""
         mine_slots = set()
+        target_norm = normalize_order_schedule_date_key(target_date)
         for order in orders:
-            if str(order.get("showStatus", "")) != "0":
-                continue
-            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+            if not _order_row_eligible_for_mine_slots(order):
                 continue
 
             arr = order.get("jsonArray") or []
@@ -4015,7 +5645,10 @@ class ApiClient:
                 continue
 
             for seg in arr:
-                if str(seg.get("reversionDate", "")).strip() != target_date:
+                seg_date = normalize_order_schedule_date_key(seg.get("reversionDate"))
+                if not seg_date:
+                    seg_date = normalize_order_schedule_date_key(order.get("readydate"))
+                if not seg_date or seg_date != target_norm:
                     continue
 
                 site_name = str(seg.get("siteName", ""))
@@ -4024,11 +5657,13 @@ class ApiClient:
                     continue
                 place = m.group(1)
 
-                start = str(seg.get("start", "")).strip()
-                end = str(seg.get("end", "")).strip()
+                start = normalize_time_str(seg.get("start"))
+                end = normalize_time_str(seg.get("end"))
+                if not start or not end:
+                    continue
                 try:
-                    start_dt = datetime.strptime(start, "%H:%M:%S")
-                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                    start_dt = datetime.strptime(start, "%H:%M")
+                    end_dt = datetime.strptime(end, "%H:%M")
                 except ValueError:
                     continue
 
@@ -4043,15 +5678,15 @@ class ApiClient:
         """按日期聚合 mine 格子，返回 {date: [{'place':'7','time':'20:00'}]}。"""
         grouped = {}
         for order in orders or []:
-            if str(order.get("showStatus", "")) != "0":
-                continue
-            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+            if not _order_row_eligible_for_mine_slots(order):
                 continue
             arr = order.get("jsonArray") or []
             if not isinstance(arr, list):
                 continue
             for seg in arr:
-                date_str = str(seg.get("reversionDate", "")).strip()
+                date_str = normalize_order_schedule_date_key(seg.get("reversionDate"))
+                if not date_str:
+                    date_str = normalize_order_schedule_date_key(order.get("readydate"))
                 if not date_str:
                     continue
                 site_name = str(seg.get("siteName", ""))
@@ -4059,11 +5694,13 @@ class ApiClient:
                 if not m:
                     continue
                 place = m.group(1)
-                start = str(seg.get("start", "")).strip()
-                end = str(seg.get("end", "")).strip()
+                start = normalize_time_str(seg.get("start"))
+                end = normalize_time_str(seg.get("end"))
+                if not start or not end:
+                    continue
                 try:
-                    start_dt = datetime.strptime(start, "%H:%M:%S")
-                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                    start_dt = datetime.strptime(start, "%H:%M")
+                    end_dt = datetime.strptime(end, "%H:%M")
                 except ValueError:
                     continue
                 cur = start_dt
@@ -4083,9 +5720,7 @@ class ApiClient:
         """按日期聚合 mine 格子并带上订单号，返回 {date: [{'place','time','billNum'}]}。"""
         grouped = {}
         for order in orders or []:
-            if str(order.get("showStatus", "")) != "0":
-                continue
-            if str(order.get("prestatus", "")).strip() in ("取消", "已取消"):
+            if not _order_row_eligible_for_mine_slots(order):
                 continue
             bill_num = str(
                 order.get("billNum")
@@ -4098,7 +5733,7 @@ class ApiClient:
             if not isinstance(arr, list):
                 continue
             for seg in arr:
-                date_str = str(seg.get("reversionDate", "")).strip()
+                date_str = normalize_order_schedule_date_key(seg.get("reversionDate"))
                 if not date_str:
                     continue
                 site_name = str(seg.get("siteName", ""))
@@ -4106,11 +5741,13 @@ class ApiClient:
                 if not m:
                     continue
                 place = m.group(1)
-                start = str(seg.get("start", "")).strip()
-                end = str(seg.get("end", "")).strip()
+                start = normalize_time_str(seg.get("start"))
+                end = normalize_time_str(seg.get("end"))
+                if not start or not end:
+                    continue
                 try:
-                    start_dt = datetime.strptime(start, "%H:%M:%S")
-                    end_dt = datetime.strptime(end, "%H:%M:%S")
+                    start_dt = datetime.strptime(start, "%H:%M")
+                    end_dt = datetime.strptime(end, "%H:%M")
                 except ValueError:
                     continue
                 cur = start_dt
@@ -4158,7 +5795,7 @@ class ApiClient:
             except Exception:
                 return cache_hit.get('data')
 
-        url = f"https://{self.host}/easyserpClient/place/getPlaceInfoByShortName"
+        url = self._gym_https_url("easyserpClient/place/getPlaceInfoByShortName")
         params = {
             "shopNum": self.shop_num,
             "dateymd": date_str,
@@ -4312,10 +5949,11 @@ class ApiClient:
         except Exception as e:
             return {"error": str(e)}
 
-    def submit_order(self, date_str, selected_items, submit_profile=None):
+    def submit_order(self, date_str, selected_items, submit_profile=None, skip_warmup=False):
         """
         入口统一走极简直提：内部仅调用 submit_order_minimal -> submit_delivery_campaign。
         传统分批下单实现已移除。
+        skip_warmup：手动预订传 True 时不依赖首轮矩阵预拉，递送循环内仍会 get_matrix 算场。
         """
         ctx = get_runtime_request_context()
         quiet_info = quiet_window_block_info(
@@ -4346,9 +5984,12 @@ class ApiClient:
                 "quiet_window": quiet_info.get("quiet_window"),
             }
         profile_name = str(submit_profile or "").strip()
-        return self.submit_order_minimal(date_str, selected_items, submit_profile=profile_name)
+        return self.submit_order_minimal(
+            date_str, selected_items, submit_profile=profile_name, skip_warmup=skip_warmup
+        )
 
 client = ApiClient()
+sync_primary_client_auth()
 
 # ================= 任务调度系统 =================
 
@@ -4364,6 +6005,64 @@ class TaskManager:
         self._running_task_ids = set()
         self.load_tasks()
         self.load_refill_tasks()
+        self._refill_scheduler_was_paused = False
+        self.load_refill_scheduler_state()
+
+    def load_refill_scheduler_state(self):
+        """独立 Refill 调度全局状态（与 refill_tasks 的 enabled 无关）。"""
+        with self._refill_lock:
+            self._refill_global_pause_until_ms = 0
+            if os.path.exists(REFILL_SCHEDULER_STATE_FILE):
+                try:
+                    with open(REFILL_SCHEDULER_STATE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f) or {}
+                    pu = int(data.get("pause_until_ms") or 0)
+                    self._refill_global_pause_until_ms = max(0, pu)
+                except Exception:
+                    self._refill_global_pause_until_ms = 0
+
+    def save_refill_scheduler_state(self):
+        with self._refill_lock:
+            data = {"pause_until_ms": int(getattr(self, "_refill_global_pause_until_ms", 0) or 0)}
+            with open(REFILL_SCHEDULER_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_refill_global_pause_status(self):
+        now_ms = int(time.time() * 1000)
+        pu = int(getattr(self, "_refill_global_pause_until_ms", 0) or 0)
+        paused = pu > 0 and now_ms < pu
+        remaining_seconds = max(0, int((pu - now_ms) / 1000)) if paused else 0
+        return {
+            "paused": paused,
+            "pause_until_ms": pu if paused else 0,
+            "remaining_seconds": remaining_seconds,
+        }
+
+    def is_refill_globally_paused(self):
+        return bool(self.get_refill_global_pause_status().get("paused"))
+
+    def set_refill_global_pause_minutes(self, minutes=None):
+        m = int(minutes if minutes is not None else REFILL_GLOBAL_PAUSE_MINUTES_DEFAULT)
+        m = max(1, min(120, m))
+        now_ms = int(time.time() * 1000)
+        self._refill_global_pause_until_ms = now_ms + m * 60 * 1000
+        self.save_refill_scheduler_state()
+        return self.get_refill_global_pause_status()
+
+    def extend_refill_global_pause_minutes(self, minutes=None):
+        m = int(minutes if minutes is not None else REFILL_GLOBAL_PAUSE_MINUTES_DEFAULT)
+        m = max(1, min(120, m))
+        now_ms = int(time.time() * 1000)
+        cur = int(getattr(self, "_refill_global_pause_until_ms", 0) or 0)
+        base = max(now_ms, cur)
+        self._refill_global_pause_until_ms = base + m * 60 * 1000
+        self.save_refill_scheduler_state()
+        return self.get_refill_global_pause_status()
+
+    def clear_refill_global_pause(self):
+        self._refill_global_pause_until_ms = 0
+        self.save_refill_scheduler_state()
+        return self.get_refill_global_pause_status()
 
     def _task_should_enter_quiet_window(self, task):
         if not isinstance(task, dict):
@@ -4727,7 +6426,7 @@ class TaskManager:
             def _dbg_log(hypothesis_id, location, message, data):
                 try:
                     payload = {
-                        "sessionId": "a1cc9c",
+                        "sessionId": "refill_diagnostic",
                         "runId": debug_run_id,
                         "hypothesisId": str(hypothesis_id),
                         "location": str(location),
@@ -4735,7 +6434,7 @@ class TaskManager:
                         "data": data if isinstance(data, dict) else {"value": str(data)},
                         "timestamp": int(time.time() * 1000),
                     }
-                    with open("debug-a1cc9c.log", "a", encoding="utf-8") as _f:
+                    with open(DIAGNOSTIC_REFILL_NDJSON_FILE, "a", encoding="utf-8") as _f:
                         _f.write(json.dumps(payload, ensure_ascii=False) + "\n")
                 except Exception:
                     pass
@@ -4804,7 +6503,7 @@ class TaskManager:
                 _mine = []
                 for _p in candidate_places:
                     _st = (matrix.get(str(_p)) or {}).get(str(_t))
-                    if _st == "available":
+                    if is_matrix_cell_bookable_for_new_booking(_st):
                         _avail_all.append(str(_p))
                         if str(_p).isdigit() and int(str(_p)) <= 14:
                             _avail_le14.append(str(_p))
@@ -4909,12 +6608,13 @@ class TaskManager:
                 },
             )
             # #endregion
-            solved, used_need, tier_label = solve_refill_need_tiered(
+            solved, used_need, tier_label = solve_refill_with_policy(
                 matrix,
                 candidate_places,
                 intent_base,
                 dict(need_res.get("need_by_time") or {}),
                 allow_scatter=allow_scatter,
+                policy=REFILL_POLICY_INDEPENDENT,
             )
             picks = normalize_booking_items((solved or {}).get("items") or [])
             # #region agent log
@@ -4938,10 +6638,7 @@ class TaskManager:
 
             log(f"📦 {tag} 分层 tier={tier_label} used_need={used_need} 本轮提交: {picks}")
             try:
-                delivery_min_post_interval_s = max(
-                    0.0,
-                    float(CONFIG.get("delivery_min_post_interval_seconds", 2.2) or 0.0),
-                )
+                delivery_min_post_interval_s = _read_delivery_min_post_interval_seconds()
             except Exception:
                 delivery_min_post_interval_s = 0.0
             if delivery_min_post_interval_s > 0:
@@ -4976,6 +6673,14 @@ class TaskManager:
             return submit_res
 
     def run_refill_scheduler_tick(self):
+        now_ms = int(time.time() * 1000)
+        pu = int(getattr(self, "_refill_global_pause_until_ms", 0) or 0)
+        if pu > 0 and now_ms < pu:
+            self._refill_scheduler_was_paused = True
+            return
+        if getattr(self, "_refill_scheduler_was_paused", False):
+            self.reset_refill_scheduler_baseline()
+            self._refill_scheduler_was_paused = False
         now = time.time()
         for t in list(self.refill_tasks):
             if not bool(t.get('enabled', True)):
@@ -5348,7 +7053,9 @@ class TaskManager:
             self.mark_task_run(task['id'])
 
         run_started_ts = time.time()
+        run_id = f"auto-{task.get('id')}-{int(run_started_ts * 1000)}-{random.randint(1000, 9999)}"
         run_metrics = {
+            "run_id": run_id,
             "task_id": task.get('id'),
             "task_type": task.get('type', 'daily'),
             "source": "auto",
@@ -5411,6 +7118,8 @@ class TaskManager:
             "delivery_status": None,
             "business_status": None,
             "terminal_reason": None,
+            "effective_account_phase_offset_ms": 0,
+            "effective_retry_jitter_ms": 0,
             "saw_locked": False,
             "unlocked_after_locked": False,
             "config_snapshot": {
@@ -5441,15 +7150,61 @@ class TaskManager:
                 "transient_storm_extend_timeout_after": int(CONFIG.get("transient_storm_extend_timeout_after", 3) or 3),
                 "preselect_enabled": bool(CONFIG.get("preselect_enabled", True)),
                 "preselect_ttl_seconds": float(CONFIG.get("preselect_ttl_seconds", 2.0) or 2.0),
+                "delivery_account_phase_offset_ms": int(CONFIG.get("delivery_account_phase_offset_ms", 120) or 120),
+                "delivery_retry_jitter_ms": int(CONFIG.get("delivery_retry_jitter_ms", 180) or 180),
             },
             "goal_achieved": False,
             "success_item_count": 0,
             "failed_item_count": 0,
             "preselect_hit_count": 0,
             "preselect_miss_count": 0,
+            "phase": "schedule",
+            "phase_events": [],
+            "phase_summary": {
+                "schedule": {},
+                "execute_prepare": {},
+                "warmup": {},
+                "primary_submit": {},
+                "refill_loop": {},
+                "terminal": {},
+            },
         }
+        phase_clock = {}
+
+        def _rm_trim_phase_events():
+            evs = run_metrics.get("phase_events")
+            if isinstance(evs, list) and len(evs) > 300:
+                del evs[0:len(evs) - 300]
+
+        def _rm_event(phase_name, event_name, payload=None):
+            event = {
+                "phase": str(phase_name or run_metrics.get("phase") or "unknown"),
+                "event": str(event_name or "event"),
+                "ts_ms": int(max(0.0, time.time() - run_started_ts) * 1000),
+            }
+            if isinstance(payload, dict) and payload:
+                event["payload"] = payload
+            run_metrics.setdefault("phase_events", []).append(event)
+            _rm_trim_phase_events()
+
+        def _rm_phase(phase_name, payload=None):
+            p = str(phase_name or "unknown")
+            run_metrics["phase"] = p
+            phase_clock[p] = time.time()
+            _rm_event(p, "phase_start", payload if isinstance(payload, dict) else None)
+
+        def _rm_close_phase(phase_name):
+            p = str(phase_name or "")
+            t0 = phase_clock.get(p)
+            if not t0:
+                return
+            elapsed = int(max(0.0, time.time() - t0) * 1000)
+            phase_summary = run_metrics.setdefault("phase_summary", {})
+            p_info = phase_summary.setdefault(p, {})
+            p_info["elapsed_ms"] = int(p_info.get("elapsed_ms") or 0) + elapsed
 
         active_started_ts = run_started_ts
+        _rm_phase("schedule", {"task_id": str(task.get("id") or ""), "task_type": str(task.get("type", "daily"))})
 
         # 每个任务自己配置的通知手机号（列表），用于“下单成功”类通知
         task_phones = task.get('notification_phones') or None
@@ -5514,6 +7269,8 @@ class TaskManager:
             req_mode = str(submit_metric.get("request_mode") or "").strip()
             if req_mode:
                 run_metrics["request_mode"] = req_mode
+            if not run_metrics.get("run_id") and submit_metric.get("run_id"):
+                run_metrics["run_id"] = str(submit_metric.get("run_id"))
             if run_metrics.get("t_first_post_ms") is None and submit_metric.get("t_first_post_ms") is not None:
                 run_metrics["t_first_post_ms"] = int(submit_metric.get("t_first_post_ms") or 0)
             run_metrics["rate_limited"] = bool(run_metrics.get("rate_limited") or submit_metric.get("rate_limited"))
@@ -5526,6 +7283,11 @@ class TaskManager:
                 run_metrics["server_msg_raw"] = server_msg_raw[:200]
             if run_metrics.get("t_first_accept_ms") is None and submit_metric.get("t_first_accept_ms") is not None:
                 run_metrics["t_first_accept_ms"] = int(submit_metric.get("t_first_accept_ms") or 0)
+            if submit_metric.get("effective_retry_jitter_ms") is not None:
+                try:
+                    run_metrics["effective_retry_jitter_ms"] = int(submit_metric.get("effective_retry_jitter_ms") or 0)
+                except Exception:
+                    pass
             sub_lat = submit_metric.get("submit_latencies_ms")
             if isinstance(sub_lat, list) and sub_lat:
                 base_lat = run_metrics.setdefault("submit_latencies_ms", [])
@@ -5559,6 +7321,12 @@ class TaskManager:
                 "matrix_connection_error_count",
                 "matrix_resp_404_count",
                 "matrix_resp_5xx_count",
+                "delivery_plan_stale_resync_count",
+                "payload_fail_reprime_count",
+                "delivery_backup_groups_ignored",
+                "interval_candidates_initial",
+                "interval_candidates_pruned",
+                "interval_retry_requeued",
             ):
                 run_metrics[key] = int(run_metrics.get(key) or 0) + int(submit_metric.get(key) or 0)
             run_metrics["refill_no_candidate_max_streak"] = max(
@@ -5594,9 +7362,52 @@ class TaskManager:
                 val = submit_metric.get(key)
                 if val not in (None, ""):
                     run_metrics[key] = val
+            ce = str(submit_metric.get("campaign_entry") or "").strip()
+            if ce:
+                run_metrics["campaign_entry"] = ce
+            run_metrics["campaign_matrix_saw_locked_cell"] = bool(
+                run_metrics.get("campaign_matrix_saw_locked_cell")
+            ) or bool(submit_metric.get("campaign_matrix_saw_locked_cell"))
+            emi = submit_metric.get("effective_delivery_min_post_interval_seconds")
+            if emi is not None:
+                try:
+                    run_metrics["effective_delivery_min_post_interval_seconds"] = max(
+                        float(run_metrics.get("effective_delivery_min_post_interval_seconds") or 0.0),
+                        float(emi or 0.0),
+                    )
+                except (TypeError, ValueError):
+                    pass
+            for key in (
+                "warmup_attempts_total",
+                "warmup_success_at_ms",
+                "warmup_fail_buckets",
+                "primary_first_business_action",
+                "refill_need_snapshot",
+                "terminal_snapshot",
+                "phase_elapsed_ms",
+            ):
+                if submit_metric.get(key) not in (None, ""):
+                    run_metrics[key] = copy.deepcopy(submit_metric.get(key))
+            sub_phase_summary = submit_metric.get("phase_summary")
+            if isinstance(sub_phase_summary, dict):
+                base_summary = run_metrics.setdefault("phase_summary", {})
+                for k, v in sub_phase_summary.items():
+                    if isinstance(v, dict):
+                        cur = base_summary.setdefault(str(k), {})
+                        cur.update(copy.deepcopy(v))
+                    elif v is not None:
+                        base_summary[str(k)] = copy.deepcopy(v)
+            sub_phase_events = submit_metric.get("phase_events")
+            if isinstance(sub_phase_events, list) and sub_phase_events:
+                base_ev = run_metrics.setdefault("phase_events", [])
+                for ev in sub_phase_events:
+                    if isinstance(ev, dict):
+                        base_ev.append(copy.deepcopy(ev))
+                _rm_trim_phase_events()
 
         def finalize_run_metrics(date_str=None):
             try:
+                _rm_close_phase("execute_prepare")
                 now_ts = time.time()
                 run_metrics["finished_at"] = int(now_ts * 1000)
                 run_metrics["duration_ms"] = int(max(0.0, now_ts - run_started_ts) * 1000)
@@ -5625,14 +7436,40 @@ class TaskManager:
                 last_snip = ""
                 if isinstance(last_ev, dict):
                     last_snip = str(last_ev.get("snippet") or "")[:80]
+                dc_tail = ""
+                if str(run_metrics.get("request_mode") or "") == "delivery_campaign":
+                    dc_tail = (
+                        f" dc_rounds={run_metrics.get('dispatch_round_count') or 0} "
+                        f"atmpt_tot={run_metrics.get('attempt_count_total') or 0} "
+                        f"goal={run_metrics.get('goal_satisfied')} "
+                        f"deliv={run_metrics.get('delivery_status')!r} "
+                        f"biz={run_metrics.get('business_status')!r} "
+                        f"stop={run_metrics.get('stopped_by')!r} "
+                        f"term={run_metrics.get('terminal_reason')!r} "
+                        f"win_ms={run_metrics.get('delivery_window_ms')}"
+                    )
+                ip_tail = ""
+                if str(run_metrics.get("request_mode") or "") == "interval_post":
+                    ip_tail = (
+                        f" ip_cand0={run_metrics.get('interval_candidates_initial') or 0} "
+                        f"ip_pruned={run_metrics.get('interval_candidates_pruned') or 0} "
+                        f"ip_requeue={run_metrics.get('interval_retry_requeued') or 0} "
+                        f"goal={run_metrics.get('goal_satisfied')} "
+                        f"stop={run_metrics.get('stopped_by')!r} "
+                        f"win_ms={run_metrics.get('delivery_window_ms')}"
+                    )
                 log(
-                    f"📊 [run-metric] task={run_metrics.get('task_id')} matrix_attempts={run_metrics.get('attempt_count')} "
+                    f"📊 [run-metric] task={run_metrics.get('task_id')} mode={run_metrics.get('request_mode')!r} "
+                    f"matrix_attempts={run_metrics.get('attempt_count')} "
                     f"submit_req={run_metrics.get('submit_req_count')} post_timeout={run_metrics.get('timeout_count') or 0} "
                     f"mx_fail={run_metrics.get('matrix_fetch_fail_count') or 0} mx_timeout={run_metrics.get('matrix_timeout_count') or 0} "
+                    f"refill_mx={run_metrics.get('refill_matrix_fetch_count') or 0} too_fast_mx={run_metrics.get('too_fast_matrix_refresh_count') or 0} "
+                    f"phase_offset={run_metrics.get('effective_account_phase_offset_ms') or 0}ms "
+                    f"retry_jitter={run_metrics.get('effective_retry_jitter_ms') or 0}ms "
                     f"first_matrix={run_metrics.get('first_matrix_ok_ms')}ms first_submit={run_metrics.get('first_submit_ms')}ms "
                     f"first_post={run_metrics.get('t_first_post_ms')}ms "
                     f"first_success={run_metrics.get('first_success_ms')}ms p95={run_metrics.get('submit_latency_p95_ms')}ms "
-                    f"last_ev={last_snip!r}"
+                    f"last_ev={last_snip!r}{dc_tail}{ip_tail}"
                 )
             except Exception as e:
                 log(f"⚠️ [run-metric] 汇总失败: {e}")
@@ -5683,6 +7520,11 @@ class TaskManager:
                 f"🕒 [时间对齐] server_offset={round(task_client.server_time_offset_seconds, 3)}s, "
                 f"base_run={base_run.strftime('%Y-%m-%d %H:%M:%S')}, target_date={target_date}"
             )
+            run_metrics.setdefault("phase_summary", {}).setdefault("schedule", {}).update({
+                "target_mode": str(target_mode),
+                "base_run": base_run.strftime('%Y-%m-%d %H:%M:%S'),
+                "target_date": str(target_date),
+            })
 
             # 预热阶段：在正式触发前 20~30 秒内，用少量“空包弹”探测下单链路，
             # 预热 TCP/TLS/HTTP 连接，顺便提前发现明显的鉴权失效。
@@ -5740,8 +7582,24 @@ class TaskManager:
                     time.sleep(wait_s)
 
         active_started_ts = time.time()
+        _rm_close_phase("schedule")
+        _rm_phase("execute_prepare", {"active_started_ms": int(active_started_ts * 1000)})
         run_metrics["active_started_at"] = int(active_started_ts * 1000)
         run_metrics["prestart_wait_ms"] = int(max(0.0, active_started_ts - run_started_ts) * 1000)
+        try:
+            phase_cap_ms = max(0, min(1000, int(CONFIG.get("delivery_account_phase_offset_ms", 120) or 0)))
+        except (TypeError, ValueError):
+            phase_cap_ms = 0
+        account_key = str(account_exec.get("id") or task.get("accountId") or "").strip()
+        if phase_cap_ms > 0:
+            phase_seed = hashlib.md5(account_key.encode("utf-8")).hexdigest() if account_key else "0"
+            phase_ms = int(phase_seed[:8], 16) % (phase_cap_ms + 1)
+        else:
+            phase_ms = 0
+        run_metrics["effective_account_phase_offset_ms"] = int(phase_ms)
+        if phase_ms > 0:
+            log(f"⏱️ [自动任务] account={account_key or '-'} 固定错峰 {phase_ms}ms")
+            time.sleep(phase_ms / 1000.0)
 
         config = task.get('config')
 
@@ -5755,6 +7613,10 @@ class TaskManager:
                 config = self._normalize_task_payload({"config": config}).get("config") or {}
             except ValueError as e:
                 notify_task_result(False, f"任务配置错误：{e}", date_str=target_date)
+                run_metrics.setdefault("phase_summary", {}).setdefault("terminal", {}).update({
+                    "status": "fail",
+                    "reason": "task_config_invalid",
+                })
                 finalize_run_metrics(target_date)
                 return
 
@@ -5769,6 +7631,10 @@ class TaskManager:
             )
             merge_submit_metric(res)
             status = res.get("status")
+            run_metrics.setdefault("phase_summary", {}).setdefault("terminal", {}).update({
+                "status": str(status or "fail"),
+                "reason": str(res.get("msg") or ""),
+            })
             if status == "success":
                 notify_task_result(True, "已预订", items=notify_items_from_submit_result(res, task['items']), date_str=target_date)
             elif status == "partial":
@@ -5781,9 +7647,10 @@ class TaskManager:
         delivery_groups = get_delivery_groups(config)
         if delivery_groups:
             primary_items = normalize_booking_items((delivery_groups[0] or {}).get("items") or [])
-            run_metrics["request_mode"] = "delivery_campaign"
+            _dm = get_task_delivery_mode(config)
+            run_metrics["request_mode"] = "interval_post" if _dm == "interval_post" else "delivery_campaign"
 
-            if bool(CONFIG.get("minimal_pre_submit_matrix_once", False)):
+            if _dm != "interval_post" and bool(CONFIG.get("minimal_pre_submit_matrix_once", False)):
                 run_metrics["attempt_count"] += 1
                 snapshot_started_at = time.time()
                 mx_snap_t0 = time.perf_counter()
@@ -5807,18 +7674,36 @@ class TaskManager:
                 run_metrics["first_submit_ms"] = first_post_ms
                 run_metrics["t_first_post_ms"] = first_post_ms
             run_metrics["target_date"] = str(target_date)
-            log(f"🚀 [终极递送器] 启动主组合递送: {primary_items}")
-            res = task_client.submit_delivery_campaign(target_date, delivery_groups, submit_profile="auto_minimal", task_config=config)
+            if _dm == "interval_post":
+                log(f"🚀 [全量间隔POST] 启动: {primary_items}")
+                res = task_client.submit_interval_post_campaign(target_date, delivery_groups, task_config=config)
+            else:
+                log(f"🚀 [终极递送器] 启动主组合递送: {primary_items}")
+                res = task_client.submit_delivery_campaign(target_date, delivery_groups, submit_profile="auto_minimal", task_config=config)
             merge_submit_metric(res)
             run_metrics.setdefault("submit_latencies_ms", []).append(int(max(0.0, time.time() - submit_started_at) * 1000))
 
             status = str(res.get("status") or "")
+            run_metrics.setdefault("phase_summary", {}).setdefault("terminal", {}).update({
+                "status": str(status or "fail"),
+                "reason": str(res.get("msg") or ""),
+            })
             if status == "success":
                 msg = str(res.get("msg") or "下单请求已提交成功，请稍后手动刷新结果")
                 notify_task_result(True, msg, items=notify_items_from_submit_result(res, primary_items), date_str=target_date)
+            elif status == "partial":
+                pmsg = str(res.get("msg") or "部分成功")
+                notify_task_result(
+                    False,
+                    pmsg if _dm == "interval_post" else f"终极递送器：{pmsg}",
+                    items=notify_items_from_submit_result(res, primary_items),
+                    date_str=target_date,
+                    partial=True,
+                )
             else:
                 fail_msg = str(res.get("msg") or "下单失败")
-                notify_task_result(False, f"终极递送器失败：{fail_msg}", items=primary_items, date_str=target_date)
+                prefix = "全量间隔 POST 失败" if _dm == "interval_post" else "终极递送器失败"
+                notify_task_result(False, f"{prefix}：{fail_msg}", items=primary_items, date_str=target_date)
             finalize_run_metrics(target_date)
             return
 
@@ -5826,6 +7711,10 @@ class TaskManager:
         else:
             log("当前仅支持极简直提，跳过 normal/pipeline")
             notify_task_result(False, "当前仅支持极简直提任务，请为任务配置递送组合(delivery_groups)。", date_str=target_date)
+            run_metrics.setdefault("phase_summary", {}).setdefault("terminal", {}).update({
+                "status": "fail",
+                "reason": "delivery_groups_missing",
+            })
             finalize_run_metrics(target_date)
             return
 
@@ -5975,12 +7864,8 @@ def run_scheduler():
 if os.environ.get("BEIJINTICK_SKIP_IMPORT_SCHEDULER", "").strip() != "1":
     threading.Thread(target=run_scheduler, daemon=True).start()
 
-# ================= Web 管理端 HTTP Basic（可选） =================
-web_ui_http_auth = HTTPBasicAuth()
-
-
-@web_ui_http_auth.verify_password
-def _verify_web_ui_http_basic(username, password):
+# ================= Web 管理端登录会话（可选） =================
+def _verify_web_ui_login(username, password):
     cfg = CONFIG.get("web_ui_auth") or {}
     u = str(cfg.get("username") or "").strip()
     p = str(cfg.get("password") or "")
@@ -5990,13 +7875,76 @@ def _verify_web_ui_http_basic(username, password):
 
 
 @app.before_request
-def _require_web_ui_http_basic():
+def _require_web_ui_login():
     cfg = CONFIG.get("web_ui_auth") or {}
     if not cfg.get("enabled"):
         return None
-    if request.endpoint == "static":
+    if request.endpoint in ("static", "web_login", "web_logout"):
         return None
-    return web_ui_http_auth.login_required(lambda: None)()
+    if session.get("web_ui_logged_in"):
+        session.permanent = True
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"status": "error", "msg": "Unauthorized"}), 401
+    return redirect(url_for("web_login", next=request.full_path if request.query_string else request.path))
+
+
+@app.route('/web-login', methods=['GET', 'POST'])
+def web_login():
+    cfg = CONFIG.get("web_ui_auth") or {}
+    if not cfg.get("enabled"):
+        return redirect(url_for("index"))
+    error = ""
+    next_url = (request.values.get("next") or "").strip()
+    if request.method == 'POST':
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        if _verify_web_ui_login(username, password):
+            session["web_ui_logged_in"] = True
+            session["web_ui_login_user"] = username
+            session.permanent = True
+            if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+                return redirect(next_url)
+            return redirect(url_for("index"))
+        error = "用户名或密码错误"
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理端登录</title>
+  <style>
+    body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f7; }}
+    .wrap {{ min-height: 100vh; display: grid; place-items: center; padding: 24px; }}
+    .card {{ width: min(92vw, 360px); background: #fff; border-radius: 12px; padding: 22px; box-shadow: 0 8px 30px rgba(0,0,0,.08); }}
+    h1 {{ margin: 0 0 14px; font-size: 20px; }}
+    label {{ display:block; margin: 10px 0 6px; color:#333; font-size:14px; }}
+    input {{ width: 100%; height: 40px; border: 1px solid #ddd; border-radius: 8px; padding: 0 10px; font-size: 14px; }}
+    button {{ margin-top: 14px; width: 100%; height: 40px; border: none; border-radius: 8px; background: #007aff; color: #fff; font-size: 15px; cursor: pointer; }}
+    .err {{ color:#d93025; margin-top: 10px; font-size: 13px; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <form class="card" method="post" action="/web-login" autocomplete="on">
+      <h1>管理端登录</h1>
+      <input type="hidden" name="next" value="{html.escape(next_url, quote=True)}" />
+      <label for="username">用户名</label>
+      <input id="username" name="username" type="text" autocomplete="username" required />
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit">登录</button>
+      {"<div class='err'>" + error + "</div>" if error else ""}
+    </form>
+  </div>
+</body>
+</html>"""
+
+
+@app.route('/web-logout')
+def web_logout():
+    session.clear()
+    return redirect(url_for("web_login"))
 
 
 # ================= 路由 =================
@@ -6068,23 +8016,45 @@ def api_mine_overview():
     include_balance_raw = request.args.get('include_balance', '0')
     include_balance = str(include_balance_raw).lower() in ('1', 'true', 'yes')
     order_max_pages_raw = request.args.get('order_max_pages', '2')
+    order_page_size_raw = request.args.get('order_page_size', '50')
     order_timeout_s_raw = request.args.get('order_timeout_s', '4')
     max_workers_raw = request.args.get('max_workers', '')
+    mine_reconcile = str(request.args.get('mine_reconcile', '1')).lower() not in ('0', 'false', 'no')
+    mine_matrix_backfill = str(request.args.get('mine_matrix_backfill', '1')).lower() not in ('0', 'false', 'no')
+    try:
+        reconcile_matrix_days = int(request.args.get('reconcile_matrix_days', '8'))
+    except (TypeError, ValueError):
+        reconcile_matrix_days = 8
+    reconcile_matrix_days = max(0, min(reconcile_matrix_days, 8))
     try:
         order_max_pages = int(order_max_pages_raw)
     except (TypeError, ValueError):
         order_max_pages = 2
-    order_max_pages = max(1, min(order_max_pages, 4))
+    order_max_pages = max(1, min(order_max_pages, 25))
+    try:
+        order_page_size = int(order_page_size_raw)
+    except (TypeError, ValueError):
+        order_page_size = 50
+    order_page_size = max(10, min(50, order_page_size))
     try:
         order_timeout_s = float(order_timeout_s_raw)
     except (TypeError, ValueError):
         order_timeout_s = 4.0
-    order_timeout_s = max(1.0, min(order_timeout_s, 8.0))
+    order_timeout_s = max(1.0, min(order_timeout_s, 12.0))
     try:
         max_workers = int(max_workers_raw) if str(max_workers_raw).strip() else 4
     except (TypeError, ValueError):
         max_workers = 4
     max_workers = max(1, min(max_workers, 6))
+    reconcile_workers_raw = request.args.get("reconcile_max_workers", "10")
+    try:
+        reconcile_max_workers = int(reconcile_workers_raw) if str(reconcile_workers_raw).strip() else 10
+    except (TypeError, ValueError):
+        reconcile_max_workers = 10
+    reconcile_max_workers = max(1, min(reconcile_max_workers, 16))
+    window_dates_board = mine_overview_window_dates(8)
+    reconcile_dates = window_dates_board[:reconcile_matrix_days] if mine_reconcile else []
+    order_fetch_capacity = int(order_max_pages) * int(order_page_size)
 
     def _fetch_account_overview(idx, acc, include_balance_flag=False):
         account_id = str(acc.get("id") or "").strip()
@@ -6101,11 +8071,14 @@ def api_mine_overview():
                 "balance": None,
                 "error": "缺少 token 或 shop_num",
                 "slots": [],
+                "orders_returned": 0,
+                "orders_capacity": order_fetch_capacity,
             }
 
         account_client = build_client_for_account(acc)
         with runtime_request_context("api_mine_overview", owner=False):
             orders_res = account_client.get_place_orders(
+                page_size=order_page_size,
                 max_pages=order_max_pages,
                 timeout_s=order_timeout_s,
             )
@@ -6119,6 +8092,8 @@ def api_mine_overview():
                 "balance": None,
                 "error": err_msg,
                 "slots": [],
+                "orders_returned": 0,
+                "orders_capacity": order_fetch_capacity,
             }
 
         balance = None
@@ -6136,6 +8111,10 @@ def api_mine_overview():
                             pass
             except Exception:
                 pass
+
+        fm = orders_res.get("fetch_meta") or {}
+        orders_returned = int(fm.get("returned", len(orders_res.get("data") or [])))
+        orders_capacity = int(fm.get("capacity", order_fetch_capacity))
 
         grouped = account_client.extract_mine_slots_by_date_with_bill_num(orders_res.get('data') or [])
         slots = []
@@ -6160,11 +8139,14 @@ def api_mine_overview():
             "balance": balance,
             "error": "",
             "slots": slots,
+            "orders_returned": orders_returned,
+            "orders_capacity": orders_capacity,
         }
 
     records = {}
     accounts_meta = []
     account_errors = []
+    orders_fetch_by_account = []
     accounts = ensure_accounts_config()
     indexed_accounts = list(enumerate(accounts))
     worker_count = max(1, min(max_workers, len(indexed_accounts) if indexed_accounts else 1))
@@ -6208,10 +8190,153 @@ def api_mine_overview():
                     "accountName": str(row.get("accountName") or "").strip(),
                     "accountColorKey": str(row.get("accountColorKey") or "").strip(),
                 })
+            orders_fetch_by_account.append(
+                {
+                    "accountId": result.get("accountId"),
+                    "accountName": result.get("accountName"),
+                    "orders_returned": int(result.get("orders_returned", 0)),
+                    "orders_capacity": int(result.get("orders_capacity", order_fetch_capacity)),
+                }
+            )
 
     accounts_meta.sort(key=lambda x: int(x.get("_order") or 0))
     for x in accounts_meta:
         x.pop("_order", None)
+
+    order_mine_by_account_date = {}
+    for d, rows in (records or {}).items():
+        for r in rows or []:
+            aid = str(r.get("accountId") or "").strip()
+            pl = str(r.get("place") or "").strip()
+            tm = str(r.get("time") or "").strip()
+            if not aid or not pl or not tm:
+                continue
+            order_mine_by_account_date.setdefault((aid, d), set()).add((pl, tm))
+
+    reconcile_mismatches = []
+    reconcile_matrix_errors = []
+    matrix_backfill_slots = 0
+    bad_account_ids = {str(m.get("id") or "").strip() for m in accounts_meta if str(m.get("error") or "").strip()}
+    mt_timeout = max(0.5, min(float(order_timeout_s), 8.0))
+    if mine_reconcile and reconcile_dates:
+        reconcile_jobs = []
+        for idx, acc in enumerate(accounts):
+            aid = str(acc.get("id") or "").strip()
+            aname = str(acc.get("name") or aid or "").strip() or aid
+            color_key = f"acc-{idx + 1}"
+            if not aid or aid in bad_account_ids:
+                continue
+            if not str(acc.get("token") or "").strip() or not str(acc.get("shop_num") or "").strip():
+                continue
+            for d in reconcile_dates:
+                reconcile_jobs.append((aid, aname, color_key, acc, d))
+
+        def _reconcile_one_matrix(job):
+            aid, aname, color_key, acc, d = job
+            try:
+                client = build_client_for_account(acc)
+                with runtime_request_context("api_mine_overview", owner=False):
+                    mx = client.get_matrix(
+                        d,
+                        include_mine_overlay=False,
+                        request_timeout=mt_timeout,
+                        bypass_cache=True,
+                    )
+                if mx.get("error"):
+                    return {
+                        "errors": [
+                            {
+                                "accountId": aid,
+                                "accountName": aname,
+                                "date": d,
+                                "error": str(mx.get("error") or "矩阵失败"),
+                            }
+                        ],
+                        "mismatches": [],
+                        "backfill": None,
+                    }
+                mat = mx.get("matrix")
+                mc = count_mine_cells_in_matrix(mat)
+                oc = len(order_mine_by_account_date.get((aid, d), set()))
+                if mc == oc:
+                    return {"errors": [], "mismatches": [], "backfill": None}
+                mm = {
+                    "date": d,
+                    "accountId": aid,
+                    "accountName": aname,
+                    "orderMineCells": oc,
+                    "matrixMineCells": mc,
+                }
+                bf = None
+                if mine_matrix_backfill and mc > oc:
+                    order_set = order_mine_by_account_date.get((aid, d), set())
+                    seen_bf = set()
+                    added_slots = []
+                    for pl, tm in mine_slots_from_matrix(mat):
+                        key = (str(pl), str(tm))
+                        if key in order_set or key in seen_bf:
+                            continue
+                        seen_bf.add(key)
+                        added_slots.append((key[0], key[1]))
+                    if added_slots:
+                        bf = {
+                            "date": d,
+                            "accountId": aid,
+                            "accountName": aname,
+                            "accountColorKey": color_key,
+                            "slots": added_slots,
+                        }
+                return {"errors": [], "mismatches": [mm], "backfill": bf}
+            except Exception as ex:
+                return {
+                    "errors": [
+                        {
+                            "accountId": aid,
+                            "accountName": aname,
+                            "date": d,
+                            "error": str(ex) or "矩阵复核异常",
+                        }
+                    ],
+                    "mismatches": [],
+                    "backfill": None,
+                }
+
+        if reconcile_jobs:
+            rw = min(reconcile_max_workers, len(reconcile_jobs))
+            with ThreadPoolExecutor(max_workers=rw) as rex:
+                for chunk in rex.map(_reconcile_one_matrix, reconcile_jobs):
+                    reconcile_matrix_errors.extend(chunk.get("errors") or [])
+                    reconcile_mismatches.extend(chunk.get("mismatches") or [])
+                    bf = chunk.get("backfill")
+                    if not bf or not bf.get("slots"):
+                        continue
+                    dkey = str(bf.get("date") or "").strip()
+                    if not dkey:
+                        continue
+                    aid = str(bf.get("accountId") or "").strip()
+                    rows = records.setdefault(dkey, [])
+                    existing = {
+                        (str(r.get("place") or "").strip(), str(r.get("time") or "").strip())
+                        for r in rows
+                        if str(r.get("accountId") or "").strip() == aid
+                    }
+                    for pl, tm in bf["slots"]:
+                        pk = (str(pl), str(tm))
+                        if pk in existing:
+                            continue
+                        rows.append(
+                            {
+                                "place": pk[0],
+                                "time": pk[1],
+                                "billNum": "",
+                                "accountId": aid,
+                                "accountName": str(bf.get("accountName") or "").strip(),
+                                "accountColorKey": str(bf.get("accountColorKey") or "").strip(),
+                                "matrixBackfill": True,
+                            }
+                        )
+                        existing.add(pk)
+                        matrix_backfill_slots += 1
 
     for d, rows in list(records.items()):
         records[d] = sorted(
@@ -6222,7 +8347,50 @@ def api_mine_overview():
                 str(x.get("time") or ""),
             ),
         )
-    return jsonify({"records": records, "accounts": accounts_meta, "errors": account_errors})
+
+    if matrix_backfill_slots and reconcile_mismatches:
+        order_after = {}
+        for d, rows in (records or {}).items():
+            for r in rows or []:
+                ax = str(r.get("accountId") or "").strip()
+                pl = str(r.get("place") or "").strip()
+                tm = str(r.get("time") or "").strip()
+                if ax and pl and tm:
+                    order_after.setdefault((ax, d), set()).add((pl, tm))
+        reconcile_mismatches = [
+            m
+            for m in reconcile_mismatches
+            if len(order_after.get((str(m.get("accountId") or "").strip(), str(m.get("date") or "").strip()), set()))
+            != int(m.get("matrixMineCells") or 0)
+        ]
+
+    truncation_likely = any(
+        int(x.get("orders_returned") or 0) >= int(x.get("orders_capacity") or 0) > 0 for x in orders_fetch_by_account
+    )
+
+    resp = jsonify(
+        {
+            "records": records,
+            "accounts": accounts_meta,
+            "errors": account_errors,
+            "orders_fetch": {
+                "by_account": orders_fetch_by_account,
+                "truncation_likely": truncation_likely,
+                "capacity_per_account": order_fetch_capacity,
+            },
+            "matrix_backfill_slots": int(matrix_backfill_slots),
+            "mine_matrix_backfill": bool(mine_matrix_backfill),
+            "mine_reconciliation": {
+                "enabled": bool(mine_reconcile),
+                "checked_dates": reconcile_dates,
+                "mismatches": reconcile_mismatches,
+                "matrix_errors": reconcile_matrix_errors,
+            },
+        }
+    )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.route('/api/mine-balances')
@@ -6327,22 +8495,56 @@ def api_quiet_window():
         return jsonify({"error": acc_err}), 400
     return jsonify(get_quiet_window_status(scope=build_quiet_window_scope(auth=account)))
 
+def _extract_client_test_meta(data_dict):
+    """手动页「测试」区可选字段：仅用于日志关联，不参与订场逻辑。"""
+    if not isinstance(data_dict, dict):
+        return None
+    raw = data_dict.get("client_test_meta")
+    if not isinstance(raw, dict):
+        return None
+    rid = str(raw.get("test_run_id") or "").strip()
+    if not rid:
+        return None
+    return raw
+
+
+def _enrich_manual_book_response(res):
+    """为 /api/book 补充 gym_message_raw，供前端原文弹窗（优先 run_metric 馆方片段）。"""
+    if not isinstance(res, dict):
+        return res
+    rm = res.get("run_metric")
+    if not isinstance(rm, dict):
+        rm = {}
+    raw = str(rm.get("server_msg_raw") or "").strip()
+    biz = str(rm.get("business_fail_msg") or "").strip()
+    msg = str(res.get("msg") or "").strip()
+    gym = raw or biz or msg
+    if gym:
+        res["gym_message_raw"] = gym[:2000]
+    return res
+
+
 @app.route('/api/book', methods=['POST'])
 def api_book():
     data = request.json or {}
+    client_test_meta = _extract_client_test_meta(data)
     date = data.get('date')
     items = data.get('items')
     account_id = data.get('accountId')
     account, account_err = resolve_manual_account_from_request(account_id, require_shop_num=True)
     if account_err:
-        return jsonify({"status": "error", "msg": account_err})
+        return jsonify(_enrich_manual_book_response({"status": "error", "msg": account_err}))
     quiet_info = quiet_window_block_info("api_book", owner_allowed=False, scope=build_quiet_window_scope(auth=account))
     if quiet_info:
-        return jsonify({
-            "status": "quiet_window_blocked",
-            "msg": quiet_info.get("msg"),
-            "quiet_window": quiet_info.get("quiet_window"),
-        })
+        return jsonify(
+            _enrich_manual_book_response(
+                {
+                    "status": "quiet_window_blocked",
+                    "msg": quiet_info.get("msg"),
+                    "quiet_window": quiet_info.get("quiet_window"),
+                }
+            )
+        )
     account_client = build_client_for_account(account)
     submit_mode = str(data.get('submit_mode') or '').strip().lower()
     if submit_mode in ("minimal", "direct"):
@@ -6350,10 +8552,16 @@ def api_book():
     else:
         manual_submit_profile = str(CONFIG.get("manual_submit_profile", "manual_minimal") or "manual_minimal").strip() or "manual_minimal"
     with runtime_request_context("api_book", owner=False):
-        res = account_client.submit_order(date, items, submit_profile=manual_submit_profile)
+        res = account_client.submit_order(
+            date, items, submit_profile=manual_submit_profile, skip_warmup=True
+        )
 
-    # 手动预订场景：对 verify_pending 做轻量复核，先看矩阵，必要时做一次订单兜底。
-    if isinstance(res, dict) and res.get('status') == 'verify_pending':
+    # 默认关闭：手动仅认本次 campaign 结果。开启 manual_deep_reconcile_enabled 时恢复矩阵/订单复核与补订。
+    if (
+        isinstance(res, dict)
+        and res.get("status") == "verify_pending"
+        and bool(CONFIG.get("manual_deep_reconcile_enabled", False))
+    ):
         run_metric = dict(res.get('run_metric') or {})
         pending_items = list(res.get('failed_items') or items or [])
         retry_s = max(0.05, float(CONFIG.get('manual_verify_pending_retry_seconds', 0.25) or 0.25))
@@ -6451,7 +8659,11 @@ def api_book():
                         for p in sorted(refill_matrix.keys(), key=lambda x: int(x) if str(x).isdigit() else 999):
                             state = (refill_matrix.get(p) or {}).get(t)
                             key = (str(p), t)
-                            if state == 'available' and key not in original_pairs and key not in recovered_pairs:
+                            if (
+                                is_matrix_cell_bookable_for_new_booking(state)
+                                and key not in original_pairs
+                                and key not in recovered_pairs
+                            ):
                                 available_slots.append({'place': str(p), 'time': t})
                         # 按缺口数量截断，防止超买
                         refill_candidates.extend(available_slots[:max(0, need)])
@@ -6461,6 +8673,7 @@ def api_book():
                             date,
                             refill_candidates,
                             submit_profile=manual_submit_profile,
+                            skip_warmup=True,
                         )
                         if isinstance(refill_res, dict):
                             # 合并补订阶段的指标，便于统一观测一次半自动事务
@@ -6528,6 +8741,8 @@ def api_book():
         else:
             res['run_metric'] = run_metric
 
+    _enrich_manual_book_response(res)
+
     try:
         run_metric = res.get('run_metric') if isinstance(res, dict) else {}
         if not isinstance(run_metric, dict):
@@ -6592,6 +8807,8 @@ def api_book():
             'effective_delivery_min_post_interval_seconds': float(
                 run_metric.get('effective_delivery_min_post_interval_seconds') or 0.0
             ),
+            'effective_account_phase_offset_ms': int(run_metric.get('effective_account_phase_offset_ms') or 0),
+            'effective_retry_jitter_ms': int(run_metric.get('effective_retry_jitter_ms') or 0),
             'refill_candidate_found_count': int(run_metric.get('refill_candidate_found_count') or 0),
             'refill_no_candidate_count': int(run_metric.get('refill_no_candidate_count') or 0),
             'refill_no_candidate_max_streak': int(run_metric.get('refill_no_candidate_max_streak') or 0),
@@ -6601,6 +8818,8 @@ def api_book():
             'delivery_status': str(run_metric.get('delivery_status') or ''),
             'business_status': str(run_metric.get('business_status') or ''),
             'terminal_reason': str(run_metric.get('terminal_reason') or ''),
+            'warmup_skipped': bool(run_metric.get('warmup_skipped', False)),
+            'campaign_entry': str(run_metric.get('campaign_entry') or ''),
             'manual_reconcile_rounds': int(run_metric.get('manual_reconcile_rounds') or 0),
             'manual_reconcile_matrix_error_count': int(run_metric.get('manual_reconcile_matrix_error_count') or 0),
             'manual_reconcile_orders_fallback_used': bool(run_metric.get('manual_reconcile_orders_fallback_used', False)),
@@ -6615,6 +8834,7 @@ def api_book():
                 'fast_lane_enabled': bool(run_metric.get('effective_fast_lane_enabled', CONFIG.get('fast_lane_enabled', True))),
                 'fast_lane_seconds': float(run_metric.get('effective_fast_lane_seconds', CONFIG.get('fast_lane_seconds', 2.0)) or 0.0),
                 'manual_verify_pending_orders_fallback_enabled': bool(CONFIG.get('manual_verify_pending_orders_fallback_enabled', True)),
+                'manual_deep_reconcile_enabled': bool(CONFIG.get('manual_deep_reconcile_enabled', False)),
                 'multi_item_retry_balance_enabled': bool(CONFIG.get('multi_item_retry_balance_enabled', True)),
                 'multi_item_batch_retry_times_cap': int(CONFIG.get('multi_item_batch_retry_times_cap', 1) or 1),
                 'multi_item_retry_total_budget': int(CONFIG.get('multi_item_retry_total_budget', 3) or 3),
@@ -6633,7 +8853,80 @@ def api_book():
     except Exception as e:
         print(f"⚠️ [manual-metric] 写入失败: {e}")
 
+    if client_test_meta:
+        try:
+            _seq = str(client_test_meta.get("seq_label") or "")
+            _mode = str(client_test_meta.get("mode") or "")
+            _ims = client_test_meta.get("interval_ms")
+            _st = res.get("status") if isinstance(res, dict) else "unknown"
+            _msg = str((res.get("msg") if isinstance(res, dict) else "") or "")[:160]
+            _rid = str(client_test_meta.get("test_run_id") or "").strip()
+            log(
+                f"[测试] run_id={_rid} seq={_seq} mode={_mode} interval_ms={_ims} "
+                f"status={_st} msg={_msg}"
+            )
+        except Exception:
+            pass
+
     return jsonify(res)
+
+
+_RAW_TEST_RESP_TEXT_MAX = 16000
+
+
+@app.route("/api/test/raw-reservation-place", methods=["POST"])
+def api_test_raw_reservation_place():
+    """仅一次馆方 reservationPlace POST，无递送/refill；用于手动页「测试」间隔实验。"""
+    data = request.json or {}
+    client_test_meta = _extract_client_test_meta(data)
+    date = data.get("date")
+    items = data.get("items")
+    account_id = data.get("accountId")
+    account, account_err = resolve_manual_account_from_request(account_id, require_shop_num=True)
+    if account_err:
+        return jsonify({"ok": False, "error": account_err, "status_code": 0}), 400
+    quiet_info = quiet_window_block_info(
+        "api_test_raw_reservation",
+        owner_allowed=False,
+        scope=build_quiet_window_scope(auth=account),
+    )
+    if quiet_info:
+        return jsonify(
+            {
+                "ok": False,
+                "error": quiet_info.get("msg"),
+                "quiet_window_blocked": True,
+                "quiet_window": quiet_info.get("quiet_window"),
+                "status_code": 0,
+            }
+        ), 200
+    account_client = build_client_for_account(account)
+    with runtime_request_context("api_test_raw_reservation", owner=False):
+        result = account_client.test_raw_reservation_place_post(date, items)
+    out = dict(result) if isinstance(result, dict) else {"ok": False, "exception_text": "bad_result"}
+    rt = str(out.get("raw_text") or "")
+    if len(rt) > _RAW_TEST_RESP_TEXT_MAX:
+        out["raw_text"] = rt[:_RAW_TEST_RESP_TEXT_MAX] + "…(truncated)"
+        out["raw_text_truncated"] = True
+    rd = out.get("resp_data")
+    if rd is not None and not isinstance(rd, (dict, list, str, int, float, bool)):
+        out["resp_data"] = str(rd)[:500]
+    if client_test_meta:
+        try:
+            _rid = str(client_test_meta.get("test_run_id") or "").strip()
+            _seq = str(client_test_meta.get("seq_label") or "")
+            _mode = str(client_test_meta.get("mode") or "")
+            _ims = client_test_meta.get("interval_ms")
+            _ok = bool(out.get("ok"))
+            _sc = int(out.get("status_code") or 0)
+            _rm = str(out.get("raw_message") or "")[:200]
+            log(
+                f"[测试·raw] run_id={_rid} seq={_seq} mode={_mode} interval_ms={_ims} "
+                f"http={_sc} post_ok={_ok} raw_message={_rm!r}"
+            )
+        except Exception:
+            pass
+    return jsonify(out)
 
 
 def _load_config_from_disk():
@@ -6689,6 +8982,9 @@ def export_config():
         return jsonify({"status": "error", "msg": "仅支持 scope=execution"}), 400
     _load_config_from_disk()
     out = {k: copy.deepcopy(CONFIG[k]) for k in CONFIG if k not in SENSITIVE_TOP_LEVEL_KEYS}
+    out.pop("gym_api_probe_presets", None)
+    for _k in DEPRECATED_EXEC_PARAM_KEYS:
+        out.pop(_k, None)
     return jsonify(out)
 
 
@@ -6788,32 +9084,24 @@ def _update_config_impl(data, scope=None):
             if k in TASK_VENUE_STRATEGY_DELIVERY_KEYS:
                 continue
             if k == 'gym_api_probe_presets':
-                sanitized, serr = sanitize_gym_api_probe_presets_for_persist(data[k])
-                if serr:
-                    return jsonify({"status": "error", "msg": serr}), 400
-                saved[k] = sanitized
+                # 探测预案不属于执行参数文本框维护范围：执行参数保存时忽略该键。
                 continue
             try:
                 saved[k] = copy.deepcopy(data[k])
             except Exception:
                 pass
+        _exec_param_merge_defaults = {
+            "delivery_total_budget_seconds": 600.0,
+            "delivery_refill_no_candidate_streak_limit": 0,
+            "delivery_plan_max_age_seconds": 8.0,
+        }
         for key in EXEC_PARAM_LIMITS:
             if key not in saved:
                 continue
-            default = CONFIG.get(
-                key,
-                5
-                if key == "delivery_warmup_max_retries"
-                else (
-                    8.0
-                    if key == "delivery_warmup_budget_seconds"
-                    else (
-                        0
-                        if key == "delivery_refill_no_candidate_streak_limit"
-                        else (2.2 if key == "delivery_min_post_interval_seconds" else 20.0)
-                    )
-                ),
-            )
+            default = CONFIG.get(key, _exec_param_merge_defaults.get(key))
+            if default is None:
+                lo = EXEC_PARAM_LIMITS[key][0]
+                default = 0 if isinstance(lo, int) else 20.0
             raw_val = saved.get(key)
             val, was_clamped = _clamp_exec_param(key, raw_val, default)
             saved[key] = val
@@ -6823,6 +9111,7 @@ def _update_config_impl(data, scope=None):
         saved.pop("max_places_per_timeslot", None)
         saved.pop("delivery_refill_max_places_per_timeslot", None)
         saved_public = {k: v for k, v in saved.items() if k not in SENSITIVE_TOP_LEVEL_KEYS}
+        saved_public.pop("gym_api_probe_presets", None)
         saved_public.pop("max_places_per_timeslot", None)
         saved_public.pop("delivery_refill_max_places_per_timeslot", None)
         _strip_venue_strategy_from_mapping(saved_public)
@@ -6932,20 +9221,22 @@ def _update_config_impl(data, scope=None):
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('preselect_ttl_seconds', 0.2, CONFIG.get('preselect_ttl_seconds', 2.0))
         _update_float_field('delivery_backup_switch_delay_seconds', 0.0, CONFIG.get('delivery_backup_switch_delay_seconds', 2.0))
-        if 'delivery_warmup_budget_seconds' in data:
+        if 'delivery_account_phase_offset_ms' in data:
             try:
-                val, _ = _clamp_exec_param('delivery_warmup_budget_seconds', data['delivery_warmup_budget_seconds'], CONFIG.get('delivery_warmup_budget_seconds', 8.0))
-                CONFIG['delivery_warmup_budget_seconds'] = val
-                saved['delivery_warmup_budget_seconds'] = val
+                val = int(data['delivery_account_phase_offset_ms'])
             except (TypeError, ValueError):
-                pass
-        if 'delivery_warmup_max_retries' in data:
+                val = int(CONFIG.get('delivery_account_phase_offset_ms', 120))
+            val = max(0, min(1000, val))
+            CONFIG['delivery_account_phase_offset_ms'] = val
+            saved['delivery_account_phase_offset_ms'] = val
+        if 'delivery_retry_jitter_ms' in data:
             try:
-                val, _ = _clamp_exec_param('delivery_warmup_max_retries', data['delivery_warmup_max_retries'], CONFIG.get('delivery_warmup_max_retries', 5))
-                CONFIG['delivery_warmup_max_retries'] = val
-                saved['delivery_warmup_max_retries'] = val
+                val = int(data['delivery_retry_jitter_ms'])
             except (TypeError, ValueError):
-                pass
+                val = int(CONFIG.get('delivery_retry_jitter_ms', 180))
+            val = max(0, min(1000, val))
+            CONFIG['delivery_retry_jitter_ms'] = val
+            saved['delivery_retry_jitter_ms'] = val
         if 'delivery_refill_no_candidate_streak_limit' in data:
             try:
                 val, _ = _clamp_exec_param(
@@ -6957,10 +9248,33 @@ def _update_config_impl(data, scope=None):
                 saved['delivery_refill_no_candidate_streak_limit'] = val
             except (TypeError, ValueError):
                 pass
+        if 'delivery_plan_max_age_seconds' in data:
+            try:
+                val, _ = _clamp_exec_param(
+                    "delivery_plan_max_age_seconds",
+                    data["delivery_plan_max_age_seconds"],
+                    CONFIG.get("delivery_plan_max_age_seconds", 8.0),
+                )
+                CONFIG["delivery_plan_max_age_seconds"] = val
+                saved["delivery_plan_max_age_seconds"] = val
+            except (TypeError, ValueError):
+                pass
+        if 'delivery_min_post_interval_seconds' in data:
+            try:
+                val, _ = _clamp_exec_param(
+                    "delivery_min_post_interval_seconds",
+                    data["delivery_min_post_interval_seconds"],
+                    EXEC_PARAM_LIMITS["delivery_min_post_interval_seconds"][0],
+                )
+                CONFIG["delivery_min_post_interval_seconds"] = val
+                saved["delivery_min_post_interval_seconds"] = val
+            except (TypeError, ValueError):
+                pass
         for key in (
             'post_submit_verify_orders_on_matrix_partial_only', 'post_submit_skip_sync_orders_query',
             'post_submit_orders_sync_fallback', 'post_submit_treat_verify_timeout_as_retry',
-            'manual_verify_pending_orders_fallback_enabled', 'manual_auto_refill_enabled', 'too_fast_skip_refill_in_same_request',
+            'manual_verify_pending_orders_fallback_enabled', 'manual_auto_refill_enabled', 'manual_deep_reconcile_enabled',
+            'too_fast_skip_refill_in_same_request',
             'multi_item_retry_balance_enabled', 'submit_adaptive_merge_same_time_only',
             'preselect_enabled', 'preselect_only_before_first_submit', 'health_check_enabled',
             'fast_lane_enabled', 'verbose_logs', 'log_to_file'
@@ -7039,6 +9353,8 @@ def _update_config_impl(data, scope=None):
             ('metrics_keep_last', 300, 50, 5000),
             ('metrics_retention_days', 7, 1, 30),
             ('same_time_precheck_limit', 0, 0, 9),
+            ('delivery_account_phase_offset_ms', 120, 0, 1000),
+            ('delivery_retry_jitter_ms', 180, 0, 1000),
         ):
             if key not in data:
                 continue
@@ -7117,6 +9433,7 @@ def _update_config_impl(data, scope=None):
             if not saved_secret:
                 saved_secret = {k: copy.deepcopy(CONFIG.get(k)) for k in SENSITIVE_TOP_LEVEL_KEYS if CONFIG.get(k) is not None}
             if saved_secret:
+                _inject_web_session_secret_into_saved_secret(saved_secret)
                 with open(CONFIG_SECRET_FILE, 'w', encoding='utf-8') as f:
                     json.dump(saved_secret, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -7133,6 +9450,7 @@ def _update_config_impl(data, scope=None):
         try:
             saved_secret = {k: copy.deepcopy(saved[k]) for k in SENSITIVE_TOP_LEVEL_KEYS if k in saved}
             if saved_secret:
+                _inject_web_session_secret_into_saved_secret(saved_secret)
                 with open(CONFIG_SECRET_FILE, 'w', encoding='utf-8') as f:
                     json.dump(saved_secret, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -7310,6 +9628,22 @@ def update_config():
         _update_float_field('manual_verify_pending_retry_seconds', 0.05, CONFIG.get('manual_verify_pending_retry_seconds', 0.25))
         _update_float_field('health_check_interval_min', 1.0, CONFIG.get('health_check_interval_min', 30.0))
         _update_float_field('preselect_ttl_seconds', 0.2, CONFIG.get('preselect_ttl_seconds', 2.0))
+        if 'delivery_account_phase_offset_ms' in data:
+            try:
+                val = int(data['delivery_account_phase_offset_ms'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('delivery_account_phase_offset_ms', 120))
+            val = max(0, min(1000, val))
+            CONFIG['delivery_account_phase_offset_ms'] = val
+            saved['delivery_account_phase_offset_ms'] = val
+        if 'delivery_retry_jitter_ms' in data:
+            try:
+                val = int(data['delivery_retry_jitter_ms'])
+            except (TypeError, ValueError):
+                val = int(CONFIG.get('delivery_retry_jitter_ms', 180))
+            val = max(0, min(1000, val))
+            CONFIG['delivery_retry_jitter_ms'] = val
+            saved['delivery_retry_jitter_ms'] = val
 
         if 'post_submit_verify_orders_on_matrix_partial_only' in data:
             val = data['post_submit_verify_orders_on_matrix_partial_only']
@@ -7754,6 +10088,7 @@ def update_config():
         try:
             saved_secret = {k: copy.deepcopy(saved[k]) for k in SENSITIVE_TOP_LEVEL_KEYS if k in saved}
             if saved_secret:
+                _inject_web_session_secret_into_saved_secret(saved_secret)
                 with open(CONFIG_SECRET_FILE, 'w', encoding='utf-8') as f:
                     json.dump(saved_secret, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -7932,11 +10267,55 @@ def del_refill_task_api(task_id):
     return jsonify({'status': 'success'})
 
 
+@app.route('/api/refill-scheduler/pause', methods=['GET'])
+def api_refill_scheduler_pause_get():
+    st = task_manager.get_refill_global_pause_status()
+    return jsonify(
+        {
+            "paused": st.get("paused"),
+            "pause_until_ms": st.get("pause_until_ms") or 0,
+            "remaining_seconds": st.get("remaining_seconds") or 0,
+        }
+    )
+
+
+@app.route('/api/refill-scheduler/pause', methods=['POST'])
+def api_refill_scheduler_pause_post():
+    data = request.get_json(silent=True) or {}
+    action = str(data.get("action") or "").strip().lower()
+    if action == "pause":
+        st = task_manager.set_refill_global_pause_minutes(REFILL_GLOBAL_PAUSE_MINUTES_DEFAULT)
+    elif action == "extend":
+        st = task_manager.extend_refill_global_pause_minutes(REFILL_GLOBAL_PAUSE_MINUTES_DEFAULT)
+    elif action == "resume":
+        st = task_manager.clear_refill_global_pause()
+    else:
+        return jsonify({"status": "error", "msg": "action 须为 pause | extend | resume"}), 400
+    return jsonify(
+        {
+            "status": "success",
+            "paused": st.get("paused"),
+            "pause_until_ms": st.get("pause_until_ms") or 0,
+            "remaining_seconds": st.get("remaining_seconds") or 0,
+        }
+    )
+
+
 @app.route('/api/refill-tasks/<task_id>/run', methods=['POST'])
 def run_refill_task_now(task_id):
     task = next((t for t in task_manager.refill_tasks if str(t.get('id')) == str(task_id)), None)
     if not task:
         return jsonify({'status': 'error', 'msg': 'Refill task not found'}), 404
+    if task_manager.is_refill_globally_paused():
+        st = task_manager.get_refill_global_pause_status()
+        return jsonify(
+            {
+                "status": "refill_globally_paused",
+                "msg": "全局已暂停独立 Refill 调度，到期自动恢复；也可提前在界面点「恢复」。",
+                "remaining_seconds": int(st.get("remaining_seconds") or 0),
+                "pause_until_ms": int(st.get("pause_until_ms") or 0),
+            }
+        ), 409
     _rm, scope_rm, err_rm = resolve_task_account_and_scope(task)
     if err_rm:
         return jsonify({'status': 'error', 'msg': err_rm}), 400
@@ -8216,21 +10595,17 @@ def get_logs():
     except Exception:
         window_min = 0
 
-    logs = list(LOG_BUFFER)
+    logs = _snapshot_log_buffer()
     if window_min > 0:
         now_dt = datetime.now()
         cutoff = now_dt - timedelta(minutes=window_min)
         filtered = []
         for line in logs:
             try:
-                if len(line) >= 10 and line[0] == '[' and line[9] == ']':
-                    t = datetime.strptime(line[1:9], '%H:%M:%S')
-                    cur = now_dt.replace(hour=t.hour, minute=t.minute, second=t.second, microsecond=0)
-                    if cur > now_dt:
-                        cur = cur - timedelta(days=1)
-                    if cur >= cutoff:
-                        filtered.append(line)
-                else:
+                cur = _log_line_naive_datetime_for_window(line, now_dt)
+                if cur is None:
+                    filtered.append(line)
+                elif cur >= cutoff:
                     filtered.append(line)
             except Exception:
                 filtered.append(line)
@@ -8265,8 +10640,7 @@ def get_logs_file():
                 return jsonify({"error": f"读取日志文件失败: {e}"}), 500
     if not lines:
         # 无文件或未开启落盘：返回当天内存缓冲区（与 /api/logs 同源）
-        now_str = datetime.now().strftime('%Y%m%d')
-        for line in LOG_BUFFER:
+        for line in _snapshot_log_buffer():
             if isinstance(line, str):
                 lines.append(line + '\n')
     text = ''.join(lines) if lines else f'（{date_str} 暂无日志）'
@@ -8285,12 +10659,91 @@ def _ms_to_readable(ms):
         return None
 
 
+def _slim_run_metric_for_diagnostic_summary(r):
+    """从 task_run_metrics 单条记录中提取终极递送/矩阵拉活相关关键字段，供诊断包首页速览。"""
+    if not isinstance(r, dict):
+        return None
+    evs = r.get("phase_events")
+    tail = []
+    if isinstance(evs, list):
+        for ev in evs[-18:]:
+            if not isinstance(ev, dict):
+                continue
+            one = {"phase": ev.get("phase"), "event": ev.get("event"), "ts_ms": ev.get("ts_ms")}
+            pl = ev.get("payload")
+            if isinstance(pl, dict) and pl:
+                one["payload"] = pl
+            tail.append(one)
+    return {
+        "task_id": r.get("task_id"),
+        "source": r.get("source"),
+        "started_at_readable": _ms_to_readable(r.get("started_at")),
+        "finished_at_readable": _ms_to_readable(r.get("finished_at")),
+        "duration_ms": r.get("duration_ms"),
+        "target_date": r.get("target_date"),
+        "result_status": r.get("result_status"),
+        "result_msg": (str(r.get("result_msg") or "")[:240] or None),
+        "request_mode": r.get("request_mode"),
+        "dispatch_round_count": r.get("dispatch_round_count"),
+        "attempt_count_total": r.get("attempt_count_total"),
+        "submit_req_count": r.get("submit_req_count"),
+        "submit_success_resp_count": r.get("submit_success_resp_count"),
+        "goal_satisfied": r.get("goal_satisfied"),
+        "delivery_status": r.get("delivery_status"),
+        "business_status": r.get("business_status"),
+        "stopped_by": r.get("stopped_by"),
+        "terminal_reason": r.get("terminal_reason"),
+        "delivery_window_ms": r.get("delivery_window_ms"),
+        "refill_matrix_fetch_count": r.get("refill_matrix_fetch_count"),
+        "matrix_fetch_fail_count": r.get("matrix_fetch_fail_count"),
+        "matrix_timeout_count": r.get("matrix_timeout_count"),
+        "too_fast_matrix_refresh_count": r.get("too_fast_matrix_refresh_count"),
+        "timeout_count": r.get("timeout_count"),
+        "rate_limited": r.get("rate_limited"),
+        "transport_error": r.get("transport_error"),
+        "business_fail_msg": (str(r.get("business_fail_msg") or "")[:200] or None),
+        "server_msg_raw": (str(r.get("server_msg_raw") or "")[:200] or None),
+        "terminal_snapshot": r.get("terminal_snapshot"),
+        "phase_summary": r.get("phase_summary"),
+        "phase_events_tail": tail,
+    }
+
+
+def _diagnostic_key_log_excerpt(lines, max_keep=100):
+    """从日志行中抽取与终极递送、补订、汇总相关的行，便于诊断包快速对照（保留窗口内最后若干条命中）。"""
+    if not lines:
+        return []
+    needles = (
+        "[终极递送器]",
+        "[极速订场]",
+        "[run-metric]",
+        "[refill#",
+        "递送循环",
+        "递送窗口",
+        "算场快照",
+        "delivery_budget",
+        "budget_exhausted",
+        "goal_satisfied",
+        "stopped_by",
+        "terminal_snapshot",
+        "🚀 [终极递送器]",
+        "📊 [run-metric]",
+    )
+    hits = []
+    for line in lines:
+        s = line if isinstance(line, str) else str(line)
+        if any(n in s for n in needles):
+            hits.append(s.rstrip("\n\r"))
+    return hits[-max_keep:]
+
+
 @app.route('/api/run-metrics/export', methods=['GET'])
 def export_run_metrics():
     """返回最近任务执行数据，每条附带可读时间，供前端查看/复制。"""
     limit = request.args.get('limit', default=100, type=int)
     limit = max(1, min(500, int(limit or 100)))
     source = str(request.args.get('source', 'all') or 'all').strip().lower()
+    verbose = str(request.args.get('verbose', '0') or '0').strip().lower() in ('1', 'true', 'yes', 'on')
     records = []
     if os.path.exists(TASK_RUN_METRICS_FILE):
         try:
@@ -8306,13 +10759,15 @@ def export_run_metrics():
     for r in records:
         r['started_at_readable'] = _ms_to_readable(r.get('started_at'))
         r['finished_at_readable'] = _ms_to_readable(r.get('finished_at'))
+        if not verbose and isinstance(r, dict):
+            r.pop('phase_events', None)
     return jsonify({'records': records, 'count': len(records)})
 
 
 @app.route('/api/diagnostic/export', methods=['GET'])
 def export_diagnostic():
     """
-    一键导出诊断包：导出时间 + 最近任务执行数据(50条,可读时间) + 最近系统日志(1000行) + 执行参数(脱敏)。
+    一键导出诊断包：导出时间 + 新流程关键摘要 + 关键日志摘录 + 任务指标(50条) + 系统日志(1000行) + 执行参数(脱敏)。
     供用户下载后发给他方分析，不含 token/手机号等敏感信息。
     """
     from flask import Response
@@ -8326,8 +10781,6 @@ def export_diagnostic():
     sections.append(export_time)
     sections.append('')
 
-    # 2. 任务执行数据（最近 50 条，带可读时间）
-    sections.append('=== 任务执行数据（最近50条）===')
     records = []
     if os.path.exists(TASK_RUN_METRICS_FILE):
         try:
@@ -8337,15 +10790,28 @@ def export_diagnostic():
             records = []
     if not isinstance(records, list):
         records = []
-    records = [dict(r) for r in records[-50:]]
-    for r in records:
-        r['started_at_readable'] = _ms_to_readable(r.get('started_at'))
-        r['finished_at_readable'] = _ms_to_readable(r.get('finished_at'))
-    sections.append(json.dumps(records, ensure_ascii=False, indent=2))
+
+    # 2. 终极递送 / 矩阵拉活 关键摘要（最近 10 条，与 task_run_metrics 字段对齐）
+    sections.append('=== 递送与任务关键摘要（最近10条，含 phase 尾部）===')
+    slim = []
+    for r in records[-10:]:
+        s = _slim_run_metric_for_diagnostic_summary(r)
+        if s:
+            slim.append(s)
+    sections.append(json.dumps(slim, ensure_ascii=False, indent=2))
     sections.append('')
 
-    # 3. 系统运行日志（最近 1000 行）
-    sections.append('=== 系统运行日志（最近1000行）===')
+    # 3. 任务执行数据（最近 50 条，带可读时间，完整 JSON）
+    sections.append('=== 任务执行数据（最近50条，完整）===')
+    records50 = [dict(r) for r in records[-50:]]
+    for r in records50:
+        r['started_at_readable'] = _ms_to_readable(r.get('started_at'))
+        r['finished_at_readable'] = _ms_to_readable(r.get('finished_at'))
+    sections.append(json.dumps(records50, ensure_ascii=False, indent=2))
+    sections.append('')
+
+    # 4. 系统运行日志：先取较大尾部用于摘录，再写入最近 1000 行全文
+    sections.append('=== 关键流程日志摘录（当日日志尾部窗口内匹配行）===')
     log_lines = []
     if CONFIG.get('log_to_file'):
         log_dir = (CONFIG.get('log_file_dir') or 'logs').strip() or 'logs'
@@ -8360,14 +10826,33 @@ def export_diagnostic():
             except Exception:
                 pass
     if not log_lines:
-        for line in LOG_BUFFER:
+        for line in _snapshot_log_buffer():
             if isinstance(line, str):
                 log_lines.append(line + '\n')
-    log_lines = log_lines[-1000:]
-    sections.append(''.join(log_lines) if log_lines else '（暂无日志）')
+    excerpt_win = log_lines[-3500:] if len(log_lines) > 3500 else log_lines
+    excerpt = _diagnostic_key_log_excerpt(excerpt_win, max_keep=120)
+    sections.append('\n'.join(excerpt) if excerpt else '（本窗口内无匹配行，请见下方完整日志）')
     sections.append('')
 
-    # 4. 执行参数（脱敏）
+    sections.append('=== 系统运行日志（最近1000行）===')
+    tail1000 = log_lines[-1000:]
+    sections.append(''.join(tail1000) if tail1000 else '（暂无日志）')
+    sections.append('')
+
+    # 5. 独立 Refill 结构化诊断（NDJSON 尾部）
+    sections.append('=== Refill 结构化诊断（diagnostic_refill.ndjson 最近40行）===')
+    if os.path.isfile(DIAGNOSTIC_REFILL_NDJSON_FILE):
+        try:
+            with open(DIAGNOSTIC_REFILL_NDJSON_FILE, 'r', encoding='utf-8') as rf:
+                rlines = rf.readlines()
+            sections.append(''.join(rlines[-40:]).rstrip() or '（文件为空）')
+        except Exception as e:
+            sections.append(f'（读取失败: {e}）')
+    else:
+        sections.append('（尚无 Refill 诊断文件：未执行过独立补订或旧版日志在仓库根目录 debug-a1cc9c.log）')
+    sections.append('')
+
+    # 6. 执行参数（脱敏）
     sections.append('=== 执行参数(脱敏，不含账号/通知等) ===')
     config_snapshot = {k: copy.deepcopy(CONFIG[k]) for k in CONFIG if k not in SENSITIVE_TOP_LEVEL_KEYS}
     sections.append(json.dumps(config_snapshot, ensure_ascii=False, indent=2))

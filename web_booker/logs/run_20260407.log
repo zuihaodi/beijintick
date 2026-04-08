@@ -1,0 +1,364 @@
+[10:54:53.740] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=10:55:05
+[10:55:18.757] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:2c279fe795b5
+[10:55:18.760] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_2
+[10:55:18.765] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 10:55:05, target_date=2026-04-11
+[10:55:18.767] tid=1774922105713| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[10:55:18.834] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}, {'place': '4', 'time': '21:00'}]
+[10:55:18.836] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-11 candidates=17 goal_cells=2 min_post_interval=5.0s budget=360.0s
+[10:55:19.154] tid=1774922105713| [全量间隔POST] 剔除候选 1:21:00x2 msg=数据错误，请重试
+[10:55:24.043] tid=1774922105713| [全量间隔POST] 剔除候选 2:21:00x2 msg=数据错误，请重试
+[10:55:29.056] tid=1774922105713| [全量间隔POST] 剔除候选 3:21:00x2 msg=数据错误，请重试
+[10:55:34.060] tid=1774922105713| [全量间隔POST] 剔除候选 4:21:00x2 msg=数据错误，请重试
+[10:55:39.059] tid=1774922105713| [全量间隔POST] 剔除候选 5:21:00x2 msg=数据错误，请重试
+[10:55:44.059] tid=1774922105713| [全量间隔POST] 剔除候选 6:21:00x2 msg=数据错误，请重试
+[10:55:49.061] tid=1774922105713| [全量间隔POST] 剔除候选 7:21:00x2 msg=数据错误，请重试
+[10:55:55.058] tid=1774922105713| [全量间隔POST] 剔除候选 8:21:00x2 msg=数据错误，请重试
+[10:56:00.342] tid=1774922105713| [全量间隔POST] 剔除候选 9:21:00x2 msg=数据错误，请重试
+[10:56:05.038] tid=1774922105713| [全量间隔POST] 剔除候选 10:21:00x2 msg=数据错误，请重试
+[10:56:11.107] tid=1774922105713| [全量间隔POST] 剔除候选 11:21:00x2 msg=数据错误，请重试
+[10:56:16.060] tid=1774922105713| [全量间隔POST] 剔除候选 12:21:00x2 msg=数据错误，请重试
+[10:56:21.086] tid=1774922105713| [全量间隔POST] 剔除候选 13:21:00x2 msg=数据错误，请重试
+[10:56:26.037] tid=1774922105713| [全量间隔POST] 剔除候选 14:21:00x2 msg=数据错误，请重试
+[10:56:31.055] tid=1774922105713| [全量间隔POST] 剔除候选 15:21:00x2 msg=数据错误，请重试
+[10:56:36.059] tid=1774922105713| [全量间隔POST] 剔除候选 16:21:00x2 msg=数据错误，请重试
+[10:56:41.067] tid=1774922105713| [全量间隔POST] 剔除候选 17:21:00x2 msg=数据错误，请重试
+[10:56:41.119] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=17 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=65ms retry_jitter=0ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=Nonems p95=685ms last_ev='' ip_cand0=17 ip_pruned=17 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=82828
+[10:56:41.121] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:2c279fe795b5，reason=task-finally
+[10:56:49.223] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[11:15:52.829] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=11:16:05
+[11:16:17.853] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:2c279fe795b5
+[11:16:17.855] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_2
+[11:16:17.858] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 11:16:05, target_date=2026-04-11
+[11:16:17.859] tid=1774922105713| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[11:16:17.926] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}, {'place': '4', 'time': '21:00'}]
+[11:16:17.927] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-11 candidates=17 goal_cells=2 min_post_interval=5.0s budget=360.0s
+[11:16:18.128] tid=1774922105713| [全量间隔POST] 剔除候选 1:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:24.094] tid=1774922105713| [全量间隔POST] 剔除候选 2:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:29.082] tid=1774922105713| [全量间隔POST] 剔除候选 3:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:34.088] tid=1774922105713| [全量间隔POST] 剔除候选 4:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:39.110] tid=1774922105713| [全量间隔POST] 剔除候选 5:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:44.060] tid=1774922105713| [全量间隔POST] 剔除候选 6:21:00x1 msg=预定失败,请返回重新选择日期
+[11:16:49.060] tid=1774922105713| [全量间隔POST] 剔除候选 7:21:00x1 msg=预定失败,请返回重新选择日期
+[11:18:40.073] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=11:19:05
+[11:19:05.092] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:2c279fe795b5
+[11:19:05.095] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_2
+[11:19:05.100] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 11:19:05, target_date=2026-04-11
+[11:19:05.102] tid=1774922105713| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[11:19:05.169] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}, {'place': '4', 'time': '21:00'}]
+[11:19:05.174] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-11 candidates=17 goal_cells=2 min_post_interval=5.0s budget=360.0s
+[11:19:18.154] tid=1774922105713| [全量间隔POST] 剔除候选 1:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:23.079] tid=1774922105713| [全量间隔POST] 剔除候选 2:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:29.091] tid=1774922105713| [全量间隔POST] 剔除候选 3:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:34.060] tid=1774922105713| [全量间隔POST] 剔除候选 4:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:39.068] tid=1774922105713| [全量间隔POST] 剔除候选 5:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:44.051] tid=1774922105713| [全量间隔POST] 剔除候选 6:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:49.059] tid=1774922105713| [全量间隔POST] 剔除候选 7:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:54.081] tid=1774922105713| [全量间隔POST] 剔除候选 8:21:00x1 msg=预定失败,请返回重新选择日期
+[11:19:59.089] tid=1774922105713| [全量间隔POST] 剔除候选 9:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:05.079] tid=1774922105713| [全量间隔POST] 剔除候选 10:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:10.056] tid=1774922105713| [全量间隔POST] 剔除候选 11:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:15.094] tid=1774922105713| [全量间隔POST] 剔除候选 12:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:20.074] tid=1774922105713| [全量间隔POST] 剔除候选 13:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:25.096] tid=1774922105713| [全量间隔POST] 剔除候选 14:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:31.292] tid=1774922105713| [全量间隔POST] 成功 items=[{'place': '15', 'time': '21:00'}] 剩余目标格=1
+[11:20:36.135] tid=1774922105713| [全量间隔POST] 剔除候选 16:21:00x1 msg=预定失败,请返回重新选择日期
+[11:20:42.283] tid=1774922105713| [全量间隔POST] 成功 items=[{'place': '17', 'time': '21:00'}] 剩余目标格=0
+[11:20:42.336] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=17 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=65ms retry_jitter=0ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=83774ms p95=582ms last_ev='' ip_cand0=17 ip_pruned=15 ip_requeue=0 goal=True stop='goal_satisfied' win_ms=83703
+[11:20:42.340] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:2c279fe795b5，reason=task-finally
+[11:20:50.547] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[11:28:06.783] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=11:28:05
+[11:28:18.792] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:2c279fe795b5
+[11:28:18.794] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_2
+[11:28:18.798] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 11:28:05, target_date=2026-04-12
+[11:28:18.798] tid=1774922105713| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[11:28:18.865] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '12:00'}, {'place': '4', 'time': '12:00'}, {'place': '5', 'time': '12:00'}]
+[11:28:18.870] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-12 candidates=17 goal_cells=3 min_post_interval=5.0s budget=360.0s
+[11:28:19.190] tid=1774922105713| [全量间隔POST] 剔除候选 1:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:24.110] tid=1774922105713| [全量间隔POST] 剔除候选 2:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:29.138] tid=1774922105713| [全量间隔POST] 剔除候选 3:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:34.083] tid=1774922105713| [全量间隔POST] 剔除候选 4:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:39.110] tid=1774922105713| [全量间隔POST] 剔除候选 5:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:45.082] tid=1774922105713| [全量间隔POST] 剔除候选 6:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:50.088] tid=1774922105713| [全量间隔POST] 剔除候选 7:12:00x1 msg=预定失败,请返回重新选择日期
+[11:28:55.075] tid=1774922105713| [全量间隔POST] 剔除候选 8:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:00.096] tid=1774922105713| [全量间隔POST] 剔除候选 9:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:05.083] tid=1774922105713| [全量间隔POST] 剔除候选 10:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:11.087] tid=1774922105713| [全量间隔POST] 剔除候选 11:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:16.061] tid=1774922105713| [全量间隔POST] 剔除候选 12:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:21.109] tid=1774922105713| [全量间隔POST] 剔除候选 13:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:26.080] tid=1774922105713| [全量间隔POST] 剔除候选 14:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:31.067] tid=1774922105713| [全量间隔POST] 剔除候选 15:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:37.196] tid=1774922105713| [全量间隔POST] 成功 items=[{'place': '16', 'time': '12:00'}] 剩余目标格=2
+[11:29:42.100] tid=1774922105713| [全量间隔POST] 剔除候选 17:12:00x1 msg=预定失败,请返回重新选择日期
+[11:29:42.139] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=17 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=65ms retry_jitter=0ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=83615ms p95=393ms last_ev='' ip_cand0=17 ip_pruned=16 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=83545
+[11:29:42.142] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:2c279fe795b5，reason=task-finally
+[11:29:50.525] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[12:20:53.824] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:2c279fe795b5，fire_at=12:21:05
+[12:21:06.831] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=12:21:05
+[12:21:18.851] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[12:21:18.853] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[12:21:18.858] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 12:21:05, target_date=2026-04-13
+[12:21:18.859] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:21:18.897] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '12:00'}, {'place': '4', 'time': '12:00'}, {'place': '5', 'time': '12:00'}]
+[12:21:18.900] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-13 candidates=9 goal_cells=3 min_post_interval=5.0s budget=360.0s
+[12:21:19.131] tid=1774922105713| [全量间隔POST] 剔除候选 9:12:00x1 msg=数据错误，请重试
+[12:21:24.060] tid=1774922105713| [全量间隔POST] 剔除候选 10:12:00x1 msg=数据错误，请重试
+[12:21:29.059] tid=1774922105713| [全量间隔POST] 剔除候选 11:12:00x1 msg=数据错误，请重试
+[12:21:34.060] tid=1774922105713| [全量间隔POST] 剔除候选 12:12:00x1 msg=数据错误，请重试
+[12:21:39.059] tid=1774922105713| [全量间隔POST] 剔除候选 13:12:00x1 msg=数据错误，请重试
+[12:21:44.059] tid=1774922105713| [全量间隔POST] 剔除候选 14:12:00x1 msg=数据错误，请重试
+[12:21:49.059] tid=1774922105713| [全量间隔POST] 剔除候选 15:12:00x1 msg=数据错误，请重试
+[12:21:54.062] tid=1774922105713| [全量间隔POST] 剔除候选 16:12:00x1 msg=数据错误，请重试
+[12:22:00.056] tid=1774922105713| [全量间隔POST] 剔除候选 17:12:00x1 msg=数据错误，请重试
+[12:22:00.270] tid=1774922105713| 📩 PushPlus 发送成功
+[12:22:00.299] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=9 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=36ms retry_jitter=0ms first_matrix=Nonems first_submit=37ms first_post=37ms first_success=Nonems p95=41228ms last_ev='' ip_cand0=9 ip_pruned=9 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=41227
+[12:22:00.301] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[12:22:08.810] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[12:23:18.850] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=ttl-expired
+[12:25:11.275] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s plan_max_age=8.0s retry_jitter=180ms budget=360.0s
+[12:25:11.276] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[12:25:11.277] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[12:25:12.632] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=12:24:59.082 elapsed_ms=1262
+[12:25:12.636] [极速订场] 首单 group=primary (主组合) items=[{'place': '17', 'time': '21:00'}]
+[12:25:12.206] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '17', 'time': '21:00'}]
+[12:25:14.554] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=12:25:00.860 elapsed_ms=1108
+[12:25:14.555] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[12:25:14.555] [极速订场] 结束 status=success 总请求数=1 group=primary
+[12:28:54.550] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=12:29:05
+[12:29:19.571] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[12:29:19.573] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[12:29:19.577] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 12:29:05, target_date=2026-04-12
+[12:29:19.578] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:29:19.617] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}]
+[12:29:19.620] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-12 candidates=17 goal_cells=1 min_post_interval=5.0s budget=360.0s
+[12:29:19.122] tid=1774922105713| [全量间隔POST] 剔除候选 1:21:00x1 msg=数据错误，请重试
+[12:29:24.059] tid=1774922105713| [全量间隔POST] 剔除候选 2:21:00x1 msg=数据错误，请重试
+[12:29:29.060] tid=1774922105713| [全量间隔POST] 剔除候选 3:21:00x1 msg=数据错误，请重试
+[12:29:34.059] tid=1774922105713| [全量间隔POST] 剔除候选 4:21:00x1 msg=数据错误，请重试
+[12:29:39.060] tid=1774922105713| [全量间隔POST] 剔除候选 5:21:00x1 msg=数据错误，请重试
+[12:29:45.059] tid=1774922105713| [全量间隔POST] 剔除候选 6:21:00x1 msg=数据错误，请重试
+[12:29:50.060] tid=1774922105713| [全量间隔POST] 剔除候选 7:21:00x1 msg=数据错误，请重试
+[12:29:55.059] tid=1774922105713| [全量间隔POST] 剔除候选 8:21:00x1 msg=数据错误，请重试
+[12:30:00.059] tid=1774922105713| [全量间隔POST] 剔除候选 9:21:00x1 msg=数据错误，请重试
+[12:30:05.060] tid=1774922105713| [全量间隔POST] 剔除候选 10:21:00x1 msg=数据错误，请重试
+[12:30:10.030] tid=1774922105713| [全量间隔POST] 剔除候选 11:21:00x1 msg=数据错误，请重试
+[12:30:15.037] tid=1774922105713| [全量间隔POST] 剔除候选 12:21:00x1 msg=数据错误，请重试
+[12:30:20.026] tid=1774922105713| [全量间隔POST] 剔除候选 13:21:00x1 msg=数据错误，请重试
+[12:30:25.042] tid=1774922105713| [全量间隔POST] 剔除候选 14:21:00x1 msg=数据错误，请重试
+[12:30:30.059] tid=1774922105713| [全量间隔POST] 剔除候选 15:21:00x1 msg=数据错误，请重试
+[12:30:36.059] tid=1774922105713| [全量间隔POST] 剔除候选 16:21:00x1 msg=数据错误，请重试
+[12:30:41.059] tid=1774922105713| [全量间隔POST] 剔除候选 17:21:00x1 msg=数据错误，请重试
+[12:30:41.163] tid=1774922105713| 📩 PushPlus 发送成功
+[12:30:41.197] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=17 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=36ms retry_jitter=0ms first_matrix=Nonems first_submit=38ms first_post=38ms first_success=Nonems p95=245ms last_ev='' ip_cand0=17 ip_pruned=17 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=81964
+[12:30:41.202] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[12:30:50.096] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[12:32:53.179] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=12:33:05
+[12:33:18.197] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[12:33:18.198] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[12:33:18.201] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 12:33:05, target_date=2026-04-12
+[12:33:18.202] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:33:18.239] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}]
+[12:33:18.241] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-12 candidates=17 goal_cells=1 min_post_interval=6.0s budget=360.0s
+[12:33:18.155] tid=1774922105713| [全量间隔POST] 剔除候选 1:21:00x1 msg=数据错误，请重试
+[12:33:24.071] tid=1774922105713| [全量间隔POST] 剔除候选 2:21:00x1 msg=数据错误，请重试
+[12:33:30.072] tid=1774922105713| [全量间隔POST] 剔除候选 3:21:00x1 msg=数据错误，请重试
+[12:33:37.072] tid=1774922105713| [全量间隔POST] 剔除候选 4:21:00x1 msg=数据错误，请重试
+[12:33:43.071] tid=1774922105713| [全量间隔POST] 剔除候选 5:21:00x1 msg=数据错误，请重试
+[12:33:49.071] tid=1774922105713| [全量间隔POST] 剔除候选 6:21:00x1 msg=数据错误，请重试
+[12:33:55.071] tid=1774922105713| [全量间隔POST] 剔除候选 7:21:00x1 msg=数据错误，请重试
+[12:34:01.047] tid=1774922105713| [全量间隔POST] 剔除候选 8:21:00x1 msg=数据错误，请重试
+[12:34:07.045] tid=1774922105713| [全量间隔POST] 剔除候选 9:21:00x1 msg=数据错误，请重试
+[12:34:13.046] tid=1774922105713| [全量间隔POST] 剔除候选 10:21:00x1 msg=数据错误，请重试
+[12:34:19.046] tid=1774922105713| [全量间隔POST] 剔除候选 11:21:00x1 msg=数据错误，请重试
+[12:34:25.071] tid=1774922105713| [全量间隔POST] 剔除候选 12:21:00x1 msg=数据错误，请重试
+[12:34:32.074] tid=1774922105713| [全量间隔POST] 剔除候选 13:21:00x1 msg=数据错误，请重试
+[12:34:38.069] tid=1774922105713| [全量间隔POST] 剔除候选 14:21:00x1 msg=数据错误，请重试
+[12:34:44.072] tid=1774922105713| [全量间隔POST] 剔除候选 15:21:00x1 msg=数据错误，请重试
+[12:34:50.071] tid=1774922105713| [全量间隔POST] 剔除候选 16:21:00x1 msg=数据错误，请重试
+[12:34:56.071] tid=1774922105713| [全量间隔POST] 剔除候选 17:21:00x1 msg=数据错误，请重试
+[12:34:56.174] tid=1774922105713| 📩 PushPlus 发送成功
+[12:34:56.227] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=17 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=36ms retry_jitter=0ms first_matrix=Nonems first_submit=37ms first_post=37ms first_success=Nonems p95=309ms last_ev='' ip_cand0=17 ip_pruned=17 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=98414
+[12:34:56.230] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[12:35:04.692] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[12:41:52.943] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=12:42:05
+[12:42:17.959] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[12:42:17.960] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[12:42:17.962] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 12:42:05, target_date=2026-04-12
+[12:42:17.962] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:42:17.999] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}]
+[12:42:18.000] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-12 candidates=3 goal_cells=1 min_post_interval=6.0s budget=360.0s
+[12:42:18.117] tid=1774922105713| [全量间隔POST] 剔除候选 15:21:00x1 msg=数据错误，请重试
+[12:42:25.072] tid=1774922105713| [全量间隔POST] 剔除候选 16:21:00x1 msg=数据错误，请重试
+[12:42:31.043] tid=1774922105713| [全量间隔POST] 剔除候选 17:21:00x1 msg=数据错误，请重试
+[12:42:31.203] tid=1774922105713| 📩 PushPlus 发送成功
+[12:42:31.259] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=3 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=36ms retry_jitter=0ms first_matrix=Nonems first_submit=36ms first_post=36ms first_success=Nonems p95=12472ms last_ev='' ip_cand0=3 ip_pruned=3 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=12471
+[12:42:31.264] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[12:42:39.542] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[12:46:18.664] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=12:46:30
+[12:46:43.684] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[12:46:43.686] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[12:46:43.691] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 12:46:30, target_date=2026-04-12
+[12:46:43.693] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:46:43.731] tid=1774922105713| 🚀 [全量间隔POST] 启动: [{'place': '3', 'time': '21:00'}]
+[12:46:43.732] tid=1774922105713| [全量间隔POST] 开始 date=2026-04-12 candidates=1 goal_cells=1 min_post_interval=6.0s budget=360.0s
+[12:46:44.147] tid=1774922105713| [全量间隔POST] 剔除候选 15:21:00x1 msg=数据错误，请重试
+[12:46:44.250] tid=1774922105713| ⚠️ PushPlus 发送失败: {'code': 999, 'msg': '服务端验证错误', 'data': '请勿频繁推送相同内容'}
+[12:46:44.309] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='interval_post' matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=0 too_fast_mx=0 phase_offset=36ms retry_jitter=0ms first_matrix=Nonems first_submit=38ms first_post=38ms first_success=Nonems p95=300ms last_ev='' ip_cand0=1 ip_pruned=1 ip_requeue=0 goal=False stop='no_candidates_remaining' win_ms=298
+[12:46:44.313] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[12:46:52.808] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[12:47:59.239] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=6.0s plan_max_age=8.0s retry_jitter=180ms budget=360.0s
+[12:47:59.240] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[12:47:59.241] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[12:47:59.554] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=12:47:46.748 elapsed_ms=1107
+[12:47:59.557] [极速订场] 首单 group=primary (主组合) items=[{'place': '15', 'time': '21:00'}]
+[12:48:00.201] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '21:00'}]
+[12:48:01.601] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=12:47:48.608 elapsed_ms=1201
+[12:48:01.601] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[12:48:01.602] [极速订场] 结束 status=success 总请求数=1 group=primary
+[13:12:04.090] [测试·raw] run_id=test-1775538711534-u8cjmf seq=1/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:12:10.110] [测试·raw] run_id=test-1775538711534-u8cjmf seq=2/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:12:15.158] [测试·raw] run_id=test-1775538711534-u8cjmf seq=3/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:13:01.109] [测试·raw] run_id=test-1775538767813-j3zc1u seq=1/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:13:06.113] [测试·raw] run_id=test-1775538767813-j3zc1u seq=2/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:13:11.081] [测试·raw] run_id=test-1775538767813-j3zc1u seq=3/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:13:34.221] [测试·raw] run_id=test-1775538800400-4y60im seq=1/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[13:13:38.123] [测试·raw] run_id=test-1775538800400-4y60im seq=2/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[13:13:44.372] [测试·raw] run_id=test-1775538800400-4y60im seq=3/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[13:15:57.095] [测试·raw] run_id=test-1775538944014-vvygnj seq=1/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:16:02.079] [测试·raw] run_id=test-1775538944014-vvygnj seq=2/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:16:07.102] [测试·raw] run_id=test-1775538944014-vvygnj seq=3/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:16:23.319] [测试·raw] run_id=test-1775538969887-vqr2ka seq=1/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[13:16:28.148] [测试·raw] run_id=test-1775538969887-vqr2ka seq=2/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[13:16:33.297] [测试·raw] run_id=test-1775538969887-vqr2ka seq=3/3 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[13:18:07.147] [测试·raw] run_id=test-1775539074346-7nr2fh seq=1/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:18:12.100] [测试·raw] run_id=test-1775539074346-7nr2fh seq=2/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:18:57.156] [测试·raw] run_id=test-1775539123574-s0wdyc seq=1/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[13:19:02.112] [测试·raw] run_id=test-1775539123574-s0wdyc seq=2/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:07.117] [测试·raw] run_id=test-1775539123574-s0wdyc seq=3/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:12.127] [测试·raw] run_id=test-1775539123574-s0wdyc seq=4/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:17.132] [测试·raw] run_id=test-1775539123574-s0wdyc seq=5/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:22.143] [测试·raw] run_id=test-1775539123574-s0wdyc seq=6/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:27.153] [测试·raw] run_id=test-1775539123574-s0wdyc seq=7/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:32.367] [测试·raw] run_id=test-1775539123574-s0wdyc seq=8/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:37.119] [测试·raw] run_id=test-1775539123574-s0wdyc seq=9/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:42.127] [测试·raw] run_id=test-1775539123574-s0wdyc seq=10/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:47.113] [测试·raw] run_id=test-1775539123574-s0wdyc seq=11/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:52.075] [测试·raw] run_id=test-1775539123574-s0wdyc seq=12/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:19:57.131] [测试·raw] run_id=test-1775539123574-s0wdyc seq=13/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:20:02.136] [测试·raw] run_id=test-1775539123574-s0wdyc seq=14/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:20:07.104] [测试·raw] run_id=test-1775539123574-s0wdyc seq=15/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:20:12.104] [测试·raw] run_id=test-1775539123574-s0wdyc seq=16/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[13:20:17.115] [测试·raw] run_id=test-1775539123574-s0wdyc seq=17/17 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[15:31:12.940] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=2.2s plan_max_age=8.0s retry_jitter=180ms budget=360.0s
+[15:31:12.943] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[15:31:12.944] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[15:31:12.948] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=15:31:12.948 elapsed_ms=0
+[15:31:12.949] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[15:31:12.951] [极速订场] 首单 第1次提交 action=switch_backup items=[{'place': '1', 'time': '10:00'}]
+[15:31:12.952] [极速订场] 首单 数据错误等业务拒单后已重拉矩阵，将同批重试 reprime_n=1
+[15:31:12.957] [极速订场] 首单#r2 同批软重试 2/6 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[15:31:15.151] [极速订场] 首单#r2 第2次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[15:31:15.403] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=15:31:15.403 elapsed_ms=0
+[15:31:15.404] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[15:31:15.405] [极速订场] 结束 status=success 总请求数=2 group=primary
+[15:31:15.412] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=2.2s plan_max_age=8.0s retry_jitter=180ms budget=360.0s
+[15:31:15.413] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[15:31:15.414] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[15:31:15.415] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=15:31:15.415 elapsed_ms=0
+[15:31:15.416] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[15:31:15.416] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[15:31:15.667] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=15:31:15.667 elapsed_ms=0
+[15:31:15.668] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[15:31:15.670] [极速订场] 结束 status=success 总请求数=1 group=primary
+[15:44:19.668] 🔇 [quiet-window] 进入 pre_quiet，owner=1774922105713，account_key=1001:90821bae3fb9，fire_at=15:44:30
+[15:44:44.686] 🔫 [quiet-window] 进入 fire_window，owner=1774922105713，account_key=1001:90821bae3fb9
+[15:44:44.688] tid=1774922105713| ⏰ [自动任务] 开始执行任务: 1774922105713 account=acc_1
+[15:44:44.694] tid=1774922105713| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-07 15:44:30, target_date=2026-04-12
+[15:44:44.696] tid=1774922105713| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[15:44:44.735] tid=1774922105713| 🚀 [终极递送器] 启动主组合递送: [{'place': '3', 'time': '21:00'}, {'place': '4', 'time': '21:00'}]
+[15:44:44.737] tid=1774922105713| [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=6.0s plan_max_age=8.0s retry_jitter=180ms budget=360.0s
+[15:44:44.739] tid=1774922105713| [极速订场] 无独立 warmup，首轮由递送循环 get_matrix 开始
+[15:44:44.740] tid=1774922105713| [极速订场] 递送循环 effective_target_blocks=2 fieldinfo_max_records_per_post=3 first_group_matrix=True
+[15:44:45.631] tid=1774922105713| [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=15:44:32.118 elapsed_ms=1263
+[15:44:45.633] tid=1774922105713| [极速订场] 第一组由 matrix 算出 level=2000 items=[{'place': '15', 'time': '21:00'}, {'place': '17', 'time': '21:00'}]
+[15:44:45.634] tid=1774922105713| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '21:00'}, {'place': '17', 'time': '21:00'}]
+[15:44:45.246] tid=1774922105713| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '21:00'}, {'place': '17', 'time': '21:00'}]
+[15:44:47.548] tid=1774922105713| [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=15:44:33.963 elapsed_ms=1096
+[15:44:47.550] tid=1774922105713| [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[15:44:47.552] tid=1774922105713| [极速订场] 结束 status=success 总请求数=1 group=primary
+[15:44:47.677] tid=1774922105713| 📩 PushPlus 发送成功
+[15:44:47.723] tid=1774922105713| 📊 [run-metric] task=1774922105713 mode='delivery_campaign' matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 refill_mx=2 too_fast_mx=0 phase_offset=36ms retry_jitter=180ms first_matrix=Nonems first_submit=39ms first_post=39ms first_success=3285ms p95=3120ms last_ev='' dc_rounds=1 atmpt_tot=1 goal=True deliv='accepted' biz='success' stop='business_success' term='business_success' win_ms=3116
+[15:44:47.726] 🔄 [quiet-window] 进入 recovering，owner=1774922105713，account_key=1001:90821bae3fb9，reason=task-finally
+[15:44:56.391] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[16:19:31.174] [测试·raw] run_id=test-1775549957550-8v9d7w seq=1/4 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:19:38.303] [测试·raw] run_id=test-1775549957550-8v9d7w seq=2/4 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[16:19:43.159] [测试·raw] run_id=test-1775549957550-8v9d7w seq=3/4 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[16:19:49.268] [测试·raw] run_id=test-1775549957550-8v9d7w seq=4/4 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[16:23:15.111] [测试·raw] run_id=test-1775550181727-k99b1z seq=1/4 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:23:20.114] [测试·raw] run_id=test-1775550181727-k99b1z seq=2/4 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:23:25.129] [测试·raw] run_id=test-1775550181727-k99b1z seq=3/4 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:23:30.136] [测试·raw] run_id=test-1775550181727-k99b1z seq=4/4 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:26:53.104] [测试·raw] run_id=test-1775550400164-g7fd6a seq=1/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:26:55.064] [测试·raw] run_id=test-1775550400164-g7fd6a seq=1/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='操作过快,请稍后重试。'
+[16:27:00.180] [测试·raw] run_id=test-1775550400164-g7fd6a seq=2/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[16:27:06.266] [测试·raw] run_id=test-1775550400164-g7fd6a seq=3/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='{"continuousSize":"3","dayType":"nonVacations","maxsize":0,"placeArray":[{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"e'
+[16:27:11.131] [测试·raw] run_id=test-1775550400164-g7fd6a seq=4/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:27:13.126] [测试·raw] run_id=test-1775550400164-g7fd6a seq=4/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message='操作过快,请稍后重试。'
+[16:27:18.253] [测试·raw] run_id=test-1775550400164-g7fd6a seq=5/5 mode=wait_after_response interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[16:33:41.175] [测试·raw] run_id=test-1775550807577-djlhx3 seq=1/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='数据错误，请重试'
+[16:33:45.243] [测试·raw] run_id=test-1775550807577-djlhx3 seq=1/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[16:33:50.160] [测试·raw] run_id=test-1775550807577-djlhx3 seq=2/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[16:33:56.260] [测试·raw] run_id=test-1775550807577-djlhx3 seq=3/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message="{'times': 1, 'type': 'cardTimes'}"
+[16:34:01.159] [测试·raw] run_id=test-1775550807577-djlhx3 seq=4/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='预定失败,请返回重新选择日期'
+[16:34:07.386] [测试·raw] run_id=test-1775550807577-djlhx3 seq=5/5 mode=fire_interval interval_ms=5000 http=200 post_ok=True raw_message='{"continuousSize":"3","dayType":"nonVacations","maxsize":0,"placeArray":[{"projectInfo":[{"oldMoney":80.0,"money":80.0,"endtime":"11:00","starttime":"10:00","state":4},{"oldMoney":80.0,"money":80.0,"e'
+[22:48:20.093] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=2.2s plan_max_age=10.0s retry_jitter=180ms budget=360.0s
+[22:48:20.098] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[22:48:20.099] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[22:48:20.100] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=22:48:20.100 elapsed_ms=0
+[22:48:20.101] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:48:20.106] [极速订场] 首单 第1次提交 action=switch_backup items=[{'place': '1', 'time': '10:00'}]
+[22:48:20.106] [极速订场] 首单 数据错误等业务拒单后已重拉矩阵，将同批重试 reprime_n=1
+[22:48:20.107] [极速订场] 首单#r2 同批软重试 2/6 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:48:22.306] [极速订场] 首单#r2 第2次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[22:48:22.558] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=22:48:22.558 elapsed_ms=0
+[22:48:22.559] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[22:48:22.560] [极速订场] 结束 status=success 总请求数=2 group=primary
+[22:48:22.562] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=2.2s plan_max_age=10.0s retry_jitter=180ms budget=360.0s
+[22:48:22.563] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[22:48:22.564] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[22:48:22.565] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=22:48:22.565 elapsed_ms=0
+[22:48:22.566] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:48:22.568] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[22:48:22.819] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=22:48:22.819 elapsed_ms=0
+[22:48:22.820] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[22:48:22.821] [极速订场] 结束 status=success 总请求数=1 group=primary
+[22:52:52.003] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s plan_max_age=10.0s retry_jitter=180ms budget=360.0s
+[22:52:52.005] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[22:52:52.006] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[22:52:52.019] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=22:52:52.019 elapsed_ms=0
+[22:52:52.020] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:52:52.021] [极速订场] 首单 第1次提交 action=switch_backup items=[{'place': '1', 'time': '10:00'}]
+[22:52:52.022] [极速订场] 首单 数据错误等业务拒单后已重拉矩阵，将同批重试 reprime_n=1
+[22:52:52.022] [极速订场] 首单#r2 同批软重试 2/6 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:52:57.022] [极速订场] 首单#r2 第2次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[22:52:57.274] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=22:52:57.274 elapsed_ms=0
+[22:52:57.275] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[22:52:57.275] [极速订场] 结束 status=success 总请求数=2 group=primary
+[22:52:57.277] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s plan_max_age=10.0s retry_jitter=180ms budget=360.0s
+[22:52:57.278] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[22:52:57.279] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[22:52:57.280] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=22:52:57.280 elapsed_ms=0
+[22:52:57.281] [极速订场] 首单 group=primary (主) items=[{'place': '1', 'time': '10:00'}]
+[22:52:57.283] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '1', 'time': '10:00'}]
+[22:52:57.534] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=22:52:57.534 elapsed_ms=0
+[22:52:57.535] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[22:52:57.535] [极速订场] 结束 status=success 总请求数=1 group=primary
+[23:38:33.694] [极速订场] 开始 date=2026-04-12 统一递送循环 round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s plan_max_age=10.0s retry_jitter=180ms budget=360.0s
+[23:38:33.695] [极速订场] skip_warmup=True：假定页面已拉过矩阵，递送循环内再 get_matrix 算场（若提示操作过快请刷新场地矩阵后再试）
+[23:38:33.696] [极速订场] 递送循环 effective_target_blocks=1 fieldinfo_max_records_per_post=3 first_group_matrix=False
+[23:38:35.894] [极速订场] 递送循环 矩阵完成 fetch_n=1 wall=23:38:21.116 elapsed_ms=1786
+[23:38:35.896] [极速订场] 首单 group=primary (主组合) items=[{'place': '17', 'time': '21:00'}]
+[23:38:36.331] [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '17', 'time': '21:00'}]
+[23:38:37.665] [极速订场] 递送循环 矩阵完成 fetch_n=2 wall=23:38:23.363 elapsed_ms=1329
+[23:38:37.667] [极速订场] 递送循环 缺口已归零，目标已满足，提前结束
+[23:38:37.669] [极速订场] 结束 status=success 总请求数=1 group=primary

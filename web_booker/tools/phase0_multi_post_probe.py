@@ -77,7 +77,7 @@ def main() -> None:
     matrix_timeout_s = max(0.5, float(wb.CONFIG.get("matrix_timeout_seconds", 3.0) or 3.0))
     min_interval = max(
         0.0,
-        float(wb.CONFIG.get("delivery_min_post_interval_seconds", 2.2) or 0.0),
+        float(wb.CONFIG["delivery_min_post_interval_seconds"]),
     )
     url = f"https://{client.host}/easyserpClient/place/reservationPlace"
     headers_snapshot = dict(client.headers or {})

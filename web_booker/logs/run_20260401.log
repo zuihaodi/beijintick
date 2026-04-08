@@ -1,0 +1,486 @@
+[00:14:42.007] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=00:15:00
+[00:15:07.027] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[00:15:07.031] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[00:15:07.036] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 00:15:00, target_date=2026-04-05
+[00:15:07.038] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[00:15:07.105] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}]
+[00:15:07.108] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[00:15:07.530] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[00:15:07.532] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=0 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[00:15:07.561] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[00:15:08.264] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[00:15:09.504] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=00:15:03.135 elapsed_ms=1008
+[00:15:09.533] tid=1774712054103| [极速订场] refill 缺口已归零，目标已满足，提前结束
+[00:15:09.603] tid=1774712054103| [极速订场] 结束 status=success 总请求数=1 group=primary
+[00:15:09.732] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=2826ms p95=2759ms last_ev=''
+[00:15:09.737] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[00:15:17.801] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[00:16:41.843] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=00:17:00
+[00:17:06.860] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[00:17:06.861] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[00:17:06.863] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 00:17:00, target_date=2026-04-05
+[00:17:06.864] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[00:17:06.930] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}]
+[00:17:06.930] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[00:17:07.598] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[00:17:07.600] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=4 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[00:17:07.600] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[00:17:08.193] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[00:17:09.445] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=00:17:03.038 elapsed_ms=888
+[00:17:09.447] tid=1774712054103| [极速订场] refill 分层求解 tier=散号满 used_need={'18:00': 1, '19:00': 3} 原缺口={'18:00': 1, '19:00': 3}
+[00:17:09.448] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[00:17:13.555] tid=1774712054103| [极速订场] refill POST发送 wall=00:17:07.148 campaign_ms=6586 tag=refill items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[00:17:13.174] tid=1774712054103| [极速订场] refill 第2次提交 action=stop_success items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[00:17:13.175] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[00:17:14.501] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=00:17:08.752 elapsed_ms=1001
+[00:17:14.501] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:16.523] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=00:17:10.150 elapsed_ms=1046
+[00:17:16.525] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:17.391] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=00:17:11.286 elapsed_ms=781
+[00:17:17.392] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:18.377] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=00:17:12.392 elapsed_ms=753
+[00:17:18.380] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:19.444] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=00:17:13.634 elapsed_ms=887
+[00:17:19.446] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:20.372] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=00:17:14.730 elapsed_ms=742
+[00:17:20.374] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:22.390] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=00:17:15.864 elapsed_ms=780
+[00:17:22.392] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:23.397] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=00:17:17.009 elapsed_ms=792
+[00:17:23.400] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:24.472] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=00:17:18.308 elapsed_ms=943
+[00:17:24.474] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:17:25.483] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=11 wall=00:17:19.627 elapsed_ms=964
+[00:17:25.485] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[00:17:25.519] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=65ms first_post=65ms first_success=Nonems p95=19069ms last_ev=''
+[00:17:25.521] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[00:17:34.361] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[00:54:35.345] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=00:55:00
+[00:55:00.361] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[00:55:00.362] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[00:55:00.364] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 00:55:00, target_date=2026-04-05
+[00:55:00.365] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[00:55:00.431] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}]
+[00:55:00.432] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[00:55:07.604] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[00:55:07.607] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=4 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[00:55:07.609] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}]
+[00:55:08.217] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}]
+[00:55:08.218] tid=1774712054103| [极速订场] 首单2 group=primary (主组) items=[{'place': '16', 'time': '18:00'}]
+[00:55:13.177] tid=1774712054103| [极速订场] 首单2 第2次提交 action=stop_success items=[{'place': '16', 'time': '18:00'}]
+[00:55:14.463] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=00:55:08.362 elapsed_ms=925
+[00:55:14.469] tid=1774712054103| [极速订场] refill 分层求解 tier=散号满 used_need={'18:00': 1, '19:00': 3} 原缺口={'18:00': 1, '19:00': 3}
+[00:55:14.471] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '15', 'time': '19:00'}]
+[00:55:18.537] tid=1774712054103| [极速订场] refill POST发送 wall=00:55:12.436 campaign_ms=12003 tag=refill items=[{'place': '15', 'time': '19:00'}]
+[00:55:18.154] tid=1774712054103| [极速订场] refill 第3次提交 action=stop_success items=[{'place': '15', 'time': '19:00'}]
+[00:55:18.155] tid=1774712054103| [极速订场] refill2 group=primary (主组) items=[{'place': '16', 'time': '19:00'}]
+[00:55:23.154] tid=1774712054103| [极速订场] refill POST发送 wall=00:55:17.746 campaign_ms=17313 tag=refill2 items=[{'place': '16', 'time': '19:00'}]
+[00:55:24.044] tid=1774712054103| [极速订场] refill2 第4次提交 action=switch_backup items=[{'place': '16', 'time': '19:00'}]
+[00:55:24.045] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[00:55:25.553] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=00:55:19.194 elapsed_ms=1105
+[00:55:25.554] tid=1774712054103| [极速订场] refill 分层求解 tier=散号满 used_need={'18:00': 1, '19:00': 2} 原缺口={'18:00': 1, '19:00': 2}
+[00:55:25.555] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '16', 'time': '19:00'}]
+[00:55:29.196] tid=1774712054103| [极速订场] refill POST发送 wall=00:55:22.837 campaign_ms=22404 tag=refill items=[{'place': '16', 'time': '19:00'}]
+[00:55:29.181] tid=1774712054103| [极速订场] refill 第5次提交 action=stop_success items=[{'place': '16', 'time': '19:00'}]
+[00:55:29.182] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[00:55:30.565] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=00:55:24.585 elapsed_ms=1130
+[00:55:30.566] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:31.299] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=00:55:25.535 elapsed_ms=598
+[00:55:31.301] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:32.301] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=00:55:26.491 elapsed_ms=603
+[00:55:32.302] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:33.299] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=00:55:27.440 elapsed_ms=597
+[00:55:33.300] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:34.310] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=00:55:28.411 elapsed_ms=619
+[00:55:34.312] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:35.315] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=00:55:29.395 elapsed_ms=631
+[00:55:35.316] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:36.436] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=00:55:30.617 elapsed_ms=870
+[00:55:36.439] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:37.355] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=00:55:31.681 elapsed_ms=709
+[00:55:37.356] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:39.408] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=11 wall=00:55:32.849 elapsed_ms=815
+[00:55:39.411] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[00:55:40.465] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=12 wall=00:55:34.134 elapsed_ms=930
+[00:55:40.466] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[00:55:40.482] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=5 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=66ms first_post=66ms first_success=Nonems p95=33704ms last_ev='数据错误，请重试'
+[00:55:40.484] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[00:55:48.712] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[01:14:07.817] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=01:14:15
+[01:14:15.824] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[01:14:15.826] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[01:14:15.830] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 01:14:15, target_date=2026-04-05
+[01:14:15.832] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[01:14:15.899] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}]
+[01:14:15.901] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[01:14:23.610] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[01:14:23.613] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=5 items=[{'place': '15', 'time': '18:00'}]
+[01:14:23.615] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}]
+[01:14:23.113] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}]
+[01:14:24.451] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=01:14:18.252 elapsed_ms=900
+[01:14:24.453] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier=散号满 used_need={'18:00': 2, '19:00': 3}
+[01:14:24.454] tid=1774712054103| [极速订场] refill 分层求解 tier=散号满 used_need={'18:00': 2, '19:00': 3} 原缺口={'18:00': 2, '19:00': 3}
+[01:14:24.456] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}, {'place': '15', 'time': '19:00'}]
+[01:14:28.550] tid=1774712054103| [极速订场] refill POST发送 wall=01:14:22.351 campaign_ms=6450 tag=refill items=[{'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}, {'place': '15', 'time': '19:00'}]
+[01:14:28.198] tid=1774712054103| [极速订场] refill 第2次提交 action=stop_success items=[{'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}, {'place': '15', 'time': '19:00'}]
+[01:14:28.199] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[01:14:30.425] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=01:14:23.851 elapsed_ms=848
+[01:14:30.427] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:30.427] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:31.438] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=01:14:25.081 elapsed_ms=875
+[01:14:31.441] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:31.442] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:32.380] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=01:14:26.197 elapsed_ms=760
+[01:14:32.382] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:32.382] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:33.380] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=01:14:27.310 elapsed_ms=759
+[01:14:33.382] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:33.383] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:34.422] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=01:14:28.508 elapsed_ms=843
+[01:14:34.424] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:34.425] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:35.434] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=01:14:29.730 elapsed_ms=867
+[01:14:35.436] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:35.437] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:37.495] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=01:14:31.074 elapsed_ms=990
+[01:14:37.497] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:37.499] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:38.372] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=01:14:32.173 elapsed_ms=744
+[01:14:38.374] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:38.375] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:39.400] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=01:14:33.327 elapsed_ms=799
+[01:14:39.402] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:39.403] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[01:14:40.435] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=11 wall=01:14:34.553 elapsed_ms=871
+[01:14:40.436] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[01:14:40.437] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[01:14:40.453] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=Nonems p95=18655ms last_ev=''
+[01:14:40.456] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[01:14:48.732] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[11:13:19.822] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
+[11:19:08.057] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=11:19:11
+[11:19:18.066] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[11:19:18.068] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[11:19:18.072] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 11:19:11, target_date=2026-04-05
+[11:19:18.073] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[11:19:18.160] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}]
+[11:19:18.176] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[11:19:19.537] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[11:19:19.540] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=4 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[11:19:19.541] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[11:19:19.146] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[11:19:20.445] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=11:19:13.465 elapsed_ms=889
+[11:19:20.447] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 3}
+[11:19:20.448] tid=1774712054103| [极速订场] refill 分层求解 tier=单调缺口递降 used_need={'18:00': 1, '19:00': 3} 原缺口={'18:00': 1, '19:00': 3}
+[11:19:20.449] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[11:19:24.555] tid=1774712054103| [极速订场] refill POST发送 wall=11:19:17.575 campaign_ms=6374 tag=refill items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[11:19:25.166] tid=1774712054103| [极速订场] refill 第2次提交 action=stop_success items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[11:19:25.167] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[11:19:26.467] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=11:19:19.096 elapsed_ms=934
+[11:19:26.470] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:26.471] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:27.444] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=11:19:20.338 elapsed_ms=887
+[11:19:27.446] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:27.447] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:28.432] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=11:19:21.557 elapsed_ms=864
+[11:19:28.435] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:28.435] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:29.439] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=11:19:22.788 elapsed_ms=877
+[11:19:29.441] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:29.442] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:31.383] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=11:19:23.909 elapsed_ms=766
+[11:19:31.385] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:31.387] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:32.401] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=11:19:25.066 elapsed_ms=802
+[11:19:32.402] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:32.402] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:33.426] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=11:19:26.270 elapsed_ms=851
+[11:19:33.428] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:33.429] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:34.456] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=11:19:27.536 elapsed_ms=911
+[11:19:34.458] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:34.459] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:35.419] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=11:19:28.728 elapsed_ms=837
+[11:19:35.421] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:35.422] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[11:19:37.508] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=11 wall=11:19:30.099 elapsed_ms=1016
+[11:19:37.509] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[11:19:37.510] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[11:19:37.528] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=86ms first_post=86ms first_success=Nonems p95=18916ms last_ev=''
+[11:19:37.533] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[11:19:46.519] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[12:00:19.774] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
+[12:13:05.280] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=12:13:30
+[12:13:30.299] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[12:13:30.302] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[12:13:30.310] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 12:13:30, target_date=2026-04-05
+[12:13:30.311] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[12:13:30.378] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}, {'place': '5', 'time': '18:00'}, {'place': '5', 'time': '19:00'}]
+[12:13:30.379] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[12:13:38.340] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[12:13:38.342] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=4 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[12:13:38.342] tid=1774712054103| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=2 first_group_matrix=True
+[12:13:38.343] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[12:13:38.173] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}]
+[12:13:39.259] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=12:13:31.928 elapsed_ms=517
+[12:13:39.261] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 3}
+[12:13:39.262] tid=1774712054103| [极速订场] refill 分层求解 tier=单调缺口递降 used_need={'18:00': 1, '19:00': 3} 原缺口={'18:00': 1, '19:00': 3}
+[12:13:39.263] tid=1774712054103| [极速订场] refill group=primary (主组) items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[12:13:43.741] tid=1774712054103| [极速订场] refill POST发送 wall=12:13:36.410 campaign_ms=6030 tag=refill items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[12:13:43.150] tid=1774712054103| [极速订场] refill 第2次提交 action=stop_success items=[{'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[12:13:43.151] tid=1774712054103| [极速订场] refill 本轮多批已处理，下轮重拉矩阵校验满额
+[12:13:44.273] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=12:13:37.508 elapsed_ms=543
+[12:13:44.275] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:44.277] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:45.233] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=12:13:38.328 elapsed_ms=464
+[12:13:45.236] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:45.237] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:46.234] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=12:13:39.151 elapsed_ms=467
+[12:13:46.236] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:46.237] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:47.199] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=12:13:39.904 elapsed_ms=397
+[12:13:47.202] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:47.203] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:47.215] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=12:13:40.689 elapsed_ms=429
+[12:13:47.218] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:47.219] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:48.228] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=12:13:41.501 elapsed_ms=455
+[12:13:48.231] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:48.232] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:49.252] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=12:13:42.360 elapsed_ms=502
+[12:13:49.255] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:49.256] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:50.215] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=12:13:43.145 elapsed_ms=429
+[12:13:50.217] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:50.219] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:51.204] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=12:13:43.908 elapsed_ms=407
+[12:13:51.208] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:51.209] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:13:51.208] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=11 wall=12:13:44.680 elapsed_ms=415
+[12:13:51.211] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:13:51.212] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[12:13:51.251] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=Nonems p95=14307ms last_ev=''
+[12:13:51.254] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[12:13:59.841] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[12:41:57.157] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
+[12:42:16.230] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
+[12:45:38.158] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:2c279fe795b5，fire_at=12:46:00
+[12:46:00.205] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:2c279fe795b5
+[12:46:00.206] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_2
+[12:46:00.209] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 12:46:00, target_date=2026-04-05
+[12:46:00.209] tid=1774712054103| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[12:46:00.279] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '6', 'time': '18:00'}, {'place': '6', 'time': '19:00'}, {'place': '7', 'time': '18:00'}, {'place': '7', 'time': '19:00'}, {'place': '5', 'time': '18:00'}, {'place': '5', 'time': '19:00'}]
+[12:46:00.287] tid=1774712054103| [极速订场] 开始 date=2026-04-05 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[12:46:08.339] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[12:46:08.341] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=4001 items=[{'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '19:00'}]
+[12:46:08.341] tid=1774712054103| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=2 first_group_matrix=True
+[12:46:08.342] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[12:46:08.163] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '18:00'}, {'place': '15', 'time': '19:00'}, {'place': '16', 'time': '18:00'}, {'place': '16', 'time': '19:00'}]
+[12:46:08.244] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=12:46:01.800 elapsed_ms=486
+[12:46:08.246] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:08.247] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:09.189] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=12:46:02.531 elapsed_ms=376
+[12:46:09.191] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:09.192] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:10.200] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=12:46:03.284 elapsed_ms=398
+[12:46:10.202] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:10.203] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:11.209] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=12:46:04.057 elapsed_ms=417
+[12:46:11.210] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:11.211] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:11.204] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=12:46:04.818 elapsed_ms=407
+[12:46:11.205] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:11.205] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:12.209] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=12:46:05.589 elapsed_ms=417
+[12:46:12.211] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:12.213] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:13.233] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=12:46:06.409 elapsed_ms=464
+[12:46:13.235] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:13.236] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:14.231] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=12:46:07.226 elapsed_ms=462
+[12:46:14.233] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:14.233] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:15.240] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=12:46:08.058 elapsed_ms=478
+[12:46:15.243] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:15.244] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'18:00': 1, '19:00': 1}，短等待后重拉
+[12:46:15.230] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=12:46:08.871 elapsed_ms=458
+[12:46:15.232] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:46:15.233] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'18:00': 1, '19:00': 1}
+[12:46:15.269] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=69ms first_post=69ms first_success=Nonems p95=8597ms last_ev=''
+[12:46:15.271] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:2c279fe795b5，reason=task-finally
+[12:46:23.572] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[12:51:41.724] 🔇 [quiet-window] 进入 pre_quiet，owner=1774712054103，account_key=1001:90821bae3fb9，fire_at=12:52:00
+[12:52:06.741] 🔫 [quiet-window] 进入 fire_window，owner=1774712054103，account_key=1001:90821bae3fb9
+[12:52:06.743] tid=1774712054103| ⏰ [自动任务] 开始执行任务: 1774712054103 account=acc_1
+[12:52:06.747] tid=1774712054103| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 12:52:00, target_date=2026-04-06
+[12:52:06.748] tid=1774712054103| ⏱️ [自动任务] account=acc_1 固定错峰 36ms
+[12:52:06.786] tid=1774712054103| 🚀 [终极递送器] 启动主组合递送: [{'place': '5', 'time': '12:00'}, {'place': '5', 'time': '13:00'}, {'place': '5', 'time': '14:00'}, {'place': '6', 'time': '12:00'}, {'place': '6', 'time': '13:00'}, {'place': '6', 'time': '14:00'}, {'place': '7', 'time': '12:00'}, {'place': '7', 'time': '13:00'}, {'place': '7', 'time': '14:00'}]
+[12:52:06.787] tid=1774712054103| [极速订场] 开始 date=2026-04-06 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[12:52:08.319] tid=1774712054103| [极速订场] 拉活成功，开始递送
+[12:52:08.322] tid=1774712054103| [极速订场] 第一组由 matrix 算出 level=9000 items=[{'place': '16', 'time': '12:00'}, {'place': '17', 'time': '12:00'}, {'place': '16', 'time': '13:00'}, {'place': '17', 'time': '13:00'}, {'place': '15', 'time': '13:00'}, {'place': '15', 'time': '14:00'}, {'place': '16', 'time': '14:00'}, {'place': '17', 'time': '14:00'}]
+[12:52:08.323] tid=1774712054103| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=3 first_group_matrix=True
+[12:52:08.325] tid=1774712054103| [极速订场] 首单 group=primary (主组) items=[{'place': '16', 'time': '12:00'}, {'place': '16', 'time': '13:00'}, {'place': '16', 'time': '14:00'}, {'place': '17', 'time': '12:00'}, {'place': '17', 'time': '13:00'}, {'place': '17', 'time': '14:00'}, {'place': '15', 'time': '13:00'}, {'place': '15', 'time': '14:00'}]
+[12:52:08.388] tid=1774712054103| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '16', 'time': '12:00'}, {'place': '16', 'time': '13:00'}, {'place': '16', 'time': '14:00'}, {'place': '17', 'time': '12:00'}, {'place': '17', 'time': '13:00'}, {'place': '17', 'time': '14:00'}, {'place': '15', 'time': '13:00'}, {'place': '15', 'time': '14:00'}]
+[12:52:09.406] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=1 wall=12:52:02.668 elapsed_ms=812
+[12:52:09.409] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:09.411] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:10.229] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=2 wall=12:52:03.481 elapsed_ms=457
+[12:52:10.231] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:10.232] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:11.236] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=3 wall=12:52:04.306 elapsed_ms=470
+[12:52:11.239] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:11.241] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:12.229] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=4 wall=12:52:05.120 elapsed_ms=457
+[12:52:12.232] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:12.234] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:12.201] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=5 wall=12:52:05.877 elapsed_ms=400
+[12:52:12.202] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:12.203] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:13.186] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=6 wall=12:52:06.602 elapsed_ms=371
+[12:52:13.188] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:13.190] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:14.176] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=7 wall=12:52:07.310 elapsed_ms=352
+[12:52:14.177] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:14.178] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:15.237] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=8 wall=12:52:08.136 elapsed_ms=473
+[12:52:15.240] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:15.241] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:15.177] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=9 wall=12:52:08.846 elapsed_ms=354
+[12:52:15.178] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:15.179] tid=1774712054103| [极速订场] refill 本轮无满足约束候选，缺口={'12:00': 1, '13:00': 0, '14:00': 0}，短等待后重拉
+[12:52:16.212] tid=1774712054103| [极速订场] refill 矩阵完成 fetch_n=10 wall=12:52:09.623 elapsed_ms=424
+[12:52:16.213] tid=1774712054103| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[12:52:16.214] tid=1774712054103| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'12:00': 1, '13:00': 0, '14:00': 0}
+[12:52:16.243] tid=1774712054103| 📊 [run-metric] task=1774712054103 matrix_attempts=1 submit_req=1 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=36ms retry_jitter=180ms first_matrix=Nonems first_submit=37ms first_post=37ms first_success=Nonems p95=9198ms last_ev=''
+[12:52:16.247] 🔄 [quiet-window] 进入 recovering，owner=1774712054103，account_key=1001:90821bae3fb9，reason=task-finally
+[12:52:24.981] 🔓 [quiet-window] 已释放 account_key=1001:90821bae3fb9，reason=recovering-finished
+[13:19:41.940] 🔇 [quiet-window] 进入 pre_quiet，owner=1775020685769，account_key=1001:2c279fe795b5，fire_at=13:20:00
+[13:20:06.960] 🔫 [quiet-window] 进入 fire_window，owner=1775020685769，account_key=1001:2c279fe795b5
+[13:20:06.962] tid=1775020685769| ⏰ [自动任务] 开始执行任务: 1775020685769 account=acc_2
+[13:20:06.966] tid=1775020685769| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 13:20:00, target_date=2026-04-07
+[13:20:06.968] tid=1775020685769| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[13:20:07.035] tid=1775020685769| 🚀 [终极递送器] 启动主组合递送: [{'place': '5', 'time': '12:00'}, {'place': '5', 'time': '13:00'}, {'place': '5', 'time': '14:00'}, {'place': '6', 'time': '12:00'}, {'place': '6', 'time': '13:00'}, {'place': '6', 'time': '14:00'}, {'place': '7', 'time': '12:00'}, {'place': '7', 'time': '13:00'}, {'place': '7', 'time': '14:00'}]
+[13:20:07.038] tid=1775020685769| [极速订场] 开始 date=2026-04-07 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[13:20:08.709] tid=1775020685769| [极速订场] 拉活成功，开始递送
+[13:20:08.714] tid=1775020685769| [极速订场] 第一组矩阵无解，回退主组原 items 继续递送
+[13:20:08.716] tid=1775020685769| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=2 first_group_matrix=True
+[13:20:08.718] tid=1775020685769| [极速订场] 首单 group=primary (主组) items=[{'place': '5', 'time': '12:00'}, {'place': '5', 'time': '13:00'}, {'place': '5', 'time': '14:00'}, {'place': '6', 'time': '12:00'}, {'place': '6', 'time': '13:00'}, {'place': '6', 'time': '14:00'}]
+[13:20:09.051] tid=1775020685769| [极速订场] 首单 第1次提交 action=stop_task_fail items=[{'place': '5', 'time': '12:00'}, {'place': '5', 'time': '13:00'}, {'place': '5', 'time': '14:00'}, {'place': '6', 'time': '12:00'}, {'place': '6', 'time': '13:00'}, {'place': '6', 'time': '14:00'}]
+[13:20:09.053] tid=1775020685769| [极速订场] 首单2 group=primary (主组) items=[{'place': '7', 'time': '12:00'}, {'place': '7', 'time': '13:00'}, {'place': '7', 'time': '14:00'}]
+[13:20:14.088] tid=1775020685769| [极速订场] 首单2 第2次提交 action=stop_task_fail items=[{'place': '7', 'time': '12:00'}, {'place': '7', 'time': '13:00'}, {'place': '7', 'time': '14:00'}]
+[13:20:15.821] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=1 wall=13:20:08.802 elapsed_ms=1641
+[13:20:15.825] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:15.827] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:17.690] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=2 wall=13:20:10.540 elapsed_ms=1380
+[13:20:17.692] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:17.692] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:19.699] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=3 wall=13:20:12.290 elapsed_ms=1397
+[13:20:19.703] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:19.704] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:21.638] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=4 wall=13:20:13.924 elapsed_ms=1276
+[13:20:21.640] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:21.641] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:22.692] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=5 wall=13:20:15.660 elapsed_ms=1383
+[13:20:22.696] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:22.697] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:24.696] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=6 wall=13:20:17.409 elapsed_ms=1391
+[13:20:24.700] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:24.702] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:26.895] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=7 wall=13:20:19.557 elapsed_ms=1790
+[13:20:26.897] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:26.898] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:28.962] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=8 wall=13:20:21.835 elapsed_ms=1924
+[13:20:28.968] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:28.969] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:30.847] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=9 wall=13:20:23.894 elapsed_ms=1694
+[13:20:30.852] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:30.853] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:20:32.727] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=10 wall=13:20:25.705 elapsed_ms=1453
+[13:20:32.731] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:20:32.733] tid=1775020685769| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'16:00': 3, '17:00': 3, '18:00': 3}
+[13:20:32.772] tid=1775020685769| 📊 [run-metric] task=1775020685769 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=Nonems p95=25266ms last_ev='请检查预约时间段!'
+[13:20:32.775] 🔄 [quiet-window] 进入 recovering，owner=1775020685769，account_key=1001:2c279fe795b5，reason=task-finally
+[13:20:41.410] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[13:23:42.530] 🔇 [quiet-window] 进入 pre_quiet，owner=1775020685769，account_key=1001:2c279fe795b5，fire_at=13:24:00
+[13:24:07.548] 🔫 [quiet-window] 进入 fire_window，owner=1775020685769，account_key=1001:2c279fe795b5
+[13:24:07.550] tid=1775020685769| ⏰ [自动任务] 开始执行任务: 1775020685769 account=acc_2
+[13:24:07.554] tid=1775020685769| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 13:24:00, target_date=2026-04-07
+[13:24:07.555] tid=1775020685769| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[13:24:07.630] tid=1775020685769| 🚀 [终极递送器] 启动主组合递送: [{'place': '5', 'time': '16:00'}, {'place': '5', 'time': '17:00'}, {'place': '5', 'time': '18:00'}, {'place': '6', 'time': '16:00'}, {'place': '6', 'time': '17:00'}, {'place': '6', 'time': '18:00'}, {'place': '7', 'time': '16:00'}, {'place': '7', 'time': '17:00'}, {'place': '7', 'time': '18:00'}]
+[13:24:07.632] tid=1775020685769| [极速订场] 开始 date=2026-04-07 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[13:24:09.702] tid=1775020685769| [极速订场] 拉活成功，开始递送
+[13:24:09.706] tid=1775020685769| [极速订场] 第一组矩阵无解，回退主组原 items 继续递送
+[13:24:09.707] tid=1775020685769| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=2 first_group_matrix=True
+[13:24:09.709] tid=1775020685769| [极速订场] 首单 group=primary (主组) items=[{'place': '5', 'time': '16:00'}, {'place': '5', 'time': '17:00'}, {'place': '5', 'time': '18:00'}, {'place': '6', 'time': '16:00'}, {'place': '6', 'time': '17:00'}, {'place': '6', 'time': '18:00'}]
+[13:24:09.124] tid=1775020685769| [极速订场] 首单 第1次提交 action=stop_task_fail items=[{'place': '5', 'time': '16:00'}, {'place': '5', 'time': '17:00'}, {'place': '5', 'time': '18:00'}, {'place': '6', 'time': '16:00'}, {'place': '6', 'time': '17:00'}, {'place': '6', 'time': '18:00'}]
+[13:24:09.125] tid=1775020685769| [极速订场] 首单2 group=primary (主组) items=[{'place': '7', 'time': '16:00'}, {'place': '7', 'time': '17:00'}, {'place': '7', 'time': '18:00'}]
+[13:24:14.068] tid=1775020685769| [极速订场] 首单2 第2次提交 action=switch_backup items=[{'place': '7', 'time': '16:00'}, {'place': '7', 'time': '17:00'}, {'place': '7', 'time': '18:00'}]
+[13:24:15.658] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=1 wall=13:24:08.726 elapsed_ms=1315
+[13:24:15.662] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:15.663] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:17.641] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=2 wall=13:24:10.363 elapsed_ms=1281
+[13:24:17.644] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:17.646] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:19.644] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=3 wall=13:24:12.008 elapsed_ms=1288
+[13:24:19.646] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:19.646] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:20.642] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=4 wall=13:24:13.646 elapsed_ms=1284
+[13:24:20.646] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:20.647] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:22.642] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=5 wall=13:24:15.284 elapsed_ms=1282
+[13:24:22.646] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:22.647] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:24.795] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=6 wall=13:24:17.230 elapsed_ms=1588
+[13:24:24.797] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:24.797] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:26.797] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=7 wall=13:24:19.177 elapsed_ms=1593
+[13:24:26.801] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:26.802] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:28.736] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=8 wall=13:24:21.018 elapsed_ms=1471
+[13:24:28.738] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:28.738] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:29.691] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=9 wall=13:24:22.753 elapsed_ms=1382
+[13:24:29.693] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:29.693] tid=1775020685769| [极速订场] refill 本轮无满足约束候选，缺口={'16:00': 3, '17:00': 3, '18:00': 3}，短等待后重拉
+[13:24:31.645] tid=1775020685769| [极速订场] refill 矩阵完成 fetch_n=10 wall=13:24:24.397 elapsed_ms=1290
+[13:24:31.647] tid=1775020685769| [组场引擎] policy=auto_campaign allow_scatter=True tier= used_need={}
+[13:24:31.648] tid=1775020685769| [极速订场] refill 连续 10 次无满足约束候选，已达阈值 10，早停 缺口={'16:00': 3, '17:00': 3, '18:00': 3}
+[13:24:31.665] tid=1775020685769| 📊 [run-metric] task=1775020685769 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=74ms first_post=74ms first_success=Nonems p95=23791ms last_ev='数据错误，请重试'
+[13:24:31.667] 🔄 [quiet-window] 进入 recovering，owner=1775020685769，account_key=1001:2c279fe795b5，reason=task-finally
+[13:24:39.793] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[13:27:42.892] 🔇 [quiet-window] 进入 pre_quiet，owner=1775020685769，account_key=1001:2c279fe795b5，fire_at=13:28:00
+[13:28:07.907] 🔫 [quiet-window] 进入 fire_window，owner=1775020685769，account_key=1001:2c279fe795b5
+[13:28:07.910] tid=1775020685769| ⏰ [自动任务] 开始执行任务: 1775020685769 account=acc_2
+[13:28:07.914] tid=1775020685769| 🕒 [时间对齐] server_offset=0.0s, base_run=2026-04-01 13:28:00, target_date=2026-04-06
+[13:28:07.915] tid=1775020685769| ⏱️ [自动任务] account=acc_2 固定错峰 65ms
+[13:28:07.982] tid=1775020685769| 🚀 [终极递送器] 启动主组合递送: [{'place': '5', 'time': '16:00'}, {'place': '5', 'time': '17:00'}, {'place': '5', 'time': '18:00'}, {'place': '6', 'time': '16:00'}, {'place': '6', 'time': '17:00'}, {'place': '6', 'time': '18:00'}, {'place': '7', 'time': '16:00'}, {'place': '7', 'time': '17:00'}, {'place': '7', 'time': '18:00'}]
+[13:28:07.983] tid=1775020685769| [极速订场] 开始 date=2026-04-06 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[13:28:09.837] tid=1775020685769| [极速订场] 拉活成功，开始递送
+[13:28:09.841] tid=1775020685769| [极速订场] 第一组由 matrix 算出 level=9000 items=[{'place': '15', 'time': '16:00'}, {'place': '16', 'time': '16:00'}, {'place': '15', 'time': '17:00'}, {'place': '16', 'time': '17:00'}, {'place': '17', 'time': '17:00'}, {'place': '15', 'time': '18:00'}, {'place': '16', 'time': '18:00'}, {'place': '17', 'time': '18:00'}]
+[13:28:09.843] tid=1775020685769| [极速订场] 首单分批参数 effective_target_blocks=3 fieldinfo_max_records_per_post=2 first_group_matrix=True
+[13:28:09.845] tid=1775020685769| [极速订场] 首单 group=primary (主组) items=[{'place': '15', 'time': '16:00'}, {'place': '15', 'time': '17:00'}, {'place': '15', 'time': '18:00'}, {'place': '16', 'time': '16:00'}, {'place': '16', 'time': '17:00'}, {'place': '16', 'time': '18:00'}]
+[13:28:10.260] tid=1775020685769| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '15', 'time': '16:00'}, {'place': '15', 'time': '17:00'}, {'place': '15', 'time': '18:00'}, {'place': '16', 'time': '16:00'}, {'place': '16', 'time': '17:00'}, {'place': '16', 'time': '18:00'}]
+[13:28:10.262] tid=1775020685769| [极速订场] 首单2 group=primary (主组) items=[{'place': '17', 'time': '17:00'}, {'place': '17', 'time': '18:00'}]
+[13:28:15.109] tid=1775020685769| [极速订场] 首单2 第2次提交 action=stop_task_fail items=[{'place': '17', 'time': '17:00'}, {'place': '17', 'time': '18:00'}]
+[13:28:15.111] tid=1775020685769| [极速订场] 结束 status=fail(task_fail) 总请求数=2
+[13:28:15.167] tid=1775020685769| 📊 [run-metric] task=1775020685769 matrix_attempts=1 submit_req=2 post_timeout=0 mx_fail=0 mx_timeout=0 phase_offset=65ms retry_jitter=180ms first_matrix=Nonems first_submit=67ms first_post=67ms first_success=Nonems p95=7429ms last_ev='同一时间的场地最多预约2个'
+[13:28:15.170] 🔄 [quiet-window] 进入 recovering，owner=1775020685769，account_key=1001:2c279fe795b5，reason=task-finally
+[13:28:23.617] 🔓 [quiet-window] 已释放 account_key=1001:2c279fe795b5，reason=recovering-finished
+[13:33:18.789] tid=1774749758128| 🧩 [refill#1774749758128|auto|acc_2] 开始执行: date=2026-04-07, target_count=1, times=['12:00'], places=17
+[13:33:20.765] tid=1774749758128| [组场引擎] policy=independent_refill allow_scatter=True tier=连号满 used_need={'12:00': 1}
+[13:33:20.767] tid=1774749758128| 📦 [refill#1774749758128|auto|acc_2] 分层 tier=连号满 used_need={'12:00': 1} 本轮提交: [{'place': '1', 'time': '12:00'}]
+[13:33:20.768] tid=1774749758128| [极速订场] 开始 date=2026-04-07 单路递送+refill round_interval=0.25s refill_poll=0.35s min_post_interval=5.0s retry_jitter=180ms budget=360.0s
+[13:33:21.693] tid=1774749758128| [极速订场] 拉活成功，开始递送
+[13:33:21.695] tid=1774749758128| [极速订场] 首单分批参数 effective_target_blocks=1 fieldinfo_max_records_per_post=2 first_group_matrix=False
+[13:33:21.697] tid=1774749758128| [极速订场] 首单 group=primary (Refill) items=[{'place': '1', 'time': '12:00'}]
+[13:33:22.160] tid=1774749758128| [极速订场] 首单 第1次提交 action=stop_success items=[{'place': '1', 'time': '12:00'}]
+[13:33:23.774] tid=1774749758128| [极速订场] refill 矩阵完成 fetch_n=1 wall=13:33:16.625 elapsed_ms=1549
+[13:33:23.775] tid=1774749758128| [极速订场] refill 缺口已归零，目标已满足，提前结束
+[13:33:23.776] tid=1774749758128| [极速订场] 结束 status=success 总请求数=1 group=primary
+[13:33:23.776] tid=1774749758128| 🧾 [refill#1774749758128|auto|acc_2] 本轮结果: success - Refill已被服务端接受，请稍后手动刷新结果
+[13:33:29.787] tid=1774749758128| 🧩 [refill#1774749758128|auto|acc_2] 开始执行: date=2026-04-07, target_count=1, times=['12:00'], places=17
+[13:33:31.720] tid=1774749758128| ✅ [refill#1774749758128|auto|acc_2] refill目标已满足
+[13:33:55.738] tid=1774749758128| 🧩 [refill#1774749758128|auto|acc_2] 开始执行: date=2026-04-07, target_count=1, times=['12:00'], places=17
+[13:33:56.623] tid=1774749758128| ✅ [refill#1774749758128|auto|acc_2] refill目标已满足
+[14:12:32.957] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
+[14:15:09.255] [组场引擎] policy=auto_campaign allow_scatter=True tier=单调缺口递降 used_need={'18:00': 1, '19:00': 1}
